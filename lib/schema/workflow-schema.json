@@ -1,0 +1,945 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://hiivmind.dev/schemas/workflow.json",
+  "title": "Blueprint Workflow Schema",
+  "description": "JSON Schema for hiivmind-blueprint workflow.yaml files",
+  "type": "object",
+  "required": ["name", "version", "start_node", "nodes", "endings"],
+  "properties": {
+    "name": {
+      "type": "string",
+      "description": "Workflow name (used as identifier)"
+    },
+    "version": {
+      "type": "string",
+      "pattern": "^[0-9]+\\.[0-9]+\\.[0-9]+$",
+      "description": "Semantic version (e.g., 1.0.0)"
+    },
+    "description": {
+      "type": "string",
+      "description": "Brief description of the workflow's purpose"
+    },
+    "entry_preconditions": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/precondition"
+      },
+      "description": "Conditions that must be true before workflow can start"
+    },
+    "initial_state": {
+      "type": "object",
+      "description": "Initial state values when workflow begins",
+      "properties": {
+        "phase": { "type": "string" },
+        "flags": {
+          "type": "object",
+          "additionalProperties": { "type": "boolean" }
+        },
+        "computed": { "type": "object" }
+      },
+      "additionalProperties": true
+    },
+    "imports": {
+      "type": "object",
+      "description": "External YAML files to load at workflow start",
+      "additionalProperties": { "type": "string" }
+    },
+    "start_node": {
+      "type": "string",
+      "description": "ID of the first node to execute"
+    },
+    "nodes": {
+      "type": "object",
+      "description": "Map of node IDs to node definitions",
+      "additionalProperties": {
+        "$ref": "#/$defs/node"
+      }
+    },
+    "endings": {
+      "type": "object",
+      "description": "Map of ending IDs to ending definitions",
+      "additionalProperties": {
+        "$ref": "#/$defs/ending"
+      }
+    }
+  },
+  "$defs": {
+    "node": {
+      "type": "object",
+      "description": "A workflow node definition",
+      "required": ["type"],
+      "properties": {
+        "type": {
+          "type": "string",
+          "enum": ["action", "conditional", "user_prompt", "validation_gate", "reference"],
+          "description": "Node type"
+        },
+        "description": {
+          "type": "string",
+          "description": "Human-readable description of what this node does"
+        }
+      },
+      "allOf": [
+        {
+          "if": { "properties": { "type": { "const": "action" } } },
+          "then": { "$ref": "#/$defs/action_node" }
+        },
+        {
+          "if": { "properties": { "type": { "const": "conditional" } } },
+          "then": { "$ref": "#/$defs/conditional_node" }
+        },
+        {
+          "if": { "properties": { "type": { "const": "user_prompt" } } },
+          "then": { "$ref": "#/$defs/user_prompt_node" }
+        },
+        {
+          "if": { "properties": { "type": { "const": "validation_gate" } } },
+          "then": { "$ref": "#/$defs/validation_gate_node" }
+        },
+        {
+          "if": { "properties": { "type": { "const": "reference" } } },
+          "then": { "$ref": "#/$defs/reference_node" }
+        }
+      ]
+    },
+    "action_node": {
+      "type": "object",
+      "required": ["actions", "on_success", "on_failure"],
+      "properties": {
+        "type": { "const": "action" },
+        "description": { "type": "string" },
+        "actions": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/consequence" },
+          "minItems": 1,
+          "description": "Consequences to execute sequentially"
+        },
+        "on_success": {
+          "type": "string",
+          "description": "Node or ending to transition to on success"
+        },
+        "on_failure": {
+          "type": "string",
+          "description": "Node or ending to transition to on failure"
+        }
+      }
+    },
+    "conditional_node": {
+      "type": "object",
+      "required": ["condition", "branches"],
+      "properties": {
+        "type": { "const": "conditional" },
+        "description": { "type": "string" },
+        "condition": {
+          "$ref": "#/$defs/precondition",
+          "description": "Condition to evaluate"
+        },
+        "branches": {
+          "type": "object",
+          "required": ["true", "false"],
+          "properties": {
+            "true": {
+              "type": "string",
+              "description": "Node to transition to if condition is true"
+            },
+            "false": {
+              "type": "string",
+              "description": "Node to transition to if condition is false"
+            }
+          },
+          "additionalProperties": false
+        }
+      }
+    },
+    "user_prompt_node": {
+      "type": "object",
+      "required": ["prompt", "on_response"],
+      "properties": {
+        "type": { "const": "user_prompt" },
+        "description": { "type": "string" },
+        "prompt": {
+          "$ref": "#/$defs/prompt",
+          "description": "Prompt configuration"
+        },
+        "on_response": {
+          "type": "object",
+          "description": "Map of option IDs to response handlers",
+          "additionalProperties": {
+            "$ref": "#/$defs/response_handler"
+          }
+        }
+      }
+    },
+    "validation_gate_node": {
+      "type": "object",
+      "required": ["validations", "on_valid", "on_invalid"],
+      "properties": {
+        "type": { "const": "validation_gate" },
+        "description": { "type": "string" },
+        "validations": {
+          "type": "array",
+          "items": {
+            "allOf": [
+              { "$ref": "#/$defs/precondition" },
+              {
+                "properties": {
+                  "error_message": {
+                    "type": "string",
+                    "description": "Error message if validation fails"
+                  }
+                }
+              }
+            ]
+          },
+          "minItems": 1,
+          "description": "Preconditions to validate"
+        },
+        "on_valid": {
+          "type": "string",
+          "description": "Node to transition to if all validations pass"
+        },
+        "on_invalid": {
+          "type": "string",
+          "description": "Node to transition to if any validation fails"
+        }
+      }
+    },
+    "reference_node": {
+      "type": "object",
+      "required": ["doc", "next_node"],
+      "properties": {
+        "type": { "const": "reference" },
+        "description": { "type": "string" },
+        "doc": {
+          "type": "string",
+          "description": "Path to pattern document"
+        },
+        "section": {
+          "type": "string",
+          "description": "Specific section to execute"
+        },
+        "context": {
+          "type": "object",
+          "description": "Variables to pass to the pattern",
+          "additionalProperties": true
+        },
+        "next_node": {
+          "type": "string",
+          "description": "Node to transition to after reference executes"
+        }
+      }
+    },
+    "prompt": {
+      "type": "object",
+      "required": ["question", "header", "options"],
+      "properties": {
+        "question": {
+          "type": "string",
+          "description": "Question to ask the user"
+        },
+        "header": {
+          "type": "string",
+          "maxLength": 12,
+          "description": "Short header/tag (max 12 characters)"
+        },
+        "options": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/prompt_option" },
+          "minItems": 2,
+          "maxItems": 4,
+          "description": "Available choices (2-4 options)"
+        },
+        "options_from_state": {
+          "type": "string",
+          "description": "State field containing dynamic options"
+        },
+        "option_template": {
+          "type": "object",
+          "properties": {
+            "label": { "type": "string" },
+            "description": { "type": "string" }
+          }
+        }
+      }
+    },
+    "prompt_option": {
+      "type": "object",
+      "required": ["id", "label"],
+      "properties": {
+        "id": {
+          "type": "string",
+          "description": "Unique option identifier"
+        },
+        "label": {
+          "type": "string",
+          "description": "Display label"
+        },
+        "description": {
+          "type": "string",
+          "description": "Option description"
+        }
+      },
+      "additionalProperties": false
+    },
+    "response_handler": {
+      "type": "object",
+      "properties": {
+        "consequence": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/consequence" },
+          "description": "Consequences to apply when this option is selected"
+        },
+        "next_node": {
+          "type": "string",
+          "description": "Node to transition to"
+        }
+      }
+    },
+    "ending": {
+      "type": "object",
+      "required": ["type"],
+      "properties": {
+        "type": {
+          "type": "string",
+          "enum": ["success", "error"],
+          "description": "Ending type"
+        },
+        "message": {
+          "type": "string",
+          "description": "Message to display (supports ${} interpolation)"
+        },
+        "summary": {
+          "type": "object",
+          "description": "Summary data to display",
+          "additionalProperties": true
+        },
+        "details": {
+          "type": "string",
+          "description": "Additional details for error endings"
+        },
+        "recovery": {
+          "type": "string",
+          "description": "Skill to suggest for recovery"
+        }
+      }
+    },
+    "precondition": {
+      "type": "object",
+      "required": ["type"],
+      "oneOf": [
+        { "$ref": "#/$defs/precondition_config_exists" },
+        { "$ref": "#/$defs/precondition_index_exists" },
+        { "$ref": "#/$defs/precondition_index_is_placeholder" },
+        { "$ref": "#/$defs/precondition_file_exists" },
+        { "$ref": "#/$defs/precondition_directory_exists" },
+        { "$ref": "#/$defs/precondition_source_exists" },
+        { "$ref": "#/$defs/precondition_source_cloned" },
+        { "$ref": "#/$defs/precondition_source_has_updates" },
+        { "$ref": "#/$defs/precondition_tool_available" },
+        { "$ref": "#/$defs/precondition_python_module_available" },
+        { "$ref": "#/$defs/precondition_flag_set" },
+        { "$ref": "#/$defs/precondition_flag_not_set" },
+        { "$ref": "#/$defs/precondition_state_equals" },
+        { "$ref": "#/$defs/precondition_state_not_null" },
+        { "$ref": "#/$defs/precondition_state_is_null" },
+        { "$ref": "#/$defs/precondition_count_equals" },
+        { "$ref": "#/$defs/precondition_count_above" },
+        { "$ref": "#/$defs/precondition_count_below" },
+        { "$ref": "#/$defs/precondition_fetch_succeeded" },
+        { "$ref": "#/$defs/precondition_fetch_returned_content" },
+        { "$ref": "#/$defs/precondition_all_of" },
+        { "$ref": "#/$defs/precondition_any_of" },
+        { "$ref": "#/$defs/precondition_none_of" },
+        { "$ref": "#/$defs/precondition_evaluate_expression" }
+      ]
+    },
+    "precondition_config_exists": {
+      "type": "object",
+      "required": ["type"],
+      "properties": {
+        "type": { "const": "config_exists" },
+        "error_message": { "type": "string" }
+      },
+      "additionalProperties": false
+    },
+    "precondition_index_exists": {
+      "type": "object",
+      "required": ["type"],
+      "properties": {
+        "type": { "const": "index_exists" },
+        "error_message": { "type": "string" }
+      },
+      "additionalProperties": false
+    },
+    "precondition_index_is_placeholder": {
+      "type": "object",
+      "required": ["type"],
+      "properties": {
+        "type": { "const": "index_is_placeholder" },
+        "error_message": { "type": "string" }
+      },
+      "additionalProperties": false
+    },
+    "precondition_file_exists": {
+      "type": "object",
+      "required": ["type", "path"],
+      "properties": {
+        "type": { "const": "file_exists" },
+        "path": { "type": "string" },
+        "error_message": { "type": "string" }
+      },
+      "additionalProperties": false
+    },
+    "precondition_directory_exists": {
+      "type": "object",
+      "required": ["type", "path"],
+      "properties": {
+        "type": { "const": "directory_exists" },
+        "path": { "type": "string" },
+        "error_message": { "type": "string" }
+      },
+      "additionalProperties": false
+    },
+    "precondition_source_exists": {
+      "type": "object",
+      "required": ["type", "id"],
+      "properties": {
+        "type": { "const": "source_exists" },
+        "id": { "type": "string" },
+        "error_message": { "type": "string" }
+      },
+      "additionalProperties": false
+    },
+    "precondition_source_cloned": {
+      "type": "object",
+      "required": ["type", "id"],
+      "properties": {
+        "type": { "const": "source_cloned" },
+        "id": { "type": "string" },
+        "error_message": { "type": "string" }
+      },
+      "additionalProperties": false
+    },
+    "precondition_source_has_updates": {
+      "type": "object",
+      "required": ["type", "id"],
+      "properties": {
+        "type": { "const": "source_has_updates" },
+        "id": { "type": "string" },
+        "error_message": { "type": "string" }
+      },
+      "additionalProperties": false
+    },
+    "precondition_tool_available": {
+      "type": "object",
+      "required": ["type", "tool"],
+      "properties": {
+        "type": { "const": "tool_available" },
+        "tool": { "type": "string" },
+        "error_message": { "type": "string" }
+      },
+      "additionalProperties": false
+    },
+    "precondition_python_module_available": {
+      "type": "object",
+      "required": ["type", "module"],
+      "properties": {
+        "type": { "const": "python_module_available" },
+        "module": { "type": "string" },
+        "error_message": { "type": "string" }
+      },
+      "additionalProperties": false
+    },
+    "precondition_flag_set": {
+      "type": "object",
+      "required": ["type", "flag"],
+      "properties": {
+        "type": { "const": "flag_set" },
+        "flag": { "type": "string" },
+        "error_message": { "type": "string" }
+      },
+      "additionalProperties": false
+    },
+    "precondition_flag_not_set": {
+      "type": "object",
+      "required": ["type", "flag"],
+      "properties": {
+        "type": { "const": "flag_not_set" },
+        "flag": { "type": "string" },
+        "error_message": { "type": "string" }
+      },
+      "additionalProperties": false
+    },
+    "precondition_state_equals": {
+      "type": "object",
+      "required": ["type", "field", "value"],
+      "properties": {
+        "type": { "const": "state_equals" },
+        "field": { "type": "string" },
+        "value": {},
+        "error_message": { "type": "string" }
+      },
+      "additionalProperties": false
+    },
+    "precondition_state_not_null": {
+      "type": "object",
+      "required": ["type", "field"],
+      "properties": {
+        "type": { "const": "state_not_null" },
+        "field": { "type": "string" },
+        "error_message": { "type": "string" }
+      },
+      "additionalProperties": false
+    },
+    "precondition_state_is_null": {
+      "type": "object",
+      "required": ["type", "field"],
+      "properties": {
+        "type": { "const": "state_is_null" },
+        "field": { "type": "string" },
+        "error_message": { "type": "string" }
+      },
+      "additionalProperties": false
+    },
+    "precondition_count_equals": {
+      "type": "object",
+      "required": ["type", "field", "count"],
+      "properties": {
+        "type": { "const": "count_equals" },
+        "field": { "type": "string" },
+        "count": { "type": "number" },
+        "error_message": { "type": "string" }
+      },
+      "additionalProperties": false
+    },
+    "precondition_count_above": {
+      "type": "object",
+      "required": ["type", "field", "min"],
+      "properties": {
+        "type": { "const": "count_above" },
+        "field": { "type": "string" },
+        "min": { "type": "number" },
+        "error_message": { "type": "string" }
+      },
+      "additionalProperties": false
+    },
+    "precondition_count_below": {
+      "type": "object",
+      "required": ["type", "field", "max"],
+      "properties": {
+        "type": { "const": "count_below" },
+        "field": { "type": "string" },
+        "max": { "type": "number" },
+        "error_message": { "type": "string" }
+      },
+      "additionalProperties": false
+    },
+    "precondition_fetch_succeeded": {
+      "type": "object",
+      "required": ["type", "from"],
+      "properties": {
+        "type": { "const": "fetch_succeeded" },
+        "from": { "type": "string" },
+        "error_message": { "type": "string" }
+      },
+      "additionalProperties": false
+    },
+    "precondition_fetch_returned_content": {
+      "type": "object",
+      "required": ["type", "from"],
+      "properties": {
+        "type": { "const": "fetch_returned_content" },
+        "from": { "type": "string" },
+        "error_message": { "type": "string" }
+      },
+      "additionalProperties": false
+    },
+    "precondition_all_of": {
+      "type": "object",
+      "required": ["type", "conditions"],
+      "properties": {
+        "type": { "const": "all_of" },
+        "conditions": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/precondition" }
+        },
+        "error_message": { "type": "string" }
+      },
+      "additionalProperties": false
+    },
+    "precondition_any_of": {
+      "type": "object",
+      "required": ["type", "conditions"],
+      "properties": {
+        "type": { "const": "any_of" },
+        "conditions": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/precondition" }
+        },
+        "error_message": { "type": "string" }
+      },
+      "additionalProperties": false
+    },
+    "precondition_none_of": {
+      "type": "object",
+      "required": ["type", "conditions"],
+      "properties": {
+        "type": { "const": "none_of" },
+        "conditions": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/precondition" }
+        },
+        "error_message": { "type": "string" }
+      },
+      "additionalProperties": false
+    },
+    "precondition_evaluate_expression": {
+      "type": "object",
+      "required": ["type", "expression"],
+      "properties": {
+        "type": { "const": "evaluate_expression" },
+        "expression": { "type": "string" },
+        "error_message": { "type": "string" }
+      },
+      "additionalProperties": false
+    },
+    "consequence": {
+      "type": "object",
+      "required": ["type"],
+      "oneOf": [
+        { "$ref": "#/$defs/consequence_set_flag" },
+        { "$ref": "#/$defs/consequence_set_state" },
+        { "$ref": "#/$defs/consequence_append_state" },
+        { "$ref": "#/$defs/consequence_clear_state" },
+        { "$ref": "#/$defs/consequence_merge_state" },
+        { "$ref": "#/$defs/consequence_evaluate" },
+        { "$ref": "#/$defs/consequence_compute" },
+        { "$ref": "#/$defs/consequence_display_message" },
+        { "$ref": "#/$defs/consequence_display_table" },
+        { "$ref": "#/$defs/consequence_create_checkpoint" },
+        { "$ref": "#/$defs/consequence_rollback_checkpoint" },
+        { "$ref": "#/$defs/consequence_spawn_agent" },
+        { "$ref": "#/$defs/consequence_invoke_pattern" },
+        { "$ref": "#/$defs/consequence_invoke_skill" },
+        { "$ref": "#/$defs/consequence_set_timestamp" },
+        { "$ref": "#/$defs/consequence_compute_hash" },
+        { "$ref": "#/$defs/consequence_evaluate_keywords" },
+        { "$ref": "#/$defs/consequence_parse_intent_flags" },
+        { "$ref": "#/$defs/consequence_match_3vl_rules" },
+        { "$ref": "#/$defs/consequence_dynamic_route" },
+        { "$ref": "#/$defs/consequence_read_file" },
+        { "$ref": "#/$defs/consequence_write_file" },
+        { "$ref": "#/$defs/consequence_create_directory" },
+        { "$ref": "#/$defs/consequence_delete_file" },
+        { "$ref": "#/$defs/consequence_clone_repo" },
+        { "$ref": "#/$defs/consequence_get_sha" },
+        { "$ref": "#/$defs/consequence_git_pull" },
+        { "$ref": "#/$defs/consequence_git_fetch" },
+        { "$ref": "#/$defs/consequence_web_fetch" },
+        { "$ref": "#/$defs/consequence_cache_web_content" }
+      ]
+    },
+    "consequence_set_flag": {
+      "type": "object",
+      "required": ["type", "flag", "value"],
+      "properties": {
+        "type": { "const": "set_flag" },
+        "flag": { "type": "string", "description": "[CORE] Flag name to set" },
+        "value": { "type": "boolean", "description": "[CORE] Boolean value" }
+      },
+      "additionalProperties": false
+    },
+    "consequence_set_state": {
+      "type": "object",
+      "required": ["type", "field", "value"],
+      "properties": {
+        "type": { "const": "set_state" },
+        "field": { "type": "string", "description": "[CORE] State field path" },
+        "value": { "description": "[CORE] Value to set" }
+      },
+      "additionalProperties": false
+    },
+    "consequence_append_state": {
+      "type": "object",
+      "required": ["type", "field", "value"],
+      "properties": {
+        "type": { "const": "append_state" },
+        "field": { "type": "string", "description": "[CORE] Array field path" },
+        "value": { "description": "[CORE] Value to append" }
+      },
+      "additionalProperties": false
+    },
+    "consequence_clear_state": {
+      "type": "object",
+      "required": ["type", "field"],
+      "properties": {
+        "type": { "const": "clear_state" },
+        "field": { "type": "string", "description": "[CORE] Field to clear" }
+      },
+      "additionalProperties": false
+    },
+    "consequence_merge_state": {
+      "type": "object",
+      "required": ["type", "field", "value"],
+      "properties": {
+        "type": { "const": "merge_state" },
+        "field": { "type": "string", "description": "[CORE] Object field to merge into" },
+        "value": { "type": "object", "description": "[CORE] Object to merge" }
+      },
+      "additionalProperties": false
+    },
+    "consequence_evaluate": {
+      "type": "object",
+      "required": ["type", "expression", "set_flag"],
+      "properties": {
+        "type": { "const": "evaluate" },
+        "expression": { "type": "string", "description": "[CORE] Boolean expression to evaluate" },
+        "set_flag": { "type": "string", "description": "[CORE] Flag to set with result" }
+      },
+      "additionalProperties": false
+    },
+    "consequence_compute": {
+      "type": "object",
+      "required": ["type", "expression", "store_as"],
+      "properties": {
+        "type": { "const": "compute" },
+        "expression": { "type": "string", "description": "[CORE] Expression to evaluate" },
+        "store_as": { "type": "string", "description": "[CORE] State field to store result" }
+      },
+      "additionalProperties": false
+    },
+    "consequence_display_message": {
+      "type": "object",
+      "required": ["type", "message"],
+      "properties": {
+        "type": { "const": "display_message" },
+        "message": { "type": "string", "description": "[CORE] Message to display" }
+      },
+      "additionalProperties": false
+    },
+    "consequence_display_table": {
+      "type": "object",
+      "required": ["type", "headers", "rows"],
+      "properties": {
+        "type": { "const": "display_table" },
+        "title": { "type": "string", "description": "[CORE] Table title" },
+        "headers": { "type": "array", "items": { "type": "string" }, "description": "[CORE] Column headers" },
+        "rows": { "description": "[CORE] Row data (state ref or literal)" }
+      },
+      "additionalProperties": false
+    },
+    "consequence_create_checkpoint": {
+      "type": "object",
+      "required": ["type", "name"],
+      "properties": {
+        "type": { "const": "create_checkpoint" },
+        "name": { "type": "string", "description": "[CORE] Checkpoint identifier" }
+      },
+      "additionalProperties": false
+    },
+    "consequence_rollback_checkpoint": {
+      "type": "object",
+      "required": ["type", "name"],
+      "properties": {
+        "type": { "const": "rollback_checkpoint" },
+        "name": { "type": "string", "description": "[CORE] Checkpoint to restore" }
+      },
+      "additionalProperties": false
+    },
+    "consequence_spawn_agent": {
+      "type": "object",
+      "required": ["type", "subagent_type", "prompt", "store_as"],
+      "properties": {
+        "type": { "const": "spawn_agent" },
+        "subagent_type": { "type": "string", "description": "[CORE] Agent type to spawn" },
+        "prompt": { "type": "string", "description": "[CORE] Task prompt for agent" },
+        "store_as": { "type": "string", "description": "[CORE] State field for result" },
+        "run_in_background": { "type": "boolean", "description": "[CORE] Run agent asynchronously" }
+      },
+      "additionalProperties": false
+    },
+    "consequence_invoke_pattern": {
+      "type": "object",
+      "required": ["type", "path"],
+      "properties": {
+        "type": { "const": "invoke_pattern" },
+        "path": { "type": "string", "description": "[CORE] Pattern document path" },
+        "section": { "type": "string", "description": "[CORE] Specific section to execute" },
+        "context": { "type": "object", "description": "[CORE] Variables to pass to pattern" }
+      },
+      "additionalProperties": false
+    },
+    "consequence_invoke_skill": {
+      "type": "object",
+      "required": ["type", "skill"],
+      "properties": {
+        "type": { "const": "invoke_skill" },
+        "skill": { "type": "string", "description": "[CORE] Skill name to invoke" },
+        "args": { "type": "string", "description": "[CORE] Arguments to pass to skill" }
+      },
+      "additionalProperties": false
+    },
+    "consequence_set_timestamp": {
+      "type": "object",
+      "required": ["type", "store_as"],
+      "properties": {
+        "type": { "const": "set_timestamp" },
+        "store_as": { "type": "string", "description": "[CORE] State field for ISO timestamp" }
+      },
+      "additionalProperties": false
+    },
+    "consequence_compute_hash": {
+      "type": "object",
+      "required": ["type", "from", "store_as"],
+      "properties": {
+        "type": { "const": "compute_hash" },
+        "from": { "type": "string", "description": "[CORE] State field with content to hash" },
+        "store_as": { "type": "string", "description": "[CORE] State field for SHA-256 hash" }
+      },
+      "additionalProperties": false
+    },
+    "consequence_evaluate_keywords": {
+      "type": "object",
+      "required": ["type", "input", "keyword_sets", "store_as"],
+      "properties": {
+        "type": { "const": "evaluate_keywords" },
+        "input": { "type": "string", "description": "[CORE] User input to match" },
+        "keyword_sets": { "type": "object", "description": "[CORE] Map of intent names to keyword arrays" },
+        "store_as": { "type": "string", "description": "[CORE] State field for matched intent" }
+      },
+      "additionalProperties": false
+    },
+    "consequence_parse_intent_flags": {
+      "type": "object",
+      "required": ["type", "input", "flag_definitions", "store_as"],
+      "properties": {
+        "type": { "const": "parse_intent_flags" },
+        "input": { "type": "string", "description": "[CORE] User input to parse" },
+        "flag_definitions": { "type": "string", "description": "[CORE] Flag definitions reference" },
+        "store_as": { "type": "string", "description": "[CORE] State field for 3VL flags" }
+      },
+      "additionalProperties": false
+    },
+    "consequence_match_3vl_rules": {
+      "type": "object",
+      "required": ["type", "flags", "rules", "store_as"],
+      "properties": {
+        "type": { "const": "match_3vl_rules" },
+        "flags": { "type": "string", "description": "[CORE] State field with 3VL flags" },
+        "rules": { "type": "string", "description": "[CORE] Intent rules reference" },
+        "store_as": { "type": "string", "description": "[CORE] State field for match results" }
+      },
+      "additionalProperties": false
+    },
+    "consequence_dynamic_route": {
+      "type": "object",
+      "required": ["type", "action"],
+      "properties": {
+        "type": { "const": "dynamic_route" },
+        "action": { "type": "string", "description": "[CORE] Node name to transition to (interpolated)" }
+      },
+      "additionalProperties": false
+    },
+    "consequence_read_file": {
+      "type": "object",
+      "required": ["type", "path", "store_as"],
+      "properties": {
+        "type": { "const": "read_file" },
+        "path": { "type": "string", "description": "[EXT:file-system] File path to read" },
+        "store_as": { "type": "string", "description": "[EXT:file-system] State field for content" }
+      },
+      "additionalProperties": false
+    },
+    "consequence_write_file": {
+      "type": "object",
+      "required": ["type", "path", "content"],
+      "properties": {
+        "type": { "const": "write_file" },
+        "path": { "type": "string", "description": "[EXT:file-system] File path to write" },
+        "content": { "type": "string", "description": "[EXT:file-system] Content to write" }
+      },
+      "additionalProperties": false
+    },
+    "consequence_create_directory": {
+      "type": "object",
+      "required": ["type", "path"],
+      "properties": {
+        "type": { "const": "create_directory" },
+        "path": { "type": "string", "description": "[EXT:file-system] Directory path to create" }
+      },
+      "additionalProperties": false
+    },
+    "consequence_delete_file": {
+      "type": "object",
+      "required": ["type", "path"],
+      "properties": {
+        "type": { "const": "delete_file" },
+        "path": { "type": "string", "description": "[EXT:file-system] File path to delete" }
+      },
+      "additionalProperties": false
+    },
+    "consequence_clone_repo": {
+      "type": "object",
+      "required": ["type", "url", "dest"],
+      "properties": {
+        "type": { "const": "clone_repo" },
+        "url": { "type": "string", "description": "[EXT:git] Repository URL" },
+        "dest": { "type": "string", "description": "[EXT:git] Destination path" },
+        "branch": { "type": "string", "description": "[EXT:git] Branch to clone" },
+        "depth": { "type": "number", "description": "[EXT:git] Shallow clone depth" }
+      },
+      "additionalProperties": false
+    },
+    "consequence_get_sha": {
+      "type": "object",
+      "required": ["type", "repo_path", "store_as"],
+      "properties": {
+        "type": { "const": "get_sha" },
+        "repo_path": { "type": "string", "description": "[EXT:git] Path to git repository" },
+        "store_as": { "type": "string", "description": "[EXT:git] State field for SHA" }
+      },
+      "additionalProperties": false
+    },
+    "consequence_git_pull": {
+      "type": "object",
+      "required": ["type", "repo_path"],
+      "properties": {
+        "type": { "const": "git_pull" },
+        "repo_path": { "type": "string", "description": "[EXT:git] Path to git repository" }
+      },
+      "additionalProperties": false
+    },
+    "consequence_git_fetch": {
+      "type": "object",
+      "required": ["type", "repo_path"],
+      "properties": {
+        "type": { "const": "git_fetch" },
+        "repo_path": { "type": "string", "description": "[EXT:git] Path to git repository" }
+      },
+      "additionalProperties": false
+    },
+    "consequence_web_fetch": {
+      "type": "object",
+      "required": ["type", "url", "store_as"],
+      "properties": {
+        "type": { "const": "web_fetch" },
+        "url": { "type": "string", "description": "[EXT:web] URL to fetch" },
+        "store_as": { "type": "string", "description": "[EXT:web] State field for result" },
+        "allow_failure": { "type": "boolean", "description": "[EXT:web] Allow HTTP errors without failing" },
+        "prompt": { "type": "string", "description": "[EXT:web] Extraction prompt for WebFetch" }
+      },
+      "additionalProperties": false
+    },
+    "consequence_cache_web_content": {
+      "type": "object",
+      "required": ["type", "from", "dest"],
+      "properties": {
+        "type": { "const": "cache_web_content" },
+        "from": { "type": "string", "description": "[EXT:web] State field with fetch result" },
+        "dest": { "type": "string", "description": "[EXT:web] Destination file path" },
+        "store_path_as": { "type": "string", "description": "[EXT:web] State field to store path" }
+      },
+      "additionalProperties": false
+    }
+  }
+}

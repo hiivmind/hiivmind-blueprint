@@ -1,0 +1,244 @@
+# Workflow Template
+#
+# This template is used by hiivmind-blueprint to generate workflow.yaml files.
+# Placeholders use {{placeholder}} syntax and are replaced at generation time.
+#
+# See: lib/workflow/schema.md for the complete specification
+
+# ============================================================================
+# WORKFLOW IDENTITY
+# ============================================================================
+
+name: "{{skill_id}}"
+version: "1.0.0"
+description: >
+  {{description}}
+
+# ============================================================================
+# ENTRY PRECONDITIONS
+# ============================================================================
+# All conditions must pass for workflow to start.
+# Generated from: tools mentioned, files required, prerequisites in prose.
+
+entry_preconditions:
+  # {{#entry_preconditions}}
+  # - type: {{type}}
+  #   {{#params}}{{key}}: {{value}}{{/params}}
+  # {{/entry_preconditions}}
+  - type: tool_available
+    tool: git
+
+# ============================================================================
+# INITIAL STATE
+# ============================================================================
+# Runtime state initialized when workflow starts.
+# Fields from analysis: {{state_variables}}
+
+initial_state:
+  phase: "start"
+  # {{#state_fields}}
+  # {{name}}: {{default}}
+  # {{/state_fields}}
+  flags:
+    # {{#flags}}
+    # {{name}}: false
+    # {{/flags}}
+    initialized: false
+  computed: {}
+
+# ============================================================================
+# START NODE
+# ============================================================================
+
+start_node: {{start_node}}
+
+# ============================================================================
+# NODES
+# ============================================================================
+# Workflow graph. Each node executes and routes to next node or ending.
+# Node types: action, conditional, user_prompt, validation_gate, reference
+
+nodes:
+  # --------------------------------------------------------------------------
+  # Action Node Template
+  # --------------------------------------------------------------------------
+  # action_node_name:
+  #   type: action
+  #   description: "What this node does"
+  #   actions:
+  #     - type: {{consequence_type}}
+  #       {{#params}}{{key}}: {{value}}{{/params}}
+  #   on_success: next_node_name
+  #   on_failure: error_node_name
+
+  # --------------------------------------------------------------------------
+  # Conditional Node Template
+  # --------------------------------------------------------------------------
+  # conditional_node_name:
+  #   type: conditional
+  #   description: "Decision point description"
+  #   condition:
+  #     type: {{precondition_type}}
+  #     {{#params}}{{key}}: {{value}}{{/params}}
+  #   branches:
+  #     true: node_when_true
+  #     false: node_when_false
+
+  # --------------------------------------------------------------------------
+  # User Prompt Node Template
+  # --------------------------------------------------------------------------
+  # user_prompt_node_name:
+  #   type: user_prompt
+  #   prompt:
+  #     question: "{{question_text}}"
+  #     header: "{{header}}"  # Max 12 chars
+  #     options:
+  #       - id: option_id
+  #         label: "Option Label"
+  #         description: "What this option does"
+  #   on_response:
+  #     option_id:
+  #       consequence:
+  #         - type: set_state
+  #           field: selected_option
+  #           value: option_id
+  #       next_node: next_node_name
+
+  # --------------------------------------------------------------------------
+  # Validation Gate Node Template
+  # --------------------------------------------------------------------------
+  # validation_gate_node_name:
+  #   type: validation_gate
+  #   description: "Validate prerequisites"
+  #   validations:
+  #     - type: {{precondition_type}}
+  #       {{#params}}{{key}}: {{value}}{{/params}}
+  #       error_message: "Human-readable error"
+  #   on_valid: proceed_node
+  #   on_invalid: error_node
+
+  # --------------------------------------------------------------------------
+  # Reference Node Template
+  # --------------------------------------------------------------------------
+  # reference_node_name:
+  #   type: reference
+  #   doc: "lib/path/to/pattern.md"
+  #   section: "Section Heading"  # Optional
+  #   context:
+  #     var_name: "${computed.value}"
+  #   next_node: after_reference_node
+
+  # --------------------------------------------------------------------------
+  # Generated Nodes
+  # --------------------------------------------------------------------------
+  {{#nodes}}
+  {{id}}:
+    type: {{type}}
+    {{#description}}
+    description: "{{description}}"
+    {{/description}}
+    {{#if_action}}
+    actions:
+      {{#actions}}
+      - type: {{type}}
+        {{#params}}
+        {{key}}: {{value}}
+        {{/params}}
+      {{/actions}}
+    on_success: {{on_success}}
+    on_failure: {{on_failure}}
+    {{/if_action}}
+    {{#if_conditional}}
+    condition:
+      type: {{condition_type}}
+      {{#condition_params}}
+      {{key}}: {{value}}
+      {{/condition_params}}
+    branches:
+      true: {{branch_true}}
+      false: {{branch_false}}
+    {{/if_conditional}}
+    {{#if_user_prompt}}
+    prompt:
+      question: "{{question}}"
+      header: "{{header}}"
+      options:
+        {{#options}}
+        - id: {{id}}
+          label: "{{label}}"
+          description: "{{description}}"
+        {{/options}}
+    on_response:
+      {{#responses}}
+      {{id}}:
+        {{#consequence}}
+        consequence:
+          {{#actions}}
+          - type: {{type}}
+            {{#params}}
+            {{key}}: {{value}}
+            {{/params}}
+          {{/actions}}
+        {{/consequence}}
+        next_node: {{next_node}}
+      {{/responses}}
+    {{/if_user_prompt}}
+    {{#if_validation_gate}}
+    validations:
+      {{#validations}}
+      - type: {{type}}
+        {{#params}}
+        {{key}}: {{value}}
+        {{/params}}
+        error_message: "{{error_message}}"
+      {{/validations}}
+    on_valid: {{on_valid}}
+    on_invalid: {{on_invalid}}
+    {{/if_validation_gate}}
+    {{#if_reference}}
+    doc: "{{doc}}"
+    {{#section}}
+    section: "{{section}}"
+    {{/section}}
+    {{#context}}
+    context:
+      {{#vars}}
+      {{key}}: "{{value}}"
+      {{/vars}}
+    {{/context}}
+    next_node: {{next_node}}
+    {{/if_reference}}
+
+  {{/nodes}}
+
+# ============================================================================
+# ENDINGS
+# ============================================================================
+# Terminal states. All paths must eventually reach an ending.
+
+endings:
+  success:
+    type: success
+    message: "{{success_message}}"
+    {{#success_summary}}
+    summary:
+      {{#fields}}
+      {{key}}: "${computed.{{value}}}"
+      {{/fields}}
+    {{/success_summary}}
+
+  {{#error_endings}}
+  {{id}}:
+    type: error
+    message: "{{message}}"
+    {{#recovery}}
+    recovery: "{{recovery}}"
+    {{/recovery}}
+    {{#details}}
+    details: "{{details}}"
+    {{/details}}
+
+  {{/error_endings}}
+  cancelled:
+    type: error
+    message: "Operation cancelled by user"
