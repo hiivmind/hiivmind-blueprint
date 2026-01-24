@@ -1,0 +1,252 @@
+# Capability Detection System
+# How to detect tool availability at workflow load time
+
+schema_version: "1.0"
+description: Runtime capability checking for workflow precondition validation
+
+# Detection configuration
+detection:
+  # When to run detection
+  timing:
+    - on_workflow_load        # Check when workflow.yaml is parsed
+    - on_consequence_use      # Check when consequence is about to execute
+    - on_explicit_request     # Check when user runs capability check
+
+  # How to cache results
+  caching:
+    enabled: true
+    ttl_seconds: 300          # Cache for 5 minutes
+    invalidate_on:
+      - tool_install          # User installs new tool
+      - venv_activation       # Virtual env changes
+      - path_change           # PATH environment changes
+
+# Detection functions (pseudocode for implementation)
+functions:
+  # Check if a tool is available
+  tool_available:
+    signature: "tool_available(name: string) -> boolean"
+    description: Check if tool is installed and executable
+    implementation: |
+      entry = registry.lookup(name)
+      if not entry:
+        # Unknown tool - try direct check
+        return Bash("which " + name + " >/dev/null 2>&1").exit_code == 0
+
+      result = Bash(entry.check + " >/dev/null 2>&1")
+      return result.exit_code == 0
+    examples:
+      - "tool_available('git')"
+      - "tool_available('python3')"
+      - "tool_available('docker')"
+
+  # Check tool version meets minimum
+  tool_version_gte:
+    signature: "tool_version_gte(name: string, min_version: string) -> boolean"
+    description: Check if tool version meets minimum requirement
+    implementation: |
+      entry = registry.lookup(name)
+      if not entry or not entry.version_pattern:
+        return tool_available(name)  # Can't check version, just check existence
+
+      result = Bash(entry.check)
+      match = result.stdout.match(entry.version_pattern)
+      if not match:
+        return false
+
+      installed = parse_version(match[1])
+      required = parse_version(min_version)
+      return installed >= required
+    examples:
+      - "tool_version_gte('git', '2.0')"
+      - "tool_version_gte('python3', '3.9')"
+
+  # Check if tool is authenticated
+  tool_authenticated:
+    signature: "tool_authenticated(name: string) -> boolean"
+    description: Check if tool requiring auth is properly authenticated
+    implementation: |
+      entry = registry.lookup(name)
+      if not entry or not entry.requires_auth:
+        return true  # No auth required
+
+      if not tool_available(name):
+        return false
+
+      result = Bash(entry.auth_check + " >/dev/null 2>&1")
+      return result.exit_code == 0
+    examples:
+      - "tool_authenticated('gh')"
+      - "tool_authenticated('aws')"
+
+  # Check if daemon-based tool is running
+  tool_daemon_ready:
+    signature: "tool_daemon_ready(name: string) -> boolean"
+    description: Check if tool's required daemon is running
+    implementation: |
+      entry = registry.lookup(name)
+      if not entry or not entry.requires_daemon:
+        return true  # No daemon required
+
+      if not tool_available(name):
+        return false
+
+      result = Bash(entry.daemon_check)
+      return result.exit_code == 0
+    examples:
+      - "tool_daemon_ready('docker')"
+
+  # Get all available tools from a category
+  available_tools_in:
+    signature: "available_tools_in(category: string) -> string[]"
+    description: Get list of available tools from registry category
+    implementation: |
+      category_tools = registry.categories[category]
+      if not category_tools:
+        return []
+
+      available = []
+      for name, entry in category_tools:
+        if tool_available(name):
+          available.push(name)
+      return available
+    examples:
+      - "available_tools_in('vcs')"
+      - "available_tools_in('containers')"
+
+  # Check network connectivity
+  network_available:
+    signature: "network_available(target?: string) -> boolean"
+    description: Check if network access is available
+    implementation: |
+      if target:
+        # Check specific host
+        result = Bash("curl -s --max-time 5 -o /dev/null -w '%{http_code}' " + target)
+        return result.exit_code == 0
+      else:
+        # General connectivity check
+        result = Bash("curl -s --max-time 5 -o /dev/null https://github.com")
+        return result.exit_code == 0
+    examples:
+      - "network_available()"
+      - "network_available('https://api.example.com')"
+
+# Validation patterns for workflow preconditions
+validation_patterns:
+  # Pre-execution validation
+  validate_consequence_requirements:
+    description: Validate all requirements before executing consequence
+    implementation: |
+      consequence = get_consequence_definition(type)
+      requires = consequence.payload.requires
+
+      if not requires:
+        return { valid: true }
+
+      errors = []
+
+      # Check tools
+      if requires.tools:
+        for tool in requires.tools:
+          if tool.optional:
+            continue
+          if not tool_available(tool.name):
+            errors.push("Required tool not found: " + tool.name)
+          elif tool.min_version and not tool_version_gte(tool.name, tool.min_version):
+            errors.push("Tool " + tool.name + " version < " + tool.min_version)
+
+      # Check network
+      if requires.network and not network_available():
+        errors.push("Network access required but unavailable")
+
+      # Check environment variables
+      if requires.environment:
+        for env_var in requires.environment:
+          if not getenv(env_var):
+            errors.push("Required environment variable not set: " + env_var)
+
+      return {
+        valid: errors.length == 0,
+        errors: errors
+      }
+
+  # Capability report for workflow
+  generate_capability_report:
+    description: Generate full capability report for a workflow
+    implementation: |
+      workflow = parse_workflow(path)
+      report = {
+        required_tools: [],
+        optional_tools: [],
+        missing_tools: [],
+        network_required: false,
+        environment_required: []
+      }
+
+      for phase in workflow.phases:
+        for node in phase.nodes:
+          if node.type == "action":
+            for consequence in node.consequences:
+              defn = get_consequence_definition(consequence.type)
+              requires = defn.payload.requires
+
+              if requires:
+                if requires.tools:
+                  for tool in requires.tools:
+                    if tool.optional:
+                      report.optional_tools.push(tool)
+                    else:
+                      report.required_tools.push(tool)
+                      if not tool_available(tool.name):
+                        report.missing_tools.push(tool)
+
+                if requires.network:
+                  report.network_required = true
+
+                if requires.environment:
+                  report.environment_required.extend(requires.environment)
+
+      return report
+
+# Integration with workflow execution
+workflow_integration:
+  # Add to preconditions at workflow load
+  inject_tool_preconditions:
+    description: |
+      When a workflow is loaded, extract tool requirements from consequences
+      and add them as implicit preconditions for validation.
+    example: |
+      # Original consequence in workflow:
+      - type: clone_repo
+        url: "${source_url}"
+        dest: ".source/main"
+
+      # Implicit precondition added:
+      preconditions:
+        - type: tool_available
+          tool: git
+          error: "Git is required for clone_repo but not available"
+
+  # Alternative selection at runtime
+  select_alternative:
+    description: |
+      When executing a consequence with alternatives, evaluate conditions
+      in order and use first matching alternative.
+    example: |
+      alternatives:
+        - condition: "tool_available('gh') and url.startsWith('https://github.com')"
+          effect: "gh repo clone ${url} ${dest}"
+        - condition: "tool_available('git')"
+          effect: "git clone ${url} ${dest}"
+        - fallback: true
+          error: "Neither 'gh' nor 'git' available"
+
+      # Selection pseudocode:
+      for alt in alternatives:
+        if alt.fallback:
+          if alt.error:
+            throw Error(alt.error)
+          break
+        if evaluate(alt.condition):
+          execute(alt.effect)
+          break

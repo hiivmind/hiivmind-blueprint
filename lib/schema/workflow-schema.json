@@ -28,7 +28,8 @@
     },
     "initial_state": {
       "type": "object",
-      "description": "Initial state values when workflow begins",
+      "description": "Initial state values when workflow begins. Note: Some fields are computed at runtime and not declared here - see $comment for details.",
+      "$comment": "Runtime fields (computed at initialization, not declared): interface (string: 'claude_code' or 'claude_ai' based on AskUserQuestion tool availability), workflow_name, workflow_version, current_node, previous_node, history, user_responses, checkpoints",
       "properties": {
         "phase": { "type": "string" },
         "flags": {

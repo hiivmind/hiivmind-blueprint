@@ -84,6 +84,24 @@ source_url: "https://github.com/pola-rs/polars"
 | `current_node` | string | Node currently being executed |
 | `previous_node` | string | Last executed node |
 
+### Runtime Fields
+
+Fields computed at initialization, not declared in workflow.yaml:
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `interface` | string | Detected interface: `"claude_code"` or `"claude_ai"` |
+
+**Detection logic:**
+```
+IF tool_available("AskUserQuestion"):
+    interface = "claude_code"
+ELSE:
+    interface = "claude_ai"
+```
+
+The `interface` field determines how user prompts are rendered (AskUserQuestion tool vs markdown table).
+
 ### History
 
 Array of executed node records:
@@ -438,6 +456,7 @@ workflow_name: add-source
 workflow_version: "1.0.0"
 current_node: locate_corpus
 previous_node: null
+interface: claude_code  # Runtime-detected
 history: []
 user_responses: {}
 computed: {}
@@ -456,6 +475,7 @@ source_url: null
 ```yaml
 current_node: check_url_provided
 previous_node: locate_corpus
+interface: claude_code
 history:
   - node: locate_corpus
     outcome: { success: true }
@@ -474,6 +494,7 @@ flags:
 ```yaml
 current_node: collect_git_url
 previous_node: ask_source_type
+interface: claude_code
 user_responses:
   ask_source_type:
     id: git
@@ -488,6 +509,7 @@ flags:
 
 ```yaml
 current_node: execute_clone
+interface: claude_code
 computed:
   config: { ... }
   source_id: polars
@@ -507,6 +529,7 @@ source_type: git
 
 ```yaml
 current_node: success  # ending
+interface: claude_code
 computed:
   config: { sources: [{ id: polars, ... }] }
   source_id: polars

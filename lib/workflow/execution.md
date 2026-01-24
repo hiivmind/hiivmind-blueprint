@@ -178,20 +178,31 @@ FUNCTION execute_conditional_node(node):
 
 ### User Prompt Node
 
+**Verb conventions used:**
+- `CALL [ToolName]` - Invoke a Claude Code tool (REQUIRED action)
+- `DISPLAY` - Output text to user (no tool call)
+- `WAIT` - Block for user input
+- `SET` - Mutate state
+- `STORE` - Save to state location
+- `RETURN` - Return from function
+
 ```
 FUNCTION execute_user_prompt_node(node):
-    # Render prompt for current interface (from state)
-    rendered = render_prompt_for_interface(node, state.interface)
-
-    # Present to user and get response
-    response = present_prompt(rendered)
+    # Present prompt based on detected interface
+    IF state.interface == "claude_code":
+        # CALL the AskUserQuestion tool - this is a TOOL CALL, not text output
+        response = CALL AskUserQuestion with build_ask_user_question_params(node)
+    ELSE:
+        # Claude.ai mode - DISPLAY markdown, WAIT for chat response
+        DISPLAY render_markdown_prompt(node)
+        response = WAIT for user message
 
     # LLM interprets response and matches to handler
     # (semantic matching - trusts LLM understanding)
     handler = match_response_to_handler(response, node.on_response)
 
-    # Store response
-    state.user_responses[state.current_node] = {
+    # STORE response in state
+    SET state.user_responses[state.current_node] = {
         handler_id: handler.id,
         raw: response
     }
@@ -204,30 +215,14 @@ FUNCTION execute_user_prompt_node(node):
     RETURN { next_node: handler.next_node }
 ```
 
-#### Interface-Aware Rendering
+#### Interface-Aware Presentation
+
+**Claude Code interface (state.interface == "claude_code"):**
 
 ```
-FUNCTION render_prompt_for_interface(node, interface):
-    IF interface == "claude_code":
-        RETURN build_ask_user_question(node)
-
-    ELIF interface == "claude_ai":
-        # Render as markdown table
-        md = "**{node.prompt.header}**\n\n"
-        md += "{interpolate(node.prompt.question)}\n\n"
-        md += "| # | Option | Description |\n"
-        md += "|---|--------|-------------|\n"
-        FOR i, opt IN enumerate(node.prompt.options):
-            md += "| {i+1} | {opt.label} | {opt.description} |\n"
-
-        # Always show guidance text (chat field is always available)
-        md += "\n*Reply with a number to select, or describe what you want in your own words.*"
-
-        RETURN md
-
-
-FUNCTION build_ask_user_question(node):
-    # Build Claude Code AskUserQuestion tool call
+FUNCTION build_ask_user_question_params(node):
+    # Build parameters for AskUserQuestion tool CALL
+    # The executor MUST CALL AskUserQuestion tool with these parameters
     RETURN {
         questions: [{
             question: interpolate(node.prompt.question),
@@ -239,6 +234,37 @@ FUNCTION build_ask_user_question(node):
             }))
         }]
     }
+
+# CRITICAL: This is a TOOL CALL example, not text output
+# The executor must invoke:
+#   CALL AskUserQuestion tool with:
+#     questions: [{
+#         question: "What is your decision?",
+#         header: "Decision",
+#         multiSelect: false,
+#         options: [
+#             { label: "Option A", description: "First choice" },
+#             { label: "Option B", description: "Second choice" }
+#         ]
+#     }]
+```
+
+**Claude.ai interface (state.interface == "claude_ai"):**
+
+```
+FUNCTION render_markdown_prompt(node):
+    # Render as markdown table for DISPLAY (no tool call)
+    md = "**{node.prompt.header}**\n\n"
+    md += "{interpolate(node.prompt.question)}\n\n"
+    md += "| # | Option | Description |\n"
+    md += "|---|--------|-------------|\n"
+    FOR i, opt IN enumerate(node.prompt.options):
+        md += "| {i+1} | {opt.label} | {opt.description} |\n"
+
+    # Always show guidance text (chat field is always available)
+    md += "\n*Reply with a number to select, or describe what you want in your own words.*"
+
+    RETURN md
 ```
 
 #### Response Interpretation

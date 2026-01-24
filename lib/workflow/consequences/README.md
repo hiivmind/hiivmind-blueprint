@@ -2,7 +2,42 @@
 
 Consequences are operations that mutate state or perform actions during workflow execution. This directory organizes consequences into **core** (intrinsic workflow engine) and **extension** (domain-specific) modules.
 
-## Directory Structure
+## Structured Definitions (YAML)
+
+The authoritative consequence definitions are now in **YAML format** for programmatic access:
+
+```
+lib/consequences/
+├── definitions/
+│   ├── index.yaml                    # Master index with type lookup
+│   ├── core/
+│   │   ├── state.yaml                # 5 types: set_flag, set_state, append_state, clear_state, merge_state
+│   │   ├── evaluation.yaml           # 2 types: evaluate, compute
+│   │   ├── interaction.yaml          # 2 types: display_message, display_table
+│   │   ├── control.yaml              # 3 types: create_checkpoint, rollback_checkpoint, spawn_agent
+│   │   ├── skill.yaml                # 2 types: invoke_pattern, invoke_skill
+│   │   ├── utility.yaml              # 2 types: set_timestamp, compute_hash
+│   │   ├── intent.yaml               # 4 types: evaluate_keywords, parse_intent_flags, match_3vl_rules, dynamic_route
+│   │   └── logging.yaml              # 10 types: init_log, log_node, log_event, etc.
+│   └── extensions/
+│       ├── file-system.yaml          # 4 types: read_file, write_file, create_directory, delete_file
+│       ├── git.yaml                  # 4 types: clone_repo, get_sha, git_pull, git_fetch
+│       └── web.yaml                  # 2 types: web_fetch, cache_web_content
+└── schema/
+    └── consequence-definition.json   # JSON Schema for definition files
+```
+
+Each YAML definition includes:
+- **Type identifier** and category
+- **Parameters** with types, constraints, and possible values
+- **Description** (brief + detailed + notes)
+- **Payload** - effect pseudocode, tool calls, state mutations
+- **Examples** for multi-shot LLM prompting
+- **Related** consequence types
+
+## Markdown Documentation (Legacy Reference)
+
+The original markdown files remain for human-readable documentation:
 
 ```
 consequences/
@@ -31,6 +66,8 @@ consequences/
 ## Quick Reference
 
 ### Core Consequences (30 types)
+
+> **Note:** Extension consequences now support the [Extensibility Model](#extensibility-model) with `requires`, `provides`, and `alternatives` blocks.
 
 | Consequence Type | File | Description |
 |------------------|------|-------------|
@@ -65,7 +102,7 @@ consequences/
 | `apply_log_retention` | [core/logging.md](core/logging.md) | Clean up old log files |
 | `output_ci_summary` | [core/logging.md](core/logging.md) | Format output for CI
 
-### Extension Consequences (10 types)
+### Extension Consequences (13 types)
 
 | Consequence Type | File | Description |
 |------------------|------|-------------|
@@ -79,6 +116,9 @@ consequences/
 | `git_fetch` | [extensions/git.md](extensions/git.md) | Fetch remote refs |
 | `web_fetch` | [extensions/web.md](extensions/web.md) | Fetch URL content |
 | `cache_web_content` | [extensions/web.md](extensions/web.md) | Save fetched content |
+| `run_script` | extensions/scripting.yaml | Execute script with auto-detected interpreter |
+| `run_python` | extensions/scripting.yaml | Execute Python script |
+| `run_bash` | extensions/scripting.yaml | Execute Bash script |
 
 ---
 
@@ -100,6 +140,7 @@ consequences/
 | [extensions/file-system.md](extensions/file-system.md) | File Operations | 4 |
 | [extensions/git.md](extensions/git.md) | Git Operations | 4 |
 | [extensions/web.md](extensions/web.md) | Web Operations | 2 |
+| extensions/scripting.yaml | Script Execution | 3 |
 
 ---
 
@@ -162,6 +203,146 @@ To add a new extension domain:
 ### Custom Plugin Extensions
 
 Plugins converted by hiivmind-blueprint may define their own domain-specific extensions. See `lib/blueprint/patterns/consequence-extensions.md` for guidance.
+
+---
+
+## Extensibility Model
+
+Schema version 1.1 introduces enhanced extensibility for consequences that depend on external tools, network access, or complex execution environments.
+
+### Tool Requirements (`requires`)
+
+Declare what a consequence needs to execute:
+
+```yaml
+payload:
+  kind: tool_call
+  tool: Bash
+
+  requires:
+    tools:
+      - name: git
+        min_version: "2.0"
+        check_command: "git --version"
+      - name: gh
+        optional: true  # Enhanced features if available
+        min_version: "2.0"
+
+    shell: bash  # bash | sh | zsh | pwsh | python
+
+    environment:
+      - GITHUB_TOKEN  # Required env vars
+
+    network: true  # Needs network access
+
+    timeout_seconds: 300
+
+    working_directory: "${repo_path}"  # Can be interpolated
+```
+
+**Fields:**
+- `tools` - CLI tools with optional version constraints
+- `shell` - Required shell interpreter
+- `environment` - Required environment variables
+- `network` - Whether network access is needed
+- `timeout_seconds` - Maximum execution time
+- `working_directory` - Execution context
+
+### Capability Declaration (`provides`)
+
+Declare what a consequence produces:
+
+```yaml
+provides:
+  features:
+    - shallow_clone
+    - sparse_checkout
+
+  outputs:
+    - field: computed.repo_path
+      type: string
+      description: "Path to cloned repository"
+
+    - field: computed.sha
+      type: string
+      pattern: "^[a-f0-9]{40}$"
+      description: "Full commit SHA"
+```
+
+### Graceful Degradation (`alternatives`)
+
+Provide fallback implementations when tools are unavailable:
+
+```yaml
+alternatives:
+  - condition: "tool_available('gh') and url.startsWith('https://github.com')"
+    effect: "gh repo clone ${url} ${dest} -- --depth ${depth}"
+
+  - condition: "tool_available('git')"
+    effect: "git clone --depth ${depth} ${url} ${dest}"
+
+  - fallback: true
+    error: "Neither 'gh' nor 'git' available"
+```
+
+Alternatives are evaluated in order. The first matching condition executes. Use `fallback: true` for the final error case.
+
+### Script References (`script`)
+
+Reference repository scripts instead of embedding pseudocode:
+
+```yaml
+payload:
+  kind: tool_call
+  tool: Bash
+
+  requires:
+    tools:
+      - name: python3
+        min_version: "3.9"
+
+  script:
+    path: "lib/tools/scraper.py"
+    entrypoint: "main"  # Optional function name
+    args:
+      - "--url=${url}"
+      - "--output=${output_dir}"
+
+  effect: |
+    python3 lib/tools/scraper.py --url=${url} --output=${output_dir}
+```
+
+**Benefits:**
+- Scripts are version-controlled with the workflow
+- Full programming language power when needed
+- Pseudocode documents intent, script implements it
+
+### Capability Discovery
+
+The capability system validates tool availability at workflow load time.
+
+**Registry:** `lib/consequences/capabilities/registry.yaml`
+- Known tools with check commands and version patterns
+- Categories: core, vcs, languages, containers, cloud, etc.
+
+**Detector:** `lib/consequences/capabilities/detector.yaml`
+- Detection functions: `tool_available()`, `tool_version_gte()`, `network_available()`
+- Workflow integration patterns
+
+**Example detection functions:**
+```yaml
+# Check if tool exists
+tool_available('git')  # → true/false
+
+# Check minimum version
+tool_version_gte('python3', '3.9')  # → true/false
+
+# Check if authenticated
+tool_authenticated('gh')  # → true/false
+
+# Check network
+network_available()  # → true/false
+```
 
 ---
 

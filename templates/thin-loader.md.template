@@ -41,6 +41,7 @@ Execute this workflow deterministically. State persists in conversation context.
    workflow_version: "{{version}}"
    current_node: {{start_node}}
    previous_node: null
+   interface: null  # Detected in step 4: "claude_code" or "claude_ai"
    history: []
    user_responses: {}
    computed: {}
@@ -53,6 +54,8 @@ Execute this workflow deterministically. State persists in conversation context.
    {{name}}: {{default}}
    {{/custom_state_fields}}
    ```
+
+4. **Detect interface**: If `AskUserQuestion` tool available → `interface = "claude_code"`, else → `interface = "claude_ai"`
 
 ---
 
@@ -94,11 +97,12 @@ LOOP:
      - CONTINUE
 
      USER_PROMPT NODE:
-     - Build AskUserQuestion from node.prompt
-     - Present via AskUserQuestion tool
-     - Wait for user response
-     - Find matching handler in node.on_response
-     - Store response in state.user_responses[current_node]
+     - Execute per ${CLAUDE_PLUGIN_ROOT}/lib/workflow/execution.md (User Prompt Node)
+     - Uses state.interface (detected in Phase 1) to select presentation:
+       - claude_code: CALL AskUserQuestion tool with node.prompt parameters
+       - claude_ai: DISPLAY markdown table
+     - WAIT for response, match to handler in node.on_response
+     - STORE response in state.user_responses[current_node]
      - Apply handler.consequence if present
      - Set current_node = handler.next_node
      - CONTINUE
