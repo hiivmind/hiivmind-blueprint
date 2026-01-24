@@ -15,6 +15,13 @@ metadata:
   plugin_name: string | null  # Parent plugin name
   execution_path: string      # Skill/command path
 
+  # Session tracking (populated when SessionStart hook is installed)
+  session:
+    id: string | null              # Claude Code session UUID
+    transcript_path: string | null # Path to conversation .jsonl
+    invocation_index: number       # Which skill invocation in session (1-based)
+    snapshot_points: []            # Mid-session snapshot markers
+
 parameters:                   # Captured from initial_state.flags
   key: value                  # Runtime parameters
 
@@ -68,6 +75,55 @@ Static information about the workflow execution context.
 | `skill_name` | string? | Name of the skill that invoked workflow |
 | `plugin_name` | string? | Name of the plugin containing the skill |
 | `execution_path` | string | Full path to skill/command directory |
+| `session` | object? | Claude Code session context (see below) |
+
+### session
+
+Session tracking information. Populated automatically when the SessionStart hook is installed. Enables linking workflow logs to Claude Code conversation transcripts.
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `id` | string? | Claude Code session UUID |
+| `transcript_path` | string? | Path to conversation `.jsonl` file |
+| `invocation_index` | number | Which skill invocation in this session (1-based) |
+| `snapshot_points` | array | Mid-session snapshot markers (see `log_session_snapshot`) |
+
+**Snapshot point structure:**
+```yaml
+snapshot_points:
+  - timestamp: ISO8601       # When snapshot was taken
+    node: string             # Node that triggered snapshot
+    description: string      # What decision was made
+    log_path: string | null  # Path if intermediate log was written
+```
+
+**Session state file:** `.logs/.session-state.yaml`
+
+The `init_log` consequence maintains a session state file to track invocation order across multiple skill calls in a single Claude Code session:
+
+```yaml
+current_session:
+  id: "608e490e-d5b2-420f-89e0-e64d2e858764"
+  invocation_count: 3
+  invocations:
+    - index: 1
+      skill: "corpus-refresh"
+      log_path: ".logs/corpus-refresh-20240124-153000.yaml"
+      timestamp: "2024-01-24T15:30:00Z"
+    - index: 2
+      skill: "my-workflow"
+      log_path: ".logs/my-workflow-20240124-153500.yaml"
+      timestamp: "2024-01-24T15:35:00Z"
+    - index: 3
+      skill: "corpus-enhance"
+      log_path: ".logs/corpus-enhance-20240124-154000.yaml"
+      timestamp: "2024-01-24T15:40:00Z"
+```
+
+This enables:
+- "What skills ran in this session?" → Read session state
+- "Show all logs from session X" → Filter by `session.id`
+- "What was the sequence?" → Order by `invocation_index`
 
 ### parameters
 
@@ -388,5 +444,6 @@ Default log filename pattern with available variables:
 
 - **Consequences:** `lib/workflow/consequences/extensions/logging.md` - Logging consequences
 - **Configuration:** `lib/blueprint/patterns/logging-configuration.md` - Config hierarchy
+- **Session Tracking:** `lib/blueprint/patterns/session-tracking.md` - Hook setup and usage
 - **Preconditions:** `lib/workflow/preconditions.md` - log_initialized, log_level_enabled
 - **State:** `lib/workflow/state.md` - Runtime state structure

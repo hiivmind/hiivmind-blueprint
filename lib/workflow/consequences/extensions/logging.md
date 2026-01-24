@@ -8,17 +8,18 @@ Generic workflow execution logging for audit trails, debugging, and CI integrati
 
 | Consequence | Purpose |
 |-------------|---------|
-| `init_log` | Initialize log structure with workflow metadata |
+| `init_log` | Initialize log structure with workflow metadata and session context |
 | `log_node` | Record node execution in history |
 | `log_event` | Log structured domain-specific events |
 | `log_warning` | Add warning message to log |
 | `log_error` | Add error with context to log |
+| `log_session_snapshot` | Record mid-session checkpoint with optional intermediate log |
 | `finalize_log` | Complete log with timing and outcome |
 | `write_log` | Write log to file in specified format |
 | `apply_log_retention` | Clean up old log files per retention policy |
 | `output_ci_summary` | Format output for CI environments |
 
-**Total logging consequences:** 9
+**Total logging consequences:** 10
 
 ---
 
@@ -43,15 +44,56 @@ Initialize the log structure at workflow start. Should be called once at the beg
 | `plugin_name` | string | No | Name of parent plugin |
 | `execution_path` | string | No | Skill/command path (auto-detected) |
 
+**Session tracking:** When the SessionStart hook is installed, session context is automatically captured from environment variables:
+- `$BLUEPRINT_SESSION_ID` → `metadata.session.id`
+- `$BLUEPRINT_TRANSCRIPT_PATH` → `metadata.session.transcript_path`
+
 **Effect:**
 ```
+# Session state management
+session_state_path = ".logs/.session-state.yaml"
+session_state = read_yaml(session_state_path) ?? { current_session: null }
+
+current_id = env.BLUEPRINT_SESSION_ID
+if session_state.current_session?.id != current_id:
+  # New session - reset state
+  session_state.current_session = {
+    id: current_id,
+    invocation_count: 0,
+    invocations: []
+  }
+
+# Increment and record invocation
+session_state.current_session.invocation_count += 1
+invocation_index = session_state.current_session.invocation_count
+
+# Compute log path for recording
+computed_log_path = format_log_path(skill_name, now_iso8601())
+
+session_state.current_session.invocations.push({
+  index: invocation_index,
+  skill: skill_name,
+  log_path: computed_log_path,
+  timestamp: now_iso8601()
+})
+
+mkdir -p dirname(session_state_path)
+write_yaml(session_state_path, session_state)
+
+# Initialize log structure
 state.log = {
   metadata: {
     workflow_name: workflow_name,
     workflow_version: workflow_version ?? "1.0",
     skill_name: skill_name ?? null,
     plugin_name: plugin_name ?? null,
-    execution_path: execution_path ?? cwd
+    execution_path: execution_path ?? cwd,
+    session: {
+      id: env.BLUEPRINT_SESSION_ID ?? null,
+      transcript_path: env.BLUEPRINT_TRANSCRIPT_PATH ?? null,
+      invocation_index: invocation_index,
+      snapshot_points: []
+    }
   },
   parameters: extract_flags(initial_state.flags),
   execution: {
@@ -68,6 +110,7 @@ state.log = {
   summary: null
 }
 state.flags.log_initialized = true
+state.computed.expected_log_path = computed_log_path
 ```
 
 **Level gate:** Always executes (logging initialization is level-independent).
@@ -244,6 +287,95 @@ if logging.level >= "error":
 ```
 
 **Level gate:** Requires `error` level or higher.
+
+---
+
+## log_session_snapshot
+
+Record a snapshot at a critical decision point. Useful for long-running workflows where you want checkpoints at significant moments (user confirmations, destructive operations, major branches).
+
+```yaml
+- type: log_session_snapshot
+  description: "User confirmed destructive operation"
+  write_intermediate: true
+```
+
+**Parameters:**
+| Name | Type | Required | Description |
+|------|------|----------|-------------|
+| `description` | string | Yes | What decision or event occurred |
+| `write_intermediate` | boolean | No | Write log to file at this point (default: false) |
+| `node` | string | No | Node identifier (auto-detected from current_node) |
+
+**Effect:**
+```
+snapshot = {
+  timestamp: now_iso8601(),
+  node: node ?? current_node.id,
+  description: description,
+  log_path: null
+}
+
+if write_intermediate:
+  # Generate snapshot-specific log path
+  snapshot_count = len(state.log.metadata.session.snapshot_points) + 1
+  snapshot_path = format_snapshot_path(
+    state.log.metadata.skill_name,
+    now_iso8601(),
+    snapshot_count
+  )
+  # e.g., ".logs/my-skill-20240124-153000-snapshot-1.yaml"
+
+  # Write current log state
+  log_content = format_log(state.log, "yaml")
+  mkdir -p dirname(snapshot_path)
+  write_file(snapshot_path, log_content)
+
+  snapshot.log_path = snapshot_path
+
+state.log.metadata.session.snapshot_points.push(snapshot)
+```
+
+**Use cases:**
+
+1. **Confirmation checkpoints:**
+```yaml
+- id: confirm_delete
+  type: user-prompt
+  prompt: "Delete all matching files?"
+  consequences:
+    - type: log_session_snapshot
+      description: "User confirmed file deletion"
+      write_intermediate: true
+
+- id: perform_delete
+  type: action
+  # ... dangerous operation
+```
+
+2. **Branch decision logging:**
+```yaml
+- id: choose_strategy
+  type: conditional
+  condition: ...
+  then: fast_path
+  else: safe_path
+  consequences:
+    - type: log_session_snapshot
+      description: "Selected ${computed.chosen_path} strategy"
+```
+
+3. **Long-running operation checkpoints:**
+```yaml
+- id: phase_2_complete
+  type: action
+  consequences:
+    - type: log_session_snapshot
+      description: "Phase 2 complete: processed ${computed.count} files"
+      write_intermediate: true  # Save progress in case of later failure
+```
+
+**Level gate:** Always executes (snapshot recording is level-independent).
 
 ---
 
