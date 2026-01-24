@@ -138,6 +138,59 @@ initial_state:
   computed: {}
 ```
 
+### Step 2.4: Configure Logging
+
+Based on `analysis.conversion_recommendations.logging_recommendation`:
+
+**If "enable":**
+Auto-add default logging configuration to initial_state:
+
+```yaml
+initial_state:
+  logging:
+    enabled: true
+    level: "info"
+    auto:
+      init: true
+      node_tracking: true
+      finalize: true
+      write: true
+    output:
+      format: "yaml"
+      location: ".logs/"
+    retention:
+      strategy: "count"
+      count: 10
+```
+
+**If "optional":**
+**Ask user:**
+```json
+{
+  "questions": [{
+    "question": "Would you like to enable workflow logging?",
+    "header": "Logging",
+    "multiSelect": false,
+    "options": [
+      {"label": "Yes (Recommended)", "description": "Enable auto-logging with default settings"},
+      {"label": "Manual", "description": "I'll configure logging myself"},
+      {"label": "No", "description": "Skip logging for this workflow"}
+    ]
+  }]
+}
+```
+
+Based on response:
+- **Yes**: Add default logging config as above
+- **Manual**: Add minimal `logging.enabled: false` placeholder
+- **No**: Omit logging section entirely
+
+**If "skip":**
+No logging configuration added.
+
+**When logging.auto.node_tracking is enabled:**
+The framework will automatically inject `log_node` consequences after each node execution. No explicit logging consequences needed in the workflow.
+
 ---
 
 ## Phase 3: Map Nodes

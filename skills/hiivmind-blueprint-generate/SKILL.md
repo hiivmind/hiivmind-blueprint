@@ -140,6 +140,14 @@ required_libs = [
   "lib/workflow/state.md"
 ]
 
+# Additional libs if logging is enabled
+if computed.workflow.initial_state.logging?.enabled:
+  required_libs.extend([
+    "lib/workflow/consequences/core/logging.md",
+    "lib/workflow/logging-schema.md",
+    "lib/blueprint/patterns/logging-configuration.md"
+  ])
+
 missing_libs = []
 for lib in required_libs:
   if not file_exists("{plugin_root}/{lib}"):

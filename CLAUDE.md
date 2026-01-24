@@ -33,11 +33,12 @@ The core value: Transform imperative prose instructions into declarative YAML wo
 │   │   ├── execution.md              # Workflow execution semantics
 │   │   ├── preconditions.md          # 30+ precondition types
 │   │   ├── consequences/             # Modular consequence structure
-│   │   │   ├── README.md             # Taxonomy and overview (30 types)
-│   │   │   ├── core/                 # 20 core workflow consequences
+│   │   │   ├── README.md             # Taxonomy and overview (40 types)
+│   │   │   ├── core/                 # 30 core workflow consequences
 │   │   │   │   ├── shared.md         # Common patterns
-│   │   │   │   ├── workflow.md       # State, evaluation, control flow
-│   │   │   │   └── intent-detection.md # 3VL routing
+│   │   │   │   ├── workflow.md       # State, evaluation, control flow (16)
+│   │   │   │   ├── intent-detection.md # 3VL routing (4)
+│   │   │   │   └── logging.md        # Workflow execution logging (10)
 │   │   │   └── extensions/           # 10 generic domain extensions
 │   │   │       ├── README.md         # Extension meta-pattern
 │   │   │       ├── file-system.md    # File operations (4)
@@ -272,12 +273,13 @@ These features span multiple skills and must stay synchronized:
 | Workflow schema version | all skills | Schema compatibility |
 | Node type catalog | analyze, convert, validate, templates | All node types documented |
 | Precondition types | convert, generate, validate | Match lib/workflow/preconditions.md |
-| Consequence types | convert, generate, validate | Match lib/workflow/consequences/ (30 types) |
+| Consequence types | convert, generate, validate | Match lib/workflow/consequences/ (40 types) |
 | 3VL intent rules | gateway, discover, validate | Rule syntax consistency |
 | Complexity classification | analyze, discover | Thresholds aligned |
 | Validation queries | validate | Match schema.md, preconditions.md, consequences.md |
 | Report format | validate | Consistent status icons and structure |
 | JSON Schema definitions | validate, upgrade | Match YAML schema docs, all types included |
+| Logging configuration | analyze, convert, generate, validate | Config/usage alignment |
 
 ## Self-Dogfooding
 

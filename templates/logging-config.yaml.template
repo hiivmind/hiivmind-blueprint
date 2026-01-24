@@ -1,0 +1,58 @@
+# Logging Configuration Template
+#
+# Add this section to your workflow's initial_state to enable logging.
+# See: lib/workflow/consequences/core/logging.md
+# See: lib/blueprint/patterns/logging-configuration.md
+
+logging:
+  # ─────────────────────────────────────────────────
+  # Master Controls
+  # ─────────────────────────────────────────────────
+  enabled: true              # false to disable all logging
+  level: "info"              # trace | debug | info | warn | error
+
+  # ─────────────────────────────────────────────────
+  # Automatic Behavior
+  # ─────────────────────────────────────────────────
+  # When enabled, the framework injects logging consequences automatically:
+  # - auto.init: Calls init_log before first node
+  # - auto.node_tracking: Calls log_node after each node
+  # - auto.finalize: Calls finalize_log at endings
+  # - auto.write: Calls write_log after finalize
+  auto:
+    init: true               # Auto init_log at workflow start
+    finalize: true           # Auto finalize_log at endings
+    write: true              # Auto write_log after finalize
+    node_tracking: true      # Auto log_node for each node
+
+  # ─────────────────────────────────────────────────
+  # Capture Settings (level-aware)
+  # ─────────────────────────────────────────────────
+  capture:
+    nodes: true              # Record node_history (info+)
+    state_changes: false     # Log state mutations (trace only)
+    user_responses: true     # Log user prompt selections (debug+)
+    timing: true             # Record timestamps (always)
+
+  # ─────────────────────────────────────────────────
+  # Output Configuration
+  # ─────────────────────────────────────────────────
+  output:
+    format: "yaml"           # yaml | json | markdown
+    location: ".logs/"       # Relative to skill/plugin root
+    filename: "{skill_name}-{timestamp}.{ext}"
+
+  # ─────────────────────────────────────────────────
+  # Retention Policy
+  # ─────────────────────────────────────────────────
+  retention:
+    strategy: "count"        # none | days | count
+    days: 30                 # If strategy=days
+    count: 10                # If strategy=count
+
+  # ─────────────────────────────────────────────────
+  # CI/CD Integration (optional)
+  # ─────────────────────────────────────────────────
+  ci:
+    format: "none"           # none | github | plain | json
+    annotations: true        # GitHub annotations for errors/warnings

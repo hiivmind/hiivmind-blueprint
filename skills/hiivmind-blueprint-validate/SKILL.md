@@ -300,13 +300,20 @@ all_of, any_of, none_of, evaluate_expression
 
 **Known Consequence Types:**
 ```
+# Core: workflow.md
 set_flag, set_state, append_state, clear_state, merge_state,
-evaluate, compute, read_config, read_file, write_file, create_directory, delete_file,
-write_config_entry, add_source, update_source, clone_repo, get_sha, git_pull, git_fetch,
-web_fetch, cache_web_content, display_message, display_table,
+evaluate, compute, display_message, display_table,
 invoke_pattern, create_checkpoint, rollback_checkpoint, spawn_agent,
-set_timestamp, compute_hash, invoke_skill, evaluate_keywords,
-parse_intent_flags, match_3vl_rules, dynamic_route, discover_installed_corpora
+set_timestamp, compute_hash, invoke_skill,
+# Core: intent-detection.md
+evaluate_keywords, parse_intent_flags, match_3vl_rules, dynamic_route,
+# Core: logging.md
+init_log, log_node, log_event, log_warning, log_error,
+log_session_snapshot, finalize_log, write_log, apply_log_retention, output_ci_summary,
+# Extensions
+read_config, read_file, write_file, create_directory, delete_file,
+write_config_entry, add_source, update_source, clone_repo, get_sha, git_pull, git_fetch,
+web_fetch, cache_web_content, discover_installed_corpora
 ```
 
 ### 3.5: State/Variable Validation
@@ -347,6 +354,72 @@ Only run if `intent-mapping.yaml` exists alongside workflow.yaml.
 | 42 | All rules reference valid flags | Rule conditions use defined flags | Error |
 | 43 | All rule actions map to nodes | Action targets exist in workflow | Error |
 | 44 | 3VL values valid | Only T, F, U in conditions | Error |
+
+### 3.9: Logging Validation
+
+Validate logging configuration and usage consistency. See `lib/workflow/validation-queries.md` for yq patterns.
+
+| # | Check | Description | Severity |
+|---|-------|-------------|----------|
+| 45 | Config enabled but no init_log | logging.enabled=true but no init_log consequence | Warning |
+| 46 | init_log without finalize_log | Incomplete logging lifecycle | Error |
+| 47 | write_log without finalize_log | Writing unfinalized log | Error |
+| 48 | Level mismatch | Config level doesn't permit used consequences | Warning |
+| 49 | Retention without write_log | apply_log_retention but no write_log | Warning |
+| 50 | Deprecated extensions/logging.md | Reference to old path | Warning |
+
+**Check 45: Config Enabled Without init_log**
+
+```bash
+yq '
+  (.initial_state.logging.enabled == true) and
+  ([.nodes | to_entries | .[] | .value.actions[]? | select(.type == "init_log")] | length == 0)
+' workflow.yaml
+```
+
+**Check 46: init_log Without finalize_log**
+
+```bash
+yq '
+  ([.nodes | to_entries | .[] | .value.actions[]? | select(.type == "init_log")] | length > 0) and
+  ([.nodes | to_entries | .[] | .value.actions[]? | select(.type == "finalize_log")] | length == 0)
+' workflow.yaml
+```
+
+**Check 47: write_log Without finalize_log**
+
+```bash
+yq '
+  ([.nodes | to_entries | .[] | .value.actions[]? | select(.type == "write_log")] | length > 0) and
+  ([.nodes | to_entries | .[] | .value.actions[]? | select(.type == "finalize_log")] | length == 0)
+' workflow.yaml
+```
+
+**Check 48: Level Mismatch**
+
+```bash
+# Check if log_event used with error/warn level config
+yq '
+  (.initial_state.logging.level == "error" or .initial_state.logging.level == "warn") and
+  ([.nodes | to_entries | .[] | .value.actions[]? | select(.type == "log_event")] | length > 0)
+' workflow.yaml
+```
+
+**Check 49: Retention Without write_log**
+
+```bash
+yq '
+  ([.nodes | to_entries | .[] | .value.actions[]? | select(.type == "apply_log_retention")] | length > 0) and
+  ([.nodes | to_entries | .[] | .value.actions[]? | select(.type == "write_log")] | length == 0)
+' workflow.yaml
+```
+
+**Check 50: Deprecated Path Reference**
+
+```bash
+# Check SKILL.md or workflow.yaml for old path
+grep -l "extensions/logging.md" *.md *.yaml 2>/dev/null
+```
 
 ---
 

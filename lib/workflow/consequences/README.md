@@ -7,10 +7,11 @@ Consequences are operations that mutate state or perform actions during workflow
 ```
 consequences/
 ├── README.md              # This file - taxonomy and overview
-├── core/                  # Intrinsic workflow engine (3 files)
+├── core/                  # Intrinsic workflow engine (4 files)
 │   ├── workflow.md        # State, evaluation, user interaction, control flow, skill, utility
 │   ├── shared.md          # Common patterns: interpolation, parameters, failure handling
-│   └── intent-detection.md # 3VL routing system
+│   ├── intent-detection.md # 3VL routing system
+│   └── logging.md         # Workflow execution logging
 └── extensions/            # Generic domain extensions (3 files)
     ├── README.md          # Extension overview
     ├── file-system.md     # File operations
@@ -29,7 +30,7 @@ consequences/
 
 ## Quick Reference
 
-### Core Consequences (20 types)
+### Core Consequences (30 types)
 
 | Consequence Type | File | Description |
 |------------------|------|-------------|
@@ -53,6 +54,16 @@ consequences/
 | `parse_intent_flags` | [core/intent-detection.md](core/intent-detection.md) | Parse 3VL flags |
 | `match_3vl_rules` | [core/intent-detection.md](core/intent-detection.md) | Match flags to rules |
 | `dynamic_route` | [core/intent-detection.md](core/intent-detection.md) | Dynamic node routing |
+| `init_log` | [core/logging.md](core/logging.md) | Initialize log structure |
+| `log_node` | [core/logging.md](core/logging.md) | Record node execution |
+| `log_event` | [core/logging.md](core/logging.md) | Log domain-specific event |
+| `log_warning` | [core/logging.md](core/logging.md) | Add warning to log |
+| `log_error` | [core/logging.md](core/logging.md) | Add error with context |
+| `log_session_snapshot` | [core/logging.md](core/logging.md) | Record mid-session checkpoint |
+| `finalize_log` | [core/logging.md](core/logging.md) | Complete log with timing |
+| `write_log` | [core/logging.md](core/logging.md) | Write log to file |
+| `apply_log_retention` | [core/logging.md](core/logging.md) | Clean up old log files |
+| `output_ci_summary` | [core/logging.md](core/logging.md) | Format output for CI
 
 ### Extension Consequences (10 types)
 
@@ -79,6 +90,7 @@ consequences/
 |------|----------|-------------------|
 | [core/workflow.md](core/workflow.md) | Fundamental Operations | 16 |
 | [core/intent-detection.md](core/intent-detection.md) | 3VL Intent Detection | 4 |
+| [core/logging.md](core/logging.md) | Workflow Logging | 10 |
 | [core/shared.md](core/shared.md) | Common Patterns | - |
 
 ### Extensions

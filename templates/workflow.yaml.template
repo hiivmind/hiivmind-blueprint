@@ -45,6 +45,27 @@ initial_state:
     # {{/flags}}
     initialized: false
   computed: {}
+  # --------------------------------------------------------------------------
+  # Logging Configuration (optional)
+  # --------------------------------------------------------------------------
+  # Uncomment to enable workflow execution logging.
+  # See: lib/workflow/consequences/core/logging.md
+  # {{#if_logging}}
+  logging:
+    enabled: true
+    level: "info"                # trace | debug | info | warn | error
+    auto:
+      init: true                 # Auto init_log at workflow start
+      node_tracking: true        # Auto log_node for each node
+      finalize: true             # Auto finalize_log at endings
+      write: true                # Auto write_log after finalize
+    output:
+      format: "yaml"             # yaml | json | markdown
+      location: ".logs/"         # Relative to skill/plugin root
+    retention:
+      strategy: "count"          # none | days | count
+      count: 10                  # Max files to keep
+  # {{/if_logging}}
 
 # ============================================================================
 # START NODE

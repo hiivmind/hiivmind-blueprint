@@ -333,17 +333,27 @@ KNOWN_PRECONDITIONS=(
 ```bash
 # Define as shell array
 KNOWN_CONSEQUENCES=(
+  # Core: workflow.md
   "set_flag" "set_state" "append_state" "clear_state" "merge_state"
   "evaluate" "compute"
-  "read_config" "read_file" "write_file" "create_directory" "delete_file"
-  "write_config_entry" "add_source" "update_source"
-  "clone_repo" "get_sha" "git_pull" "git_fetch"
-  "web_fetch" "cache_web_content"
   "display_message" "display_table"
   "invoke_pattern" "create_checkpoint" "rollback_checkpoint" "spawn_agent"
   "set_timestamp" "compute_hash" "invoke_skill"
+  # Core: intent-detection.md
   "evaluate_keywords" "parse_intent_flags" "match_3vl_rules" "dynamic_route"
-  "discover_installed_corpora"
+  # Core: logging.md
+  "init_log" "log_node" "log_event" "log_warning" "log_error"
+  "log_session_snapshot" "finalize_log" "write_log"
+  "apply_log_retention" "output_ci_summary"
+  # Extensions: file-system.md
+  "read_config" "read_file" "write_file" "create_directory" "delete_file"
+  "write_config_entry"
+  # Extensions: git.md
+  "clone_repo" "get_sha" "git_pull" "git_fetch"
+  # Extensions: web.md
+  "web_fetch" "cache_web_content"
+  # Domain-specific
+  "add_source" "update_source" "discover_installed_corpora"
 )
 ```
 
@@ -477,6 +487,101 @@ yq '[.intent_rules[].action] | unique | .[]' intent-mapping.yaml
 # Compare against nodes in workflow (run separately)
 yq '(.nodes | keys) + (.endings | keys) | .[]' workflow.yaml
 ```
+
+---
+
+## Logging Validation Queries
+
+Queries for validating logging configuration and usage consistency.
+
+### L1: Check init_log Exists When Config Present
+
+```bash
+# Check if logging config enabled but no init_log consequence
+yq '
+  (.initial_state.logging.enabled == true) and
+  ([.nodes | to_entries | .[] | .value.actions[]? | select(.type == "init_log")] | length == 0)
+' workflow.yaml
+```
+
+### L2: Check finalize_log Exists When init_log Used
+
+```bash
+# Find workflows with init_log but no finalize_log
+yq '
+  ([.nodes | to_entries | .[] | .value.actions[]? | select(.type == "init_log")] | length > 0) and
+  ([.nodes | to_entries | .[] | .value.actions[]? | select(.type == "finalize_log")] | length == 0)
+' workflow.yaml
+```
+
+### L3: Check Order - init Before finalize
+
+```bash
+# Get node order and verify init_log appears before finalize_log
+# (Basic check - assumes node execution follows graph from start_node)
+yq '
+  .nodes | to_entries |
+  map(select(.value.actions[]?.type == "init_log" or .value.actions[]?.type == "finalize_log")) |
+  .[0].value.actions[]?.type == "init_log"
+' workflow.yaml
+```
+
+### L4: Check write_log Has finalize_log
+
+```bash
+# Find write_log without finalize_log
+yq '
+  ([.nodes | to_entries | .[] | .value.actions[]? | select(.type == "write_log")] | length > 0) and
+  ([.nodes | to_entries | .[] | .value.actions[]? | select(.type == "finalize_log")] | length == 0)
+' workflow.yaml
+```
+
+### L5: Check Level Consistency
+
+```bash
+# Find workflows where config.level is error/warn but uses log_event (requires info level)
+yq '
+  (.initial_state.logging.level == "error" or .initial_state.logging.level == "warn") and
+  ([.nodes | to_entries | .[] | .value.actions[]? | select(.type == "log_event")] | length > 0)
+' workflow.yaml
+
+# Find workflows where config.level is error but uses log_warning (requires warn level)
+yq '
+  (.initial_state.logging.level == "error") and
+  ([.nodes | to_entries | .[] | .value.actions[]? | select(.type == "log_warning")] | length > 0)
+' workflow.yaml
+```
+
+### L6: Check Retention Has write_log
+
+```bash
+# Find apply_log_retention without write_log
+yq '
+  ([.nodes | to_entries | .[] | .value.actions[]? | select(.type == "apply_log_retention")] | length > 0) and
+  ([.nodes | to_entries | .[] | .value.actions[]? | select(.type == "write_log")] | length == 0)
+' workflow.yaml
+```
+
+### L7: List All Logging Consequences
+
+```bash
+# Audit all logging consequences in workflow
+yq '[.nodes | to_entries | .[] |
+  {node: .key, logging: [.value.actions[]? | select(.type | test("^(init_log|log_node|log_event|log_warning|log_error|log_session_snapshot|finalize_log|write_log|apply_log_retention|output_ci_summary)$"))]}
+] | map(select(.logging | length > 0))' workflow.yaml
+```
+
+### Logging Validation Summary
+
+| # | Query | Purpose | Severity |
+|---|-------|---------|----------|
+| L1 | Config without init_log | Enabled logging but no initialization | Warning |
+| L2 | init_log without finalize_log | Incomplete logging lifecycle | Error |
+| L3 | Order check | init_log should precede finalize_log | Error |
+| L4 | write_log without finalize | Writing unfinalized log | Error |
+| L5 | Level mismatch | Config level doesn't permit used consequences | Warning |
+| L6 | Retention without write | Can't clean logs that weren't written | Warning |
+| L7 | List all logging | Audit helper | Info |
 
 ---
 

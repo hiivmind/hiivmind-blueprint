@@ -414,10 +414,61 @@ Read back and verify:
          suggestion: "..."
    ```
 
+3. **Logging moved to core**
+   ```yaml
+   # OLD reference path
+   lib/workflow/consequences/extensions/logging.md
+
+   # NEW reference path
+   lib/workflow/consequences/core/logging.md
+   ```
+
 **New features:**
 - `recovery` field on error endings
 - `store_as` now supports nested paths
 - Variable interpolation in node descriptions
+- Logging as core consequence with validation
+
+### Logging Migration
+
+Detect and migrate logging-related changes:
+
+**Step 1: Update path references**
+```bash
+# Find files referencing old path
+grep -rl "extensions/logging.md" .
+
+# Update to new path
+sed -i 's|extensions/logging\.md|core/logging.md|g' {file}
+```
+
+**Step 2: Add logging config if consequences exist**
+
+If workflow uses logging consequences but has no config:
+
+```yaml
+# Detect: has logging consequences but no config
+has_logging = any(node.actions[].type in logging_consequence_types)
+has_config = initial_state.logging exists
+
+if has_logging and not has_config:
+  # Add default config
+  initial_state:
+    logging:
+      enabled: true
+      level: "info"
+      auto:
+        init: false      # Skill manages explicitly
+        node_tracking: false
+        finalize: false
+        write: false
+```
+
+**Step 3: Version bump**
+```yaml
+# Update schema version for logging changes
+version: "2.0.0"  # Reflects logging core promotion
+```
 
 ---
 

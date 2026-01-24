@@ -442,7 +442,7 @@ Default log filename pattern with available variables:
 
 ## Related Documentation
 
-- **Consequences:** `lib/workflow/consequences/extensions/logging.md` - Logging consequences
+- **Consequences:** `lib/workflow/consequences/core/logging.md` - Logging consequences
 - **Configuration:** `lib/blueprint/patterns/logging-configuration.md` - Config hierarchy
 - **Session Tracking:** `lib/blueprint/patterns/session-tracking.md` - Hook setup and usage
 - **Preconditions:** `lib/workflow/preconditions.md` - log_initialized, log_level_enabled

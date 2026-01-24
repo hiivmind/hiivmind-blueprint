@@ -186,6 +186,55 @@ state_variables:
 
 ---
 
+## Phase 2.5: Detect Logging Patterns
+
+### Step 2.5.1: Scan for Logging Intent
+
+Look for prose patterns indicating logging requirements:
+
+**High-confidence indicators:**
+- "log execution", "log the", "record execution"
+- "audit trail", "audit log", "execution history"
+- "CI summary", "GitHub Actions", "CI output"
+- "retain logs", "log retention", "keep logs"
+
+**Medium-confidence indicators:**
+- "track progress", "track execution"
+- "debugging", "troubleshooting"
+- "execution report", "summary report"
+
+For each logging indicator found:
+```yaml
+logging_patterns:
+  intent_present: true/false
+  indicators:
+    - pattern: "audit trail"
+      location: "line 45"
+      confidence: high
+    - pattern: "CI summary"
+      location: "line 82"
+      confidence: high
+```
+
+### Step 2.5.2: Generate Logging Recommendation
+
+Based on detected patterns:
+
+| Indicators Found | Recommendation |
+|------------------|----------------|
+| 2+ high-confidence | `enable` - Auto-add logging config |
+| 1 high or 2+ medium | `optional` - Ask user |
+| None or low only | `skip` - No logging needed |
+
+Store recommendation:
+```yaml
+conversion_recommendations:
+  logging_recommendation: "enable"|"optional"|"skip"
+  logging_indicators_count: N
+```
+
+---
+
 ## Phase 3: Complexity Assessment
 
 ### Step 3.1: Calculate Metrics
@@ -291,9 +340,17 @@ analysis:
       question: "Proceed with processing?"
       line: 25
 
+  logging_patterns:
+    intent_present: true
+    indicators:
+      - pattern: "audit trail"
+        location: "line 45"
+        confidence: "high"
+
   conversion_recommendations:
     approach: "standard_workflow"
     estimated_nodes: 8
+    logging_recommendation: "enable"
     notes:
       - "Two phases map cleanly to workflow phases"
       - "Single conditional can be a conditional node"

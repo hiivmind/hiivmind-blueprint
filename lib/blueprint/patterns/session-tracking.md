@@ -408,5 +408,5 @@ cat .logs/.session-state.yaml
 
 - **Hook Template:** `templates/hooks/session-capture.sh`
 - **Logging Schema:** `lib/workflow/logging-schema.md`
-- **Logging Consequences:** `lib/workflow/consequences/extensions/logging.md`
+- **Logging Consequences:** `lib/workflow/consequences/core/logging.md`
 - **Logging Configuration:** `lib/blueprint/patterns/logging-configuration.md`

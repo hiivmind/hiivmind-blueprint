@@ -682,5 +682,5 @@ state.flags.log_finalized == true
 - **Consequences:** `lib/workflow/consequences.md` - State mutations
 - **Execution:** `lib/workflow/execution.md` - Turn loop
 - **State:** `lib/workflow/state.md` - Runtime state structure
-- **Logging:** `lib/workflow/consequences/extensions/logging.md` - Logging consequences
+- **Logging:** `lib/workflow/consequences/core/logging.md` - Logging consequences
 - **Log Schema:** `lib/workflow/logging-schema.md` - Log structure definition

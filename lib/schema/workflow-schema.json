@@ -636,7 +636,17 @@
         { "$ref": "#/$defs/consequence_git_pull" },
         { "$ref": "#/$defs/consequence_git_fetch" },
         { "$ref": "#/$defs/consequence_web_fetch" },
-        { "$ref": "#/$defs/consequence_cache_web_content" }
+        { "$ref": "#/$defs/consequence_cache_web_content" },
+        { "$ref": "#/$defs/consequence_init_log" },
+        { "$ref": "#/$defs/consequence_log_node" },
+        { "$ref": "#/$defs/consequence_log_event" },
+        { "$ref": "#/$defs/consequence_log_warning" },
+        { "$ref": "#/$defs/consequence_log_error" },
+        { "$ref": "#/$defs/consequence_log_session_snapshot" },
+        { "$ref": "#/$defs/consequence_finalize_log" },
+        { "$ref": "#/$defs/consequence_write_log" },
+        { "$ref": "#/$defs/consequence_apply_log_retention" },
+        { "$ref": "#/$defs/consequence_output_ci_summary" }
       ]
     },
     "consequence_set_flag": {
@@ -938,6 +948,123 @@
         "from": { "type": "string", "description": "[EXT:web] State field with fetch result" },
         "dest": { "type": "string", "description": "[EXT:web] Destination file path" },
         "store_path_as": { "type": "string", "description": "[EXT:web] State field to store path" }
+      },
+      "additionalProperties": false
+    },
+    "consequence_init_log": {
+      "type": "object",
+      "required": ["type", "workflow_name"],
+      "properties": {
+        "type": { "const": "init_log" },
+        "workflow_name": { "type": "string", "description": "[CORE] Workflow identifier" },
+        "workflow_version": { "type": "string", "description": "[CORE] Workflow version (default: 1.0)" },
+        "skill_name": { "type": "string", "description": "[CORE] Name of invoking skill" },
+        "plugin_name": { "type": "string", "description": "[CORE] Name of parent plugin" },
+        "execution_path": { "type": "string", "description": "[CORE] Skill/command path" }
+      },
+      "additionalProperties": false
+    },
+    "consequence_log_node": {
+      "type": "object",
+      "required": ["type", "node", "outcome"],
+      "properties": {
+        "type": { "const": "log_node" },
+        "node": { "type": "string", "description": "[CORE] Node identifier" },
+        "outcome": { "type": "string", "enum": ["success", "skipped", "error", "blocked"], "description": "[CORE] Execution result" },
+        "details": { "type": "object", "description": "[CORE] Arbitrary context" }
+      },
+      "additionalProperties": false
+    },
+    "consequence_log_event": {
+      "type": "object",
+      "required": ["type", "event_type"],
+      "properties": {
+        "type": { "const": "log_event" },
+        "event_type": { "type": "string", "description": "[CORE] Domain-specific event identifier" },
+        "data": { "type": "object", "description": "[CORE] Event payload" },
+        "level": { "type": "string", "enum": ["error", "warn", "info", "debug", "trace"], "description": "[CORE] Minimum level to record" }
+      },
+      "additionalProperties": false
+    },
+    "consequence_log_warning": {
+      "type": "object",
+      "required": ["type", "message"],
+      "properties": {
+        "type": { "const": "log_warning" },
+        "message": { "type": "string", "description": "[CORE] Warning message" },
+        "context": { "type": "object", "description": "[CORE] Additional context" },
+        "node": { "type": "string", "description": "[CORE] Node that generated warning" }
+      },
+      "additionalProperties": false
+    },
+    "consequence_log_error": {
+      "type": "object",
+      "required": ["type", "message"],
+      "properties": {
+        "type": { "const": "log_error" },
+        "message": { "type": "string", "description": "[CORE] Error message" },
+        "error_type": { "type": "string", "description": "[CORE] Error classification" },
+        "context": { "type": "object", "description": "[CORE] Error details" },
+        "node": { "type": "string", "description": "[CORE] Node that generated error" },
+        "recoverable": { "type": "boolean", "description": "[CORE] Whether workflow continued" }
+      },
+      "additionalProperties": false
+    },
+    "consequence_log_session_snapshot": {
+      "type": "object",
+      "required": ["type", "description"],
+      "properties": {
+        "type": { "const": "log_session_snapshot" },
+        "description": { "type": "string", "description": "[CORE] What decision or event occurred" },
+        "write_intermediate": { "type": "boolean", "description": "[CORE] Write log to file at this point" },
+        "node": { "type": "string", "description": "[CORE] Node identifier" }
+      },
+      "additionalProperties": false
+    },
+    "consequence_finalize_log": {
+      "type": "object",
+      "required": ["type", "outcome"],
+      "properties": {
+        "type": { "const": "finalize_log" },
+        "outcome": { "type": "string", "enum": ["success", "partial", "error", "cancelled"], "description": "[CORE] Final result" },
+        "ending_node": { "type": "string", "description": "[CORE] Last executed node" },
+        "summary": { "type": "string", "description": "[CORE] Human-readable summary" }
+      },
+      "additionalProperties": false
+    },
+    "consequence_write_log": {
+      "type": "object",
+      "required": ["type"],
+      "properties": {
+        "type": { "const": "write_log" },
+        "format": { "type": "string", "enum": ["yaml", "json", "markdown"], "description": "[CORE] Output format" },
+        "path": { "type": "string", "description": "[CORE] Output path" },
+        "include_node_history": { "type": "boolean", "description": "[CORE] Include node_history array" },
+        "include_events": { "type": "boolean", "description": "[CORE] Include events array" }
+      },
+      "additionalProperties": false
+    },
+    "consequence_apply_log_retention": {
+      "type": "object",
+      "required": ["type", "path", "strategy"],
+      "properties": {
+        "type": { "const": "apply_log_retention" },
+        "path": { "type": "string", "description": "[CORE] Directory containing logs" },
+        "strategy": { "type": "string", "enum": ["none", "days", "count"], "description": "[CORE] Retention strategy" },
+        "days": { "type": "number", "description": "[CORE] Max age in days" },
+        "count": { "type": "number", "description": "[CORE] Max files to keep" },
+        "pattern": { "type": "string", "description": "[CORE] Glob pattern for log files" }
+      },
+      "additionalProperties": false
+    },
+    "consequence_output_ci_summary": {
+      "type": "object",
+      "required": ["type"],
+      "properties": {
+        "type": { "const": "output_ci_summary" },
+        "format": { "type": "string", "enum": ["github", "plain", "json", "none"], "description": "[CORE] CI format" },
+        "annotations": { "type": "boolean", "description": "[CORE] Emit annotations for errors/warnings" },
+        "output_file": { "type": "string", "description": "[CORE] Override GITHUB_STEP_SUMMARY path" }
       },
       "additionalProperties": false
     }
