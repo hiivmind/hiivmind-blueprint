@@ -80,9 +80,30 @@ state:
   computed: {}
   flags: ${copy of workflow.initial_state.flags}
   checkpoints: {}
+  interface: "${detect_interface()}"
 ```
 
 Copy all fields from `workflow.initial_state` into state.
+
+### Step 1.4: Detect Interface
+
+```
+FUNCTION detect_interface():
+    # Interface detection at workflow start
+    # Claude Code: AskUserQuestion tool is available
+    # Claude.ai: No tool access, conversational mode
+    IF tool_available("AskUserQuestion"):
+        RETURN "claude_code"
+    ELSE:
+        RETURN "claude_ai"
+```
+
+**Interface capabilities:**
+
+| Interface | Structured Prompts | Freetext Input |
+|-----------|-------------------|----------------|
+| Claude Code | AskUserQuestion tool (built-in "Other" option) | Yes |
+| Claude.ai | Markdown table rendering | Yes (chat field always available) |
 
 ---
 
@@ -159,29 +180,19 @@ FUNCTION execute_conditional_node(node):
 
 ```
 FUNCTION execute_user_prompt_node(node):
-    # Build AskUserQuestion
-    question = {
-        questions: [{
-            question: interpolate(node.prompt.question),
-            header: node.prompt.header,
-            multiSelect: false,
-            options: node.prompt.options.map(opt => ({
-                label: opt.label,
-                description: opt.description
-            }))
-        }]
-    }
+    # Render prompt for current interface (from state)
+    rendered = render_prompt_for_interface(node, state.interface)
 
-    # Present to user
-    response = AskUserQuestion(question)
+    # Present to user and get response
+    response = present_prompt(rendered)
 
-    # Find matching handler
-    response_id = find_response_id(response, node.prompt.options)
-    handler = node.on_response[response_id]
+    # LLM interprets response and matches to handler
+    # (semantic matching - trusts LLM understanding)
+    handler = match_response_to_handler(response, node.on_response)
 
     # Store response
     state.user_responses[state.current_node] = {
-        id: response_id,
+        handler_id: handler.id,
         raw: response
     }
 
@@ -193,10 +204,66 @@ FUNCTION execute_user_prompt_node(node):
     RETURN { next_node: handler.next_node }
 ```
 
+#### Interface-Aware Rendering
+
+```
+FUNCTION render_prompt_for_interface(node, interface):
+    IF interface == "claude_code":
+        RETURN build_ask_user_question(node)
+
+    ELIF interface == "claude_ai":
+        # Render as markdown table
+        md = "**{node.prompt.header}**\n\n"
+        md += "{interpolate(node.prompt.question)}\n\n"
+        md += "| # | Option | Description |\n"
+        md += "|---|--------|-------------|\n"
+        FOR i, opt IN enumerate(node.prompt.options):
+            md += "| {i+1} | {opt.label} | {opt.description} |\n"
+
+        # Always show guidance text (chat field is always available)
+        md += "\n*Reply with a number to select, or describe what you want in your own words.*"
+
+        RETURN md
+
+
+FUNCTION build_ask_user_question(node):
+    # Build Claude Code AskUserQuestion tool call
+    RETURN {
+        questions: [{
+            question: interpolate(node.prompt.question),
+            header: node.prompt.header,
+            multiSelect: false,
+            options: node.prompt.options.map(opt => ({
+                label: opt.label,
+                description: opt.description
+            }))
+        }]
+    }
+```
+
+#### Response Interpretation
+
+The LLM interprets the user's response semantically and matches it to the appropriate handler in `on_response`. No explicit parsing logic is needed - we trust the LLM to understand:
+
+- **Numeric selections**: "2" → second option
+- **Label matches**: "Casual" → casual handler
+- **Semantic intent**: "Something more relaxed" → casual handler
+- **Custom responses**: LLM uses best judgment to match or handle appropriately
+
+```
+FUNCTION match_response_to_handler(response, handlers):
+    # LLM semantic matching (no explicit parsing)
+    # The LLM understands user intent and maps to handler
+    matched_id = llm_interpret_response(response, handlers)
+    RETURN handlers[matched_id]
+```
+
 **Key points:**
 - Blocks for user input
 - Response stored in `state.user_responses`
 - Consequences optional
+- Interface-aware: Claude Code uses AskUserQuestion, Claude.ai uses markdown table
+- Freetext always available on both interfaces
 
 ### Validation Gate Node
 
@@ -420,7 +487,9 @@ Execute this workflow inline. State persists in conversation context.
    user_responses: {}
    computed: {}
    flags: {copy from workflow.initial_state.flags}
+   interface: {detect_interface()}  # "claude_code" or "claude_ai"
    ```
+4. **Detect interface**: If `AskUserQuestion` tool available → `claude_code`, else → `claude_ai`
 
 ### Phase 2: Execute Loop
 
@@ -447,7 +516,11 @@ REPEAT for each node:
    - If false: current_node = node.branches.false
 
    USER_PROMPT:
-   - Present AskUserQuestion from node.prompt
+   - Render prompt for interface:
+     - claude_code: AskUserQuestion tool call
+     - claude_ai: Markdown table with numbered options
+   - Present to user, get response
+   - LLM interprets response semantically → match to handler
    - Store response in state.user_responses[current_node]
    - Apply handler.consequence if present
    - current_node = handler.next_node
@@ -503,6 +576,7 @@ At any point, display current state:
 state:
   current_node: ask_source_type
   previous_node: check_url_provided
+  interface: claude_code
   flags:
     config_found: true
     manifest_detected: false
