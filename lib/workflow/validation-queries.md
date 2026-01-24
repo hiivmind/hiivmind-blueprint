@@ -636,9 +636,99 @@ yq '[.endings | to_entries | .[] | select(.value.type == "success") | .key] | if
 
 ---
 
+## Two-Tier Validation Architecture
+
+The workflow system uses a two-tier validation approach:
+
+### Tier 1: Structural Validation (JSON Schema)
+
+The `lib/schema/workflow-schema.json` validates **workflow structure**:
+- Required top-level fields (`name`, `version`, `start_node`, `nodes`, `endings`)
+- Node types (`action`, `conditional`, `user_prompt`, `validation_gate`, `reference`)
+- Node-type-specific required fields
+- Transition references
+- Precondition structure
+- **Consequence has a `type` field** (but NOT which types exist)
+
+```bash
+# Validate structure with JSON Schema (requires jsonschema or ajv)
+python3 -c "
+import json, jsonschema
+with open('lib/schema/workflow-schema.json') as f:
+    schema = json.load(f)
+import yaml
+with open('workflow.yaml') as f:
+    workflow = yaml.safe_load(f)
+jsonschema.validate(workflow, schema)
+print('Schema validation passed')
+"
+```
+
+### Tier 2: Consequence Type Validation (Runtime)
+
+The `lib/consequences/definitions/index.yaml` is the **authoritative source** for consequence types:
+
+```bash
+# Check if a consequence type is valid
+TYPE="clone_repo"
+yq ".type_lookup | has(\"$TYPE\")" lib/consequences/definitions/index.yaml
+
+# Get definition file for a type
+yq ".type_lookup.$TYPE" lib/consequences/definitions/index.yaml
+
+# List all known consequence types
+yq '.type_lookup | keys | .[]' lib/consequences/definitions/index.yaml
+
+# Count types
+yq '.stats.total_types' lib/consequences/definitions/index.yaml
+```
+
+### Runtime Consequence Validation
+
+For each consequence used in a workflow, validate against definitions:
+
+```bash
+# Extract all consequence types used in workflow
+USED_TYPES=$(yq '[
+  (.nodes | to_entries | .[] | .value.actions[]?.type),
+  (.nodes | to_entries | .[] | .value.on_response | .[]? | .consequence[]?.type)
+] | .[] | select(. != null) | unique' workflow.yaml)
+
+# Check each against known types
+KNOWN_TYPES=$(yq '.type_lookup | keys | .[]' lib/consequences/definitions/index.yaml)
+
+for type in $USED_TYPES; do
+  if echo "$KNOWN_TYPES" | grep -qx "$type"; then
+    echo "✓ $type"
+  else
+    echo "✗ $type (unknown consequence type)"
+  fi
+done
+```
+
+### Benefits of Two-Tier Approach
+
+| Aspect | Tier 1 (Schema) | Tier 2 (Definitions) |
+|--------|----------------|---------------------|
+| **Validates** | Workflow structure | Consequence types |
+| **Source** | `workflow-schema.json` | `definitions/index.yaml` |
+| **When** | Parse time | Runtime |
+| **Extensible** | No (fixed node types) | Yes (add YAML files) |
+| **IDE support** | JSON Schema autocomplete | Separate tooling |
+
+### Adding New Consequence Types
+
+1. Add definition to `lib/consequences/definitions/extensions/` or `core/`
+2. Update `lib/consequences/definitions/index.yaml` with type lookup
+3. Workflows using new type will pass schema validation immediately
+4. Runtime validation checks type exists in index
+
+---
+
 ## Related Documentation
 
 - **Schema:** `lib/workflow/schema.md` - Workflow YAML structure
 - **Preconditions:** `lib/workflow/preconditions.md` - Precondition types
-- **Consequences:** `lib/workflow/consequences.md` - Consequence types
+- **Consequences:** `lib/consequences/definitions/` - Consequence type definitions
+- **Capability Detection:** `lib/consequences/capabilities/` - Tool availability checks
 - **Validate Skill:** `skills/hiivmind-blueprint-validate/SKILL.md`
