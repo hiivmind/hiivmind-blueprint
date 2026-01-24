@@ -13,8 +13,9 @@ While [core consequences](../core/) provide fundamental workflow operations, ext
 | [file-system.md](file-system.md) | Generic file operations | 4 |
 | [git.md](git.md) | Git repository operations | 4 |
 | [web.md](web.md) | Web content operations | 2 |
+| [logging.md](logging.md) | Workflow execution logging | 9 |
 
-**Total extension consequences:** 10
+**Total extension consequences:** 19
 
 ---
 
@@ -32,6 +33,15 @@ While [core consequences](../core/) provide fundamental workflow operations, ext
 | `git_fetch` | [git.md](git.md) | Fetch remote refs |
 | `web_fetch` | [web.md](web.md) | Fetch URL content |
 | `cache_web_content` | [web.md](web.md) | Save fetched content |
+| `init_log` | [logging.md](logging.md) | Initialize log structure |
+| `log_node` | [logging.md](logging.md) | Record node execution |
+| `log_event` | [logging.md](logging.md) | Log domain-specific event |
+| `log_warning` | [logging.md](logging.md) | Add warning message |
+| `log_error` | [logging.md](logging.md) | Add error with context |
+| `finalize_log` | [logging.md](logging.md) | Complete log with outcome |
+| `write_log` | [logging.md](logging.md) | Write log to file |
+| `apply_log_retention` | [logging.md](logging.md) | Clean up old logs |
+| `output_ci_summary` | [logging.md](logging.md) | CI environment output |
 
 ---
 

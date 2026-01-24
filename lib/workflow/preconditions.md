@@ -597,9 +597,90 @@ The `error_message` field is optional for regular conditions but recommended for
 
 ---
 
+## Logging Preconditions
+
+### log_initialized
+
+Check if logging has been initialized (init_log called).
+
+```yaml
+- type: log_initialized
+```
+
+**Evaluation:**
+```
+state.flags.log_initialized == true
+```
+
+**Use cases:**
+- Validate logging is ready before log_node calls
+- Entry gate for phases that require logging
+
+---
+
+### log_level_enabled
+
+Check if the current log level allows a specific threshold.
+
+```yaml
+- type: log_level_enabled
+  level: debug
+```
+
+**Parameters:**
+| Name | Type | Required | Description |
+|------|------|----------|-------------|
+| `level` | string | Yes | Minimum level to check: trace, debug, info, warn, error |
+
+**Evaluation:**
+```
+level_hierarchy = ["error", "warn", "info", "debug", "trace"]
+current_level = get_log_config("level")  # Resolved from config cascade
+return level_hierarchy.index(current_level) >= level_hierarchy.index(level)
+```
+
+**Examples:**
+```yaml
+# Only log verbose details if debug or higher
+- type: log_level_enabled
+  level: debug
+
+# Check if trace-level state logging is active
+- type: log_level_enabled
+  level: trace
+```
+
+**Use cases:**
+- Conditional verbose logging
+- Skip expensive computations when not logging at that level
+- Gate trace-level state capture
+
+---
+
+### log_finalized
+
+Check if logging has been finalized (finalize_log called).
+
+```yaml
+- type: log_finalized
+```
+
+**Evaluation:**
+```
+state.flags.log_finalized == true
+```
+
+**Use cases:**
+- Prevent double-finalization
+- Gate write_log to ensure finalization happened
+
+---
+
 ## Related Documentation
 
 - **Schema:** `lib/workflow/schema.md` - Workflow YAML structure
 - **Consequences:** `lib/workflow/consequences.md` - State mutations
 - **Execution:** `lib/workflow/execution.md` - Turn loop
 - **State:** `lib/workflow/state.md` - Runtime state structure
+- **Logging:** `lib/workflow/consequences/extensions/logging.md` - Logging consequences
+- **Log Schema:** `lib/workflow/logging-schema.md` - Log structure definition
