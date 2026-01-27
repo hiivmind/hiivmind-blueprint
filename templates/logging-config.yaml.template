@@ -1,8 +1,17 @@
 # Logging Configuration Template
 #
-# Add this section to your workflow's initial_state to enable logging.
-# See: lib/workflow/consequences/core/logging.md
-# See: lib/blueprint/patterns/logging-configuration.md
+# Add this section to your workflow's initial_state to enable logging,
+# or place as .hiivmind/blueprint/logging.yaml for plugin-wide defaults.
+#
+# See: lib/workflow/logging-config-loader.md - 4-tier loading protocol
+# See: lib/blueprint/patterns/logging-configuration.md - Configuration options
+# See: lib/schema/logging-config-schema.json - Validation schema
+#
+# Priority hierarchy (highest to lowest):
+#   1. Runtime flags (--log-level=debug)
+#   2. Workflow initial_state.logging
+#   3. Plugin .hiivmind/blueprint/logging.yaml (this template)
+#   4. Bundle logging_defaults (hiivmind/hiivmind-blueprint-types@v1.3.0)
 
 logging:
   # ─────────────────────────────────────────────────

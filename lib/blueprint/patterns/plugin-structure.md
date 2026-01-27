@@ -17,7 +17,8 @@ Blueprint-enabled plugins use a consistent directory structure that aligns with 
 ├── .hiivmind/
 │   └── blueprint/
 │       ├── engine.md              # Workflow execution engine (copied)
-│       └── types.lock             # Version pinning for types and engine
+│       ├── types.lock             # Version pinning for types, engine, and logging
+│       └── logging.yaml           # Plugin-wide logging defaults (optional)
 ├── skills/
 │   └── my-skill/
 │       ├── SKILL.md               # Thin loader referencing engine
@@ -40,7 +41,8 @@ The `.hiivmind/blueprint/` directory contains shared Blueprint infrastructure fo
 | File | Purpose |
 |------|---------|
 | `engine.md` | Workflow execution engine (copied from hiivmind-blueprint) |
-| `types.lock` | Version pinning for types and engine |
+| `types.lock` | Version pinning for types, engine, and logging config |
+| `logging.yaml` | Plugin-wide logging defaults (optional, see below) |
 
 ### engine.md
 
@@ -57,26 +59,63 @@ Skills reference the engine via:
 
 ### types.lock
 
-The lock file pins versions of the engine and type definitions:
+The lock file pins versions of the engine, type definitions, and logging config:
 
 ```yaml
 # .hiivmind/blueprint/types.lock
-schema: "1.0"
-generated_at: "2026-01-27T12:00:00Z"
-generated_by: "hiivmind-blueprint v1.1.0"
+schema: "1.1"                       # Bumped for logging support
+generated_at: "2026-01-28T12:00:00Z"
+generated_by: "hiivmind-blueprint v1.3.0"
 
 engine:
-  version: "1.1.0"
+  version: "1.3.0"
   sha256: "abc123..."
-  source: "hiivmind/hiivmind-blueprint@v1.1.0"
+  source: "hiivmind/hiivmind-blueprint@v1.3.0"
 
 types:
   hiivmind/hiivmind-blueprint-types:
     requested: "@v1"
-    resolved: "v1.3.2"
+    resolved: "v1.3.0"
     sha256: "def456..."
-    fetched_at: "2026-01-27T05:30:00Z"
+    fetched_at: "2026-01-28T05:30:00Z"
+
+logging:                            # NEW: Logging config pins
+  hiivmind/hiivmind-blueprint-types:
+    resolved: "v1.0.0"
+    sha256: "ghi789..."
+    fetched_at: "2026-01-28T05:30:00Z"
 ```
+
+### logging.yaml
+
+Optional plugin-wide logging defaults. See `lib/workflow/logging-config-loader.md` for the 4-tier configuration hierarchy.
+
+```yaml
+# .hiivmind/blueprint/logging.yaml
+#
+# Plugin-wide logging defaults (priority 3 in the 4-tier hierarchy)
+# Overrides framework defaults, overridden by skill config and runtime flags
+
+logging:
+  level: "warn"                    # Less verbose by default for this plugin
+  output:
+    location: "data/logs/"         # Plugin prefers data/ directory
+    format: "yaml"
+  retention:
+    strategy: "days"
+    days: 14
+  ci:
+    format: "github"               # Plugin runs in GitHub Actions
+```
+
+**When to use:**
+- Plugin has multiple skills that should share logging settings
+- Plugin needs different defaults than framework (e.g., CI integration)
+- Plugin wants logs in a specific location (e.g., `data/logs/` instead of `.logs/`)
+
+**When NOT to use:**
+- Each skill has unique logging needs (use `initial_state.logging` instead)
+- Framework defaults are sufficient
 
 ---
 
@@ -204,5 +243,7 @@ This consistency helps users understand where plugin-specific configuration live
 - **Type Resolution:** `lib/blueprint/patterns/type-resolution.md` - External type resolution protocol
 - **Workflow Engine:** `lib/workflow/engine.md` - Execution semantics
 - **Type Loader:** `lib/workflow/type-loader.md` - Type loading protocol
+- **Logging Config Loader:** `lib/workflow/logging-config-loader.md` - Logging configuration resolution
+- **Logging Configuration:** `lib/blueprint/patterns/logging-configuration.md` - Logging configuration options
 - **Generate Skill:** `skills/hiivmind-blueprint-generate/SKILL.md` - Creates this structure
 - **Upgrade Skill:** `skills/hiivmind-blueprint-upgrade/SKILL.md` - Updates versions

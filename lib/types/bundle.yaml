@@ -15,10 +15,10 @@
 #     source: local
 #     path: ${CLAUDE_PLUGIN_ROOT}/lib/types/bundle.yaml
 
-schema_version: "1.1"
-bundled_at: "2026-01-27T00:00:00Z"
+schema_version: "1.3"  # Bumped for logging_defaults support
+bundled_at: "2026-01-28T00:00:00Z"
 source_repo: "https://github.com/hiivmind/hiivmind-blueprint-types"
-version: "1.0.0"
+version: "1.3.0"
 
 # =============================================================================
 # CONSEQUENCES (43 types)
@@ -1466,6 +1466,267 @@ preconditions:
     since: "1.0.0"
 
 # =============================================================================
+# WORKFLOWS (v1.2+)
+# =============================================================================
+#
+# Reusable sub-workflows that can be referenced from gateway commands.
+# See: lib/workflow/workflow-loader.md for the loading protocol.
+
+workflows:
+  # ---------------------------------------------------------------------------
+  # Intent Detection Workflow
+  # ---------------------------------------------------------------------------
+  intent-detection:
+    version: "1.0.0"
+    description: >
+      Reusable 3VL intent detection workflow. Parses user input into flags,
+      matches against rules, and sets computed.matched_action for dynamic routing.
+      Eliminates the N-conditional cascade problem for gateway commands.
+    depends_on:
+      consequences:
+        - parse_intent_flags
+        - match_3vl_rules
+        - set_state
+      preconditions:
+        - evaluate_expression
+    inputs:
+      - name: arguments
+        type: string
+        required: true
+        description: "User input to parse"
+      - name: intent_flags
+        type: object
+        required: true
+        description: "Flag definitions from intent-mapping.yaml (keywords, negative_keywords)"
+      - name: intent_rules
+        type: array
+        required: true
+        description: "Rules from intent-mapping.yaml (conditions, action, priority)"
+      - name: fallback_action
+        type: string
+        required: false
+        default: "show_main_menu"
+        description: "Action when no rules match"
+    outputs:
+      - name: computed.matched_action
+        type: string
+        description: "The resolved action to execute"
+      - name: computed.intent_flags
+        type: object
+        description: "Parsed 3VL flag values (T/F/U)"
+      - name: computed.intent_matches
+        type: object
+        description: "Match results with winner and candidates"
+    content: |
+      # Reusable Intent Detection Workflow
+      # Composable sub-workflow for 3VL intent detection and dynamic routing
+      #
+      # See: lib/intent_detection/framework.md for 3VL semantics
+      # See: lib/workflow/engine.md for dynamic routing support
+
+      name: intent-detection
+      version: "1.0.0"
+      description: >
+        Reusable 3VL intent detection workflow. Parses user input into flags,
+        matches against rules, and sets computed.matched_action for dynamic routing.
+
+      initial_state:
+        phase: "intent_detection"
+        computed:
+          matched_action: null
+          intent_flags: null
+          intent_matches: null
+
+      start_node: check_has_input
+
+      nodes:
+        # ============================================================================
+        # PHASE 1: Input Validation
+        # ============================================================================
+
+        check_has_input:
+          type: conditional
+          description: Check if user provided input to parse
+          condition:
+            type: evaluate_expression
+            expression: "arguments != null && arguments.trim() != ''"
+          branches:
+            true: parse_intent_flags
+            false: use_fallback
+
+        # ============================================================================
+        # PHASE 2: Flag Parsing
+        # ============================================================================
+
+        parse_intent_flags:
+          type: action
+          description: Parse user input into 3VL flags (T/F/U)
+          actions:
+            - type: parse_intent_flags
+              input: "${arguments}"
+              flag_definitions: "${intent_flags}"
+              store_as: computed.intent_flags
+          on_success: match_intent_rules
+          on_failure: use_fallback
+
+        # ============================================================================
+        # PHASE 3: Rule Matching
+        # ============================================================================
+
+        match_intent_rules:
+          type: action
+          description: Match parsed flags against intent rules
+          actions:
+            - type: match_3vl_rules
+              flags: "${computed.intent_flags}"
+              rules: "${intent_rules}"
+              store_as: computed.intent_matches
+          on_success: check_clear_winner
+          on_failure: use_fallback
+
+        # ============================================================================
+        # PHASE 4: Winner Determination
+        # ============================================================================
+
+        check_clear_winner:
+          type: conditional
+          description: Check if there's a clear winner (2+ point lead)
+          condition:
+            type: evaluate_expression
+            expression: "computed.intent_matches.clear_winner == true"
+          branches:
+            true: set_winner_action
+            false: check_has_candidates
+
+        set_winner_action:
+          type: action
+          description: Set the winning rule's action as the matched action
+          actions:
+            - type: set_state
+              field: computed.matched_action
+              value: "${computed.intent_matches.winner.action}"
+          on_success: success_resolved
+          on_failure: use_fallback
+
+        check_has_candidates:
+          type: conditional
+          description: Check if there are any candidates for disambiguation
+          condition:
+            type: evaluate_expression
+            expression: "computed.intent_matches.top_candidates.length > 0"
+          branches:
+            true: show_disambiguation
+            false: use_fallback
+
+        # ============================================================================
+        # PHASE 5: Disambiguation
+        # ============================================================================
+
+        show_disambiguation:
+          type: user_prompt
+          description: Present top candidates for user selection
+          prompt:
+            question: "Multiple intents detected. Which did you mean?"
+            header: "Clarify"
+            options_from_state: computed.intent_matches.top_candidates
+            option_mapping:
+              id: rule.name
+              label: rule.name
+              description: rule.description
+          on_response:
+            selected:
+              consequence:
+                - type: set_state
+                  field: computed.matched_action
+                  value: "${user_responses.show_disambiguation.selected.rule.action}"
+              next_node: success_resolved
+            other:
+              # User typed custom text - re-parse with new input
+              consequence:
+                - type: set_state
+                  field: arguments
+                  value: "${user_responses.show_disambiguation.text}"
+              next_node: parse_intent_flags
+
+        # ============================================================================
+        # PHASE 6: Fallback
+        # ============================================================================
+
+        use_fallback:
+          type: action
+          description: Use fallback action when no rules match
+          actions:
+            - type: set_state
+              field: computed.matched_action
+              value: "${fallback_action ?? 'show_main_menu'}"
+          on_success: success_resolved
+          on_failure: success_resolved  # Fallback should not fail
+
+      # ============================================================================
+      # ENDINGS
+      # ============================================================================
+
+      endings:
+        success_resolved:
+          type: success
+          message: "Intent resolved"
+          summary:
+            matched_action: "${computed.matched_action}"
+            flags_parsed: "${computed.intent_flags != null}"
+            clear_winner: "${computed.intent_matches.clear_winner ?? false}"
+    since: "1.2.0"
+
+# =============================================================================
+# LOGGING DEFAULTS (v1.3+)
+# =============================================================================
+#
+# Framework-wide logging defaults. See: lib/workflow/logging-config-loader.md
+# These serve as the lowest priority (tier 4) in the 4-tier configuration hierarchy:
+#   1. Runtime flags (--log-level=debug)     ← Highest
+#   2. Workflow initial_state.logging        ← Skill-specific
+#   3. Plugin .hiivmind/blueprint/logging.yaml ← Plugin-wide
+#   4. Bundle logging_defaults               ← Framework defaults (this section)
+
+logging_defaults:
+  version: "1.0.0"
+  description: "Framework-wide logging defaults for Blueprint workflows"
+  content:
+    # Master Controls
+    enabled: true
+    level: "info"              # trace | debug | info | warn | error
+
+    # Automatic Behavior
+    # When enabled, the engine injects logging consequences automatically
+    auto:
+      init: true               # Auto init_log at workflow start
+      finalize: true           # Auto finalize_log at endings
+      write: true              # Auto write_log after finalize
+      node_tracking: true      # Auto log_node for each node
+
+    # Capture Settings (level-aware)
+    capture:
+      nodes: true              # Record node_history (info+)
+      state_changes: false     # Log state mutations (trace only)
+      user_responses: true     # Log user prompt selections (debug+)
+      timing: true             # Record timestamps (always)
+
+    # Output Configuration
+    output:
+      format: "yaml"           # yaml | json | markdown
+      location: ".logs/"       # Relative to skill/plugin root
+      filename: "{skill_name}-{timestamp}.{ext}"
+
+    # Retention Policy
+    retention:
+      strategy: "count"        # none | days | count
+      count: 10                # Number of log files to retain
+
+    # CI/CD Integration
+    ci:
+      format: "none"           # none | github | plain | json
+      annotations: true        # GitHub annotations for errors/warnings
+
+# =============================================================================
 # STATISTICS
 # =============================================================================
 
@@ -1476,3 +1737,5 @@ stats:
   total_preconditions: 27
   core_preconditions: 22
   extension_preconditions: 5
+  total_workflows: 1
+  logging_defaults_version: "1.0.0"

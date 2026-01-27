@@ -67,9 +67,14 @@ The core value: Transform imperative prose instructions into declarative YAML wo
 │   │       └── precondition-definition.json
 │   │
 │   ├── workflow/                     # Workflow reference documentation
-│   │   ├── engine.md                 # Comprehensive workflow execution reference (schema + state + execution)
+│   │   ├── engine.md                 # Comprehensive workflow execution reference (schema + state + execution + dynamic routing + logging)
 │   │   ├── type-loader.md            # External type definitions loader
+│   │   ├── workflow-loader.md        # Remote workflow resolution protocol (v1.2+)
+│   │   ├── logging-config-loader.md  # Logging configuration resolution protocol (v1.3+)
 │   │   └── legacy/                   # Archived redundant documentation
+│   │
+│   ├── workflows/                    # Reusable sub-workflows (local fallback)
+│   │   └── intent-detection.yaml     # Composable 3VL intent detection (O(1) routing) - also in bundle
 │   │       ├── README.md             # Archive index with deprecation notices
 │   │       ├── schema.md             # Redirect to engine.md
 │   │       ├── state.md              # Redirect to engine.md
@@ -80,27 +85,30 @@ The core value: Transform imperative prose instructions into declarative YAML wo
 │   │       ├── logging-schema.md     # JSON Schema at lib/schema/logging-schema.json
 │   │       └── consequences/         # YAML definitions authoritative
 │   │
-│   ├── types/                        # Embedded type definitions fallback (NEW)
-│   │   ├── bundle.yaml               # Aggregated types (43 consequences, 27 preconditions)
+│   ├── types/                        # Embedded type definitions fallback
+│   │   ├── bundle.yaml               # Aggregated types + workflows + logging_defaults (v1.3: 43 consequences, 27 preconditions, 1 workflow, logging defaults)
 │   │   └── README.md                 # Embedded types documentation
 │   │
 │   ├── schema/                       # JSON Schema definitions
 │   │   ├── workflow-schema.json      # Formal workflow.yaml schema (v2.1 with definitions)
 │   │   ├── logging-schema.json       # Workflow execution log structure
+│   │   ├── logging-config-schema.json # Plugin logging.yaml validation schema (v1.3+)
 │   │   ├── intent-mapping-schema.json
-│   │   └── types-lock-schema.json    # Lock file validation schema
+│   │   └── types-lock-schema.json    # Lock file validation schema (v1.1 with logging)
 │   │
 │   ├── intent_detection/             # 3VL intent detection framework
 │   │   ├── framework.md              # 3VL concepts and rules
-│   │   ├── execution.md              # Intent resolution semantics
+│   │   ├── execution.md              # Intent resolution semantics + dynamic routing pattern
 │   │   └── variables.md              # Variable extraction patterns
 │   │
 │   └── blueprint/patterns/           # Blueprint-specific patterns
 │       ├── skill-analysis.md         # How to analyze SKILL.md structure
 │       ├── node-mapping.md           # Map prose → workflow nodes
+│       ├── intent-composition.md     # Composable intent detection pattern (O(1) vs O(N))
 │       ├── workflow-generation.md    # Generate workflow.yaml
 │       ├── type-resolution.md        # External type resolution protocol
-│       ├── plugin-structure.md       # .hiivmind/blueprint/ layout
+│       ├── plugin-structure.md       # .hiivmind/blueprint/ layout (with logging.yaml v1.3+)
+│       ├── logging-configuration.md  # 4-tier logging configuration + sub-workflow inheritance
 │       └── consequence-extensions.md # Creating custom extensions
 │
 ├── templates/                        # Templates for generation
@@ -311,11 +319,14 @@ These features span multiple skills and must stay synchronized:
 | Precondition types | convert, generate, validate | Match lib/preconditions/definitions/ (33 types) |
 | Consequence types | convert, generate, validate | Match lib/consequences/definitions/ (49 types) |
 | 3VL intent rules | gateway, discover, validate | Rule syntax consistency |
+| Dynamic routing | gateway, engine.md, intent-composition.md | `on_success: "${...}"` interpolation |
 | Complexity classification | analyze, discover | Thresholds aligned |
 | Validation queries | validate | Match engine.md and type definitions |
 | Report format | validate | Consistent status icons and structure |
 | JSON Schema definitions | validate, upgrade | Match YAML schema docs, all types included |
 | Logging configuration | analyze, convert, generate, validate | Config/usage alignment |
+| Logging config loader | engine.md, logging-config-loader.md | 4-tier hierarchy, auto-injection |
+| Bundle logging_defaults | bundle.yaml, types-lock-schema | Version sync, cache structure |
 
 ## External Type Definitions
 
@@ -367,15 +378,52 @@ Both external and embedded definitions are supported:
 | `@v1.0` | Latest patch in v1.0.x |
 | `@v1` | Latest minor in v1.x.x (development) |
 
-### Type Inventory (v1.1.0)
+### Type Inventory (v1.3.0)
 
 | Category | Count | Examples |
 |----------|-------|----------|
-| Consequences | 49 | set_state, clone_repo, web_fetch, validate_yaml_schema |
-| Preconditions | 33 | file_exists, flag_set, all_of, schema_valid |
+| Consequences | 43 | set_state, clone_repo, web_fetch, parse_intent_flags |
+| Preconditions | 27 | file_exists, flag_set, all_of, evaluate_expression |
+| Workflows | 1 | intent-detection |
 | Node Types | 5 | action, conditional, user_prompt, validation_gate, reference |
+| Logging Defaults | 1 | Framework-wide logging configuration |
 
 See `lib/blueprint/patterns/type-resolution.md` for implementation details.
+
+### Logging Configuration (v1.3+)
+
+Logging configuration follows a 4-tier priority hierarchy:
+
+```
+1. Runtime flags (--log-level=debug)     ← Highest priority
+2. Workflow initial_state.logging        ← Skill-specific
+3. Plugin .hiivmind/blueprint/logging.yaml ← Plugin-wide
+4. Bundle logging_defaults               ← Framework defaults
+```
+
+Key features:
+- **Auto-injection**: Engine injects `init_log`, `log_node`, `finalize_log`, `write_log` based on `auto.*` flags
+- **Sub-workflow inheritance**: Sub-workflows inherit parent's logging config by default
+- **Override support**: Pass `context.logging` in reference nodes to override for specific sub-workflows
+
+See `lib/workflow/logging-config-loader.md` for the loading protocol.
+
+### Referencing Remote Workflows (v1.2+)
+
+Gateway workflows can reference sub-workflows from the bundle:
+
+```yaml
+detect_intent:
+  type: reference
+  workflow: hiivmind/hiivmind-blueprint-types@v1.0.0:intent-detection
+  context:
+    arguments: "${arguments}"
+    intent_flags: "${intent_flags}"
+    intent_rules: "${intent_rules}"
+  next_node: execute_dynamic_route
+```
+
+See `lib/workflow/workflow-loader.md` for the loading protocol.
 
 ## Target Plugin Structure
 
@@ -386,7 +434,8 @@ When generating workflows for a target plugin, Blueprint creates this structure:
 ├── .hiivmind/
 │   └── blueprint/
 │       ├── engine.md              # Workflow execution semantics (copied)
-│       └── types.lock             # Pinned versions and SHAs
+│       ├── types.lock             # Pinned versions and SHAs (v1.1 with logging)
+│       └── logging.yaml           # Plugin-wide logging defaults (optional, v1.3+)
 ├── skills/
 │   └── my-skill/
 │       ├── SKILL.md               # Thin loader referencing engine
@@ -397,31 +446,43 @@ When generating workflows for a target plugin, Blueprint creates this structure:
 
 ```yaml
 # .hiivmind/blueprint/types.lock
-schema: "1.0"
-generated_at: "2026-01-27T12:00:00Z"
-generated_by: "hiivmind-blueprint v1.1.0"
+schema: "1.1"                       # Bumped for logging support
+generated_at: "2026-01-28T12:00:00Z"
+generated_by: "hiivmind-blueprint v1.3.0"
 
 engine:
-  version: "1.1.0"
+  version: "1.3.0"
   sha256: "abc123..."
-  source: "hiivmind/hiivmind-blueprint@v1.1.0"
+  source: "hiivmind/hiivmind-blueprint@v1.3.0"
 
 types:
   hiivmind/hiivmind-blueprint-types:
     requested: "@v1"
-    resolved: "v1.3.2"
+    resolved: "v1.3.0"
     sha256: "def456..."
-    fetched_at: "2026-01-27T05:30:00Z"
+    fetched_at: "2026-01-28T05:30:00Z"
+
+logging:                            # NEW: Logging config pins (v1.3+)
+  hiivmind/hiivmind-blueprint-types:
+    resolved: "v1.0.0"
+    sha256: "ghi789..."
+    fetched_at: "2026-01-28T05:30:00Z"
 ```
 
 ### Global Cache
 
-Types and engine versions are cached at user level:
+Types, workflows, logging defaults, and engine versions are cached at user level:
 
 ```
 ~/.claude/cache/hiivmind/blueprint/
 ├── types/{owner}/{repo}/{version}/
 │   ├── bundle.yaml
+│   └── metadata.yaml
+├── workflows/{owner}/{repo}/{version}/{workflow-name}/    # v1.2+
+│   ├── workflow.yaml
+│   └── metadata.yaml
+├── logging/{owner}/{repo}/{version}/                      # v1.3+
+│   ├── defaults.yaml
 │   └── metadata.yaml
 └── engine/{version}/
     └── engine.md

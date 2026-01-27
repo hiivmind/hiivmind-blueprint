@@ -1,6 +1,6 @@
 # Logging Configuration Pattern
 
-Defines the layered configuration system for workflow logging. Configuration can be set at multiple levels, with higher-priority levels overriding lower ones.
+Defines the layered configuration system for workflow logging. Configuration can be set at multiple levels, with higher-priority levels overriding lower ones. This pattern integrates with the distributed composable workflow model.
 
 ---
 
@@ -10,12 +10,14 @@ Priority from highest to lowest:
 
 ```
 1. Runtime flags (--log-level=debug)     ← Immediate override
-2. Workflow initial_state                 ← Skill-specific defaults
-3. Plugin logging config                  ← Plugin-wide defaults
-4. Blueprint defaults                     ← Framework defaults
+2. Workflow initial_state.logging        ← Skill-specific defaults
+3. Plugin .hiivmind/blueprint/logging.yaml ← Plugin-wide defaults
+4. Bundle logging_defaults               ← Framework defaults (from bundle v1.3+)
 ```
 
 ### Resolution Algorithm
+
+For the complete loading algorithm, see `lib/workflow/logging-config-loader.md`.
 
 ```python
 def get_log_config(field):
@@ -24,9 +26,19 @@ def get_log_config(field):
         runtime.flags.logging.get(field)      # 1. Runtime override
         ?? initial_state.logging.get(field)    # 2. Skill-specific
         ?? plugin.logging.get(field)           # 3. Plugin-wide
-        ?? BLUEPRINT_DEFAULTS.get(field)       # 4. Framework default
+        ?? BUNDLE_DEFAULTS.get(field)          # 4. Framework (from bundle)
     )
 ```
+
+### Distributed Loading
+
+Logging configuration participates in the distributed model:
+
+| Component | Source | Cache Location |
+|-----------|--------|----------------|
+| Framework defaults | `bundle.yaml:logging_defaults` | `~/.claude/cache/hiivmind/blueprint/logging/{owner}/{repo}/{version}/` |
+| Plugin config | `.hiivmind/blueprint/logging.yaml` | Local (not cached) |
+| Lock pinning | `.hiivmind/blueprint/types.lock:logging` | Local (not cached) |
 
 ---
 
@@ -109,12 +121,13 @@ def level_enabled(current_level, required_level):
 
 ## Configuration Examples
 
-### 1. Blueprint Defaults (Framework Level)
+### 1. Framework Defaults (from Bundle v1.3+)
 
-These are the built-in defaults used when no other configuration exists:
+Framework defaults are loaded from the type bundle's `logging_defaults` section. See `lib/types/bundle.yaml` for the current defaults.
 
 ```yaml
-# Framework defaults (lowest priority)
+# From bundle.yaml:logging_defaults (lowest priority)
+# See: lib/workflow/logging-config-loader.md for loading algorithm
 logging:
   enabled: true
   level: "info"
@@ -140,12 +153,15 @@ logging:
     annotations: true
 ```
 
+**Distributed source:** `hiivmind/hiivmind-blueprint-types@v1.3.0:logging_defaults`
+
 ### 2. Plugin Configuration
 
-Plugin-wide defaults in plugin manifest or separate config:
+Plugin-wide defaults in `.hiivmind/blueprint/logging.yaml`:
 
 ```yaml
-# .claude-plugin/logging.yaml or in plugin.json
+# .hiivmind/blueprint/logging.yaml
+# See: lib/schema/logging-config-schema.json for validation schema
 logging:
   level: "warn"              # Less verbose for all skills
   output:
@@ -157,6 +173,8 @@ logging:
   ci:
     format: "github"         # Plugin runs in GitHub Actions
 ```
+
+**Location:** `{plugin_root}/.hiivmind/blueprint/logging.yaml`
 
 ### 3. Skill-Specific Configuration
 
@@ -376,9 +394,80 @@ logging:
 
 ---
 
+## Sub-Workflow Inheritance
+
+When a `reference` node invokes a sub-workflow, logging configuration is inherited by default. See `lib/workflow/logging-config-loader.md` for details.
+
+### Default Inheritance
+
+Sub-workflows inherit the parent's resolved `state.logging`:
+
+```yaml
+# Parent workflow has logging config resolved in state.logging
+# Sub-workflow inherits automatically (state is shared)
+
+detect_intent:
+  type: reference
+  workflow: hiivmind/hiivmind-blueprint-types@v1.0.0:intent-detection
+  context:
+    arguments: "${arguments}"
+    # logging is inherited automatically
+  next_node: execute_dynamic_route
+```
+
+### Override for Sub-Workflow
+
+To override logging for a specific sub-workflow, pass `context.logging`:
+
+```yaml
+detect_intent:
+  type: reference
+  workflow: hiivmind/hiivmind-blueprint-types@v1.0.0:intent-detection
+  context:
+    arguments: "${arguments}"
+    logging:                        # Override for this sub-workflow
+      level: "debug"                # More verbose for debugging
+      auto:
+        node_tracking: true         # Ensure nodes are tracked
+  next_node: execute_dynamic_route
+```
+
+### Log Nesting
+
+Sub-workflow logs are nested within the parent's `node_history`:
+
+```yaml
+# Parent workflow log output
+node_history:
+  - id: validate_input
+    outcome: success
+    timestamp: "2026-01-28T10:30:00Z"
+
+  - id: detect_intent
+    outcome: success
+    timestamp: "2026-01-28T10:30:01Z"
+    sub_workflow:                   # Nested sub-workflow log
+      name: "intent-detection"
+      version: "1.0.0"
+      node_history:
+        - id: parse_flags
+          outcome: success
+        - id: match_rules
+          outcome: success
+      status: "success"
+
+  - id: execute_action
+    outcome: success
+    timestamp: "2026-01-28T10:30:02Z"
+```
+
+---
+
 ## Related Documentation
 
-- **Consequences:** `lib/workflow/consequences/core/logging.md`
-- **Schema:** `lib/workflow/logging-schema.md`
-- **Preconditions:** `lib/workflow/preconditions.md` - log_initialized, log_level_enabled
-- **State:** `lib/workflow/state.md` - Runtime state structure
+- **Logging Config Loader:** `lib/workflow/logging-config-loader.md` - 4-tier loading protocol
+- **Engine Integration:** `lib/workflow/engine.md` - Auto-injection in execution phases
+- **Logging Schema:** `lib/schema/logging-config-schema.json` - Plugin config validation
+- **Consequence Types:** `lib/consequences/definitions/core/logging.yaml` - 10 logging consequences
+- **Precondition Types:** `lib/preconditions/definitions/core/logging.yaml` - log_initialized, log_level_enabled, log_finalized
+- **Log Output Schema:** `lib/schema/logging-schema.json` - Log file structure

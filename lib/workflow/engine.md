@@ -283,7 +283,9 @@ node_name:
 
 #### 5. Reference Node
 
-Loads and executes a reference document section.
+Loads and executes a reference document or workflow. Supports both local files and remote workflow references.
+
+**Local Reference (document or workflow):**
 
 ```yaml
 node_name:
@@ -296,13 +298,67 @@ node_name:
   next_node: verify_clone
 ```
 
+**Remote Workflow Reference (v2.1+):**
+
+```yaml
+detect_intent:
+  type: reference
+  workflow: hiivmind/hiivmind-blueprint-types@v1.0.0:intent-detection
+  context:                           # Variables passed as workflow inputs
+    arguments: "${arguments}"
+    intent_flags: "${intent_flags}"
+    intent_rules: "${intent_rules}"
+    fallback_action: "show_main_menu"
+  next_node: execute_dynamic_route
+```
+
 | Field | Required | Description |
 |-------|----------|-------------|
 | `type` | Yes | Must be `"reference"` |
-| `doc` | Yes | Path to reference document |
-| `section` | No | Section heading to execute |
-| `context` | No | Variables available in doc |
-| `next_node` | Yes | Node/ending after doc execution |
+| `doc` | Conditional | Path to local reference document (mutually exclusive with `workflow`) |
+| `workflow` | Conditional | Remote workflow reference: `owner/repo@version:workflow-name` (mutually exclusive with `doc`) |
+| `section` | No | Section heading to execute (only for `doc`) |
+| `context` | No | Variables available in doc/workflow. For workflows, maps to inputs. |
+| `next_node` | Yes | Node/ending after execution. Supports variable interpolation. |
+
+**Resolution:**
+
+- `doc`: Reads local file and executes as sub-procedure
+- `workflow`: Fetches from remote bundle, caches locally, executes as sub-workflow
+
+See `workflow-loader.md` for the remote workflow loading protocol.
+
+**State Sharing:**
+
+Reference nodes share state with the parent workflow. The referenced workflow can read and modify parent state directly:
+
+```yaml
+# Parent workflow
+initial_state:
+  arguments: "build my corpus"
+  computed:
+    matched_action: null
+
+nodes:
+  detect_intent:
+    type: reference
+    workflow: hiivmind/hiivmind-blueprint-types@v1.0.0:intent-detection
+    context:
+      arguments: "${arguments}"
+      # ... other inputs
+    next_node: use_result
+
+  use_result:
+    # computed.matched_action is now set by the intent-detection workflow
+    type: action
+    actions:
+      - type: dynamic_route
+        action: "${computed.matched_action}"
+    on_success: "${computed.dynamic_target}"
+    on_failure: show_menu
+```
+
+For isolated execution with explicit input/output mapping, use `invoke_skill` instead.
 
 ### Endings
 
@@ -368,26 +424,29 @@ condition: "${flags.manifest_detected}"
 ### Phase 1: Initialization
 
 ```
-FUNCTION initialize(workflow_path):
+FUNCTION initialize(workflow_path, plugin_root, runtime_flags):
     # 1. Load workflow
     workflow = parse_yaml(read_file(workflow_path))
 
     # 2. Load type definitions
     types = load_types(workflow.definitions)  # See type-loader.md
 
-    # 3. Validate
+    # 3. Load and resolve logging config (see logging-config-loader.md)
+    logging_config = load_logging_config(workflow, plugin_root, runtime_flags)
+
+    # 4. Validate
     validate_schema(workflow)
     validate_types_exist(workflow, types)
     validate_graph_connectivity(workflow)
 
-    # 4. Check entry preconditions
+    # 5. Check entry preconditions
     FOR each precondition IN workflow.entry_preconditions:
         result = evaluate_precondition(precondition, types)
         IF result == false:
             DISPLAY "Cannot start: {precondition.error_message or 'precondition failed'}"
             STOP
 
-    # 5. Initialize state
+    # 6. Initialize state
     state = {
         workflow_name: workflow.name,
         workflow_version: workflow.version,
@@ -399,8 +458,18 @@ FUNCTION initialize(workflow_path):
         computed: {},
         flags: copy(workflow.initial_state.flags or {}),
         checkpoints: {},
+        logging: logging_config,        # Resolved logging configuration
+        log: null,                      # Log session (initialized by init_log)
         ...workflow.initial_state  # Copy custom fields
     }
+
+    # 7. Auto-inject init_log if enabled
+    IF logging_config.enabled AND logging_config.auto.init:
+        execute_consequence({
+            type: "init_log",
+            workflow_name: workflow.name,
+            log_level: logging_config.level
+        }, types, state)
 
     RETURN { workflow, types, state }
 ```
@@ -427,6 +496,14 @@ FUNCTION execute(workflow, types, state):
             timestamp: now()
         })
 
+        # Auto-inject log_node if enabled (see logging-config-loader.md)
+        IF state.logging.enabled AND state.logging.auto.node_tracking:
+            execute_consequence({
+                type: "log_node",
+                node_id: state.current_node,
+                outcome: outcome
+            }, types, state)
+
         # Update position
         state.previous_node = state.current_node
         state.current_node = outcome.next_node
@@ -437,7 +514,28 @@ FUNCTION execute(workflow, types, state):
 ### Phase 3: Completion
 
 ```
-FUNCTION complete(ending, state):
+FUNCTION complete(ending, state, types):
+    # Auto-inject finalize_log if enabled (see logging-config-loader.md)
+    IF state.logging.enabled AND state.logging.auto.finalize:
+        execute_consequence({
+            type: "finalize_log",
+            status: ending.type,
+            summary: ending.summary
+        }, types, state)
+
+    # Auto-inject write_log if enabled
+    IF state.logging.enabled AND state.logging.auto.write:
+        filename = interpolate_filename(state.logging.output.filename, {
+            skill_name: state.workflow_name,
+            timestamp: now().format("YYYY-MM-DD_HH-mm-ss"),
+            ext: format_to_extension(state.logging.output.format)
+        })
+        execute_consequence({
+            type: "write_log",
+            path: "{state.logging.output.location}/{filename}"
+        }, types, state)
+
+    # Display result to user
     message = interpolate(ending.message, state)
 
     IF ending.type == "success":
@@ -526,18 +624,26 @@ FUNCTION execute_action_node(node, types, state):
         FOR each action IN node.actions:
             execute_consequence(action, types, state)
 
-        RETURN { success: true, next_node: node.on_success }
+        # Resolve next node - supports dynamic interpolation
+        next_node = resolve_routing_target(node.on_success, state)
+
+        RETURN { success: true, next_node: next_node }
 
     CATCH error:
         IF node.checkpoint_rollback:
             rollback_checkpoint(node.checkpoint_rollback, state)
-        RETURN { success: false, next_node: node.on_failure, error: error }
+
+        # Resolve failure target - also supports dynamic interpolation
+        next_node = resolve_routing_target(node.on_failure, state)
+
+        RETURN { success: false, next_node: next_node, error: error }
 ```
 
 **Semantics:**
 - Actions execute sequentially
 - First failure stops remaining actions
 - State mutations may be partial on failure (use checkpoints)
+- Routing targets (`on_success`, `on_failure`) support variable interpolation
 
 ### Conditional Node
 
@@ -546,14 +652,17 @@ FUNCTION execute_conditional_node(node, types, state):
     result = evaluate_precondition(node.condition, types, state)
 
     IF result == true:
-        RETURN { next_node: node.branches.true }
+        target = resolve_routing_target(node.branches.true, state)
     ELSE:
-        RETURN { next_node: node.branches.false }
+        target = resolve_routing_target(node.branches.false, state)
+
+    RETURN { next_node: target }
 ```
 
 **Semantics:**
 - Pure evaluation, no side effects
 - Always succeeds (routes to one branch)
+- Branch targets support variable interpolation
 
 ### User Prompt Node
 
@@ -650,30 +759,54 @@ FUNCTION execute_validation_gate_node(node, types, state):
 
 ```
 FUNCTION execute_reference_node(node, types, state):
-    # Load document
-    doc = read_file(node.doc)
+    # Determine source: remote workflow or local document
+    IF node.workflow:
+        # Remote workflow reference (v2.1+)
+        # See workflow-loader.md for full loading protocol
+        workflow = load_workflow(node.workflow)  # Fetches from bundle, caches
+    ELSE IF node.doc:
+        # Local file reference
+        doc = read_file(node.doc)
 
-    # Extract section if specified
-    IF node.section:
-        doc = extract_section(doc, node.section)
+        # Extract section if specified (only for doc references)
+        IF node.section:
+            doc = extract_section(doc, node.section)
+    ELSE:
+        THROW "Reference node requires 'workflow' or 'doc' parameter"
 
     # Build context with interpolation
     context = {}
     FOR each key, value IN node.context:
         context[key] = interpolate(value, state)
 
-    # Execute document with context
-    # Note: Reference execution shares state (unlike invoke_skill)
-    execute_document(doc, context, state)
+    # Merge context into state (for shared state execution)
+    FOR each key, value IN context:
+        state[key] = value
 
-    RETURN { next_node: node.next_node }
+    # Execute based on source type
+    IF node.workflow:
+        # Execute as sub-workflow with shared state
+        # Note: Reference execution shares state (unlike invoke_skill)
+        execute_workflow(workflow, types, state)
+    ELSE:
+        # Execute document with context
+        execute_document(doc, context, state)
+
+    # Resolve next node (supports dynamic interpolation)
+    target = resolve_routing_target(node.next_node, state)
+
+    RETURN { next_node: target }
 ```
 
 **Semantics:**
-- Document executed as sub-procedure
-- Context variables passed to document
+- Supports both remote workflows (`workflow`) and local documents (`doc`)
+- Remote workflows are fetched from bundles and cached (see `workflow-loader.md`)
+- Context variables are merged into state for sub-workflow/document access
+- State is SHARED - referenced workflow can read and modify parent state
+- Always routes to `next_node` (supports variable interpolation)
 - State is SHARED (not isolated like `invoke_skill`)
 - Always routes to `next_node`
+- `next_node` supports variable interpolation
 
 ---
 
@@ -885,6 +1018,25 @@ state:
 
   # Runtime detection
   interface: "claude_code"  # or "claude_ai"
+
+  # Logging (resolved from 4-tier hierarchy, see logging-config-loader.md)
+  logging:
+    enabled: true
+    level: "info"
+    auto:
+      init: true
+      finalize: true
+      write: true
+      node_tracking: true
+    # ... other resolved config
+
+  # Log session (created by init_log, null until initialized)
+  log:
+    workflow: "add-source"
+    level: "info"
+    entries: []
+    started_at: "2026-01-28T10:30:00Z"
+    # ... populated during execution
 
   # Execution history
   history:
@@ -1145,6 +1297,66 @@ FUNCTION resolve_path(path, state):
     RETURN get_nested(state, path)
 ```
 
+### Dynamic Routing
+
+Routing targets (`on_success`, `on_failure`, `branches.*`, `next_node`) support variable interpolation, enabling dynamic routing based on computed state.
+
+```
+FUNCTION resolve_routing_target(target, state):
+    # If target contains ${...}, interpolate it
+    IF target.includes("${"):
+        resolved = interpolate(target, state)
+        IF resolved == null OR resolved == "":
+            THROW "Dynamic routing target resolved to null/empty: {target}"
+        RETURN resolved
+    ELSE:
+        # Static target - return as-is
+        RETURN target
+```
+
+**Dynamic Routing Pattern:**
+
+Instead of creating N conditional nodes for N possible destinations, use `dynamic_route` consequence with interpolated `on_success`:
+
+```yaml
+# Before: O(N) conditional nodes
+route_to_init:
+  type: conditional
+  condition:
+    type: state_equals
+    field: computed.matched_action
+    value: "delegate_init"
+  branches:
+    true: delegate_init
+    false: route_to_build
+
+route_to_build:
+  type: conditional
+  condition:
+    type: state_equals
+    field: computed.matched_action
+    value: "delegate_build"
+  branches:
+    true: delegate_build
+    false: route_to_refresh
+# ... and so on for each action
+
+# After: O(1) with dynamic routing
+execute_matched_intent:
+  type: action
+  actions:
+    - type: dynamic_route
+      action: "${computed.intent_matches.winner.action}"
+  on_success: "${computed.dynamic_target}"  # Interpolated at runtime!
+  on_failure: show_main_menu
+```
+
+**Key Points:**
+- The `dynamic_route` consequence sets `computed.dynamic_target`
+- The `on_success` field references this computed value via `${computed.dynamic_target}`
+- At execution time, the engine interpolates the target and routes accordingly
+- Target must resolve to a valid node/ending name or execution fails
+
 ### Checkpoint Operations
 
 ```
@@ -1346,10 +1558,18 @@ actions:
 |------|-------|
 | `name` must match skill directory | "Workflow name mismatch" |
 | `start_node` must exist in `nodes` | "Start node not found" |
-| All `on_success`/`on_failure` must exist | "Invalid transition target" |
-| All `branches` targets must exist | "Invalid branch target" |
-| All `next_node` must exist | "Invalid next_node target" |
+| Static `on_success`/`on_failure` must exist | "Invalid transition target" |
+| Static `branches` targets must exist | "Invalid branch target" |
+| Static `next_node` must exist | "Invalid next_node target" |
 | `on_response` must cover all option ids | "Missing response handler" |
+| Dynamic routing targets (containing `${`) are validated at runtime | N/A |
+
+**Note on Dynamic Routing:**
+
+Static routing targets (without `${`) are validated at load time. Dynamic routing targets (containing `${...}`) cannot be fully validated until runtime when the state is known. Runtime validation ensures:
+
+1. The interpolated value is not null or empty
+2. The interpolated value matches a valid node or ending name
 
 ### Runtime Validation
 
@@ -1405,6 +1625,11 @@ state:
 ## Related Documentation
 
 - **Type Loader:** `lib/workflow/type-loader.md` - Type resolution protocol
+- **Workflow Loader:** `lib/workflow/workflow-loader.md` - Remote workflow resolution protocol
+- **Logging Config Loader:** `lib/workflow/logging-config-loader.md` - Logging configuration resolution protocol
 - **Type Resolution:** `lib/blueprint/patterns/type-resolution.md` - External type sources
+- **Logging Configuration:** `lib/blueprint/patterns/logging-configuration.md` - Logging configuration options
+- **Intent Composition:** `lib/blueprint/patterns/intent-composition.md` - Dynamic routing patterns
 - **Type Definitions:** `lib/consequences/definitions/` and `lib/preconditions/definitions/`
 - **JSON Schema:** `lib/schema/workflow-schema.json` - Formal schema definition
+- **Logging Schema:** `lib/schema/logging-config-schema.json` - Plugin logging configuration schema

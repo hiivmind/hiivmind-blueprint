@@ -160,6 +160,19 @@ FUNCTION resolve_github_url(source):
 │           └── {version}/
 │               ├── bundle.yaml
 │               └── metadata.yaml
+├── workflows/                          # Extracted workflows (v1.2+)
+│   └── {owner}/
+│       └── {repo}/
+│           └── {version}/
+│               └── {workflow-name}/
+│                   ├── workflow.yaml   # Extracted from bundle
+│                   └── metadata.yaml
+├── logging/                            # Extracted logging defaults (v1.3+)
+│   └── {owner}/
+│       └── {repo}/
+│           └── {version}/
+│               ├── defaults.yaml       # Extracted from bundle
+│               └── metadata.yaml
 ├── engine/
 │   └── {version}/
 │       └── engine.md
@@ -168,6 +181,8 @@ FUNCTION resolve_github_url(source):
         ├── bundle.yaml
         └── metadata.yaml
 ```
+
+**Note:** Workflows and logging defaults are extracted from bundles on first reference and cached separately for faster subsequent loads. See `workflow-loader.md` and `logging-config-loader.md` for the respective loading protocols.
 
 ### Cache Key Computation
 
@@ -184,14 +199,35 @@ FUNCTION compute_cache_key(source, source_type):
 
 ### Metadata Format
 
+**Type Bundle Metadata:**
+
 ```yaml
-# metadata.yaml
+# types/{owner}/{repo}/{version}/metadata.yaml
 url: "https://github.com/hiivmind/hiivmind-blueprint-types/releases/download/v1.0.0/bundle.yaml"
 fetched_at: "2026-01-27T10:30:00Z"
 sha256: "a1b2c3d4e5f6..."
-schema_version: "1.1"
+schema_version: "1.2"
 consequence_count: 43
 precondition_count: 27
+workflow_count: 1                       # v1.2+
+```
+
+**Workflow Metadata (v1.2+):**
+
+```yaml
+# workflows/{owner}/{repo}/{version}/{workflow-name}/metadata.yaml
+bundle_source: "hiivmind/hiivmind-blueprint-types@v1.0.0"
+workflow_name: "intent-detection"
+workflow_version: "1.0.0"
+extracted_at: "2026-01-28T10:30:00Z"
+bundle_sha256: "abc123..."
+depends_on:
+  consequences:
+    - parse_intent_flags
+    - match_3vl_rules
+    - set_state
+  preconditions:
+    - evaluate_expression
 ```
 
 ### Staleness Check
@@ -659,6 +695,8 @@ Suggestions:
 ## Related Documentation
 
 - **Engine:** `lib/workflow/engine.md` - Execution engine that uses loaded types
+- **Workflow Loader:** `lib/workflow/workflow-loader.md` - Workflow loading protocol (v1.2+)
+- **Logging Config Loader:** `lib/workflow/logging-config-loader.md` - Logging configuration loading protocol (v1.3+)
 - **Type Resolution:** `lib/blueprint/patterns/type-resolution.md` - Resolution protocol details
 - **Consequence Index:** `lib/consequences/definitions/index.yaml` - Local consequence registry
 - **Precondition Index:** `lib/preconditions/definitions/index.yaml` - Local precondition registry
