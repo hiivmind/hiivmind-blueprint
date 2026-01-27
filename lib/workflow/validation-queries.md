@@ -638,7 +638,7 @@ yq '[.endings | to_entries | .[] | select(.value.type == "success") | .key] | if
 
 ## Two-Tier Validation Architecture
 
-The workflow system uses a two-tier validation approach:
+The workflow system uses a two-tier validation approach for both preconditions and consequences:
 
 ### Tier 1: Structural Validation (JSON Schema)
 
@@ -647,7 +647,7 @@ The `lib/schema/workflow-schema.json` validates **workflow structure**:
 - Node types (`action`, `conditional`, `user_prompt`, `validation_gate`, `reference`)
 - Node-type-specific required fields
 - Transition references
-- Precondition structure
+- **Precondition has a `type` field** (but NOT which types exist)
 - **Consequence has a `type` field** (but NOT which types exist)
 
 ```bash
@@ -664,7 +664,30 @@ print('Schema validation passed')
 "
 ```
 
-### Tier 2: Consequence Type Validation (Runtime)
+### Tier 2: Type Validation (Runtime)
+
+Both preconditions and consequences use modular YAML definitions as the authoritative source.
+
+#### Precondition Type Validation
+
+The `lib/preconditions/definitions/index.yaml` is the **authoritative source** for precondition types:
+
+```bash
+# Check if a precondition type is valid
+TYPE="file_exists"
+yq ".type_lookup | has(\"$TYPE\")" lib/preconditions/definitions/index.yaml
+
+# Get definition file for a type
+yq ".type_lookup.$TYPE" lib/preconditions/definitions/index.yaml
+
+# List all known precondition types
+yq '.type_lookup | keys | .[]' lib/preconditions/definitions/index.yaml
+
+# Count types
+yq '.stats.total_types' lib/preconditions/definitions/index.yaml
+```
+
+#### Consequence Type Validation
 
 The `lib/consequences/definitions/index.yaml` is the **authoritative source** for consequence types:
 
@@ -683,22 +706,46 @@ yq '.type_lookup | keys | .[]' lib/consequences/definitions/index.yaml
 yq '.stats.total_types' lib/consequences/definitions/index.yaml
 ```
 
+### Runtime Precondition Validation
+
+For each precondition used in a workflow, validate against definitions:
+
+```bash
+# Extract all precondition types used in workflow
+USED_PRECONDITIONS=$(yq '[
+  (.entry_preconditions[]?.type),
+  (.nodes | to_entries | .[] | .value.condition?.type),
+  (.nodes | to_entries | .[] | .value.validations[]?.type)
+] | .[] | select(. != null) | unique' workflow.yaml)
+
+# Check each against known types
+KNOWN_PRECONDITIONS=$(yq '.type_lookup | keys | .[]' lib/preconditions/definitions/index.yaml)
+
+for type in $USED_PRECONDITIONS; do
+  if echo "$KNOWN_PRECONDITIONS" | grep -qx "$type"; then
+    echo "✓ $type"
+  else
+    echo "✗ $type (unknown precondition type)"
+  fi
+done
+```
+
 ### Runtime Consequence Validation
 
 For each consequence used in a workflow, validate against definitions:
 
 ```bash
 # Extract all consequence types used in workflow
-USED_TYPES=$(yq '[
+USED_CONSEQUENCES=$(yq '[
   (.nodes | to_entries | .[] | .value.actions[]?.type),
   (.nodes | to_entries | .[] | .value.on_response | .[]? | .consequence[]?.type)
 ] | .[] | select(. != null) | unique' workflow.yaml)
 
 # Check each against known types
-KNOWN_TYPES=$(yq '.type_lookup | keys | .[]' lib/consequences/definitions/index.yaml)
+KNOWN_CONSEQUENCES=$(yq '.type_lookup | keys | .[]' lib/consequences/definitions/index.yaml)
 
-for type in $USED_TYPES; do
-  if echo "$KNOWN_TYPES" | grep -qx "$type"; then
+for type in $USED_CONSEQUENCES; do
+  if echo "$KNOWN_CONSEQUENCES" | grep -qx "$type"; then
     echo "✓ $type"
   else
     echo "✗ $type (unknown consequence type)"
@@ -706,15 +753,72 @@ for type in $USED_TYPES; do
 done
 ```
 
+### Combined Runtime Validation
+
+Validate both preconditions and consequences in one pass:
+
+```bash
+#!/bin/bash
+# validate-types.sh - Runtime type validation
+
+WORKFLOW="${1:-workflow.yaml}"
+EXIT_CODE=0
+
+echo "=== Precondition Type Validation ==="
+USED_PRECONDITIONS=$(yq '[
+  (.entry_preconditions[]?.type),
+  (.nodes | to_entries | .[] | .value.condition?.type),
+  (.nodes | to_entries | .[] | .value.validations[]?.type)
+] | .[] | select(. != null)' "$WORKFLOW" | sort -u)
+
+KNOWN_PRECONDITIONS=$(yq '.type_lookup | keys | .[]' lib/preconditions/definitions/index.yaml)
+
+for type in $USED_PRECONDITIONS; do
+  if echo "$KNOWN_PRECONDITIONS" | grep -qx "$type"; then
+    echo "✓ $type"
+  else
+    echo "✗ $type (unknown precondition type)"
+    EXIT_CODE=1
+  fi
+done
+
+echo ""
+echo "=== Consequence Type Validation ==="
+USED_CONSEQUENCES=$(yq '[
+  (.nodes | to_entries | .[] | .value.actions[]?.type),
+  (.nodes | to_entries | .[] | .value.on_response | .[]? | .consequence[]?.type)
+] | .[] | select(. != null)' "$WORKFLOW" | sort -u)
+
+KNOWN_CONSEQUENCES=$(yq '.type_lookup | keys | .[]' lib/consequences/definitions/index.yaml)
+
+for type in $USED_CONSEQUENCES; do
+  if echo "$KNOWN_CONSEQUENCES" | grep -qx "$type"; then
+    echo "✓ $type"
+  else
+    echo "✗ $type (unknown consequence type)"
+    EXIT_CODE=1
+  fi
+done
+
+exit $EXIT_CODE
+```
+
 ### Benefits of Two-Tier Approach
 
 | Aspect | Tier 1 (Schema) | Tier 2 (Definitions) |
 |--------|----------------|---------------------|
-| **Validates** | Workflow structure | Consequence types |
-| **Source** | `workflow-schema.json` | `definitions/index.yaml` |
+| **Validates** | Workflow structure | Precondition and consequence types |
+| **Source** | `workflow-schema.json` | `preconditions/definitions/`, `consequences/definitions/` |
 | **When** | Parse time | Runtime |
 | **Extensible** | No (fixed node types) | Yes (add YAML files) |
 | **IDE support** | JSON Schema autocomplete | Separate tooling |
+
+### Adding New Precondition Types
+
+1. Add definition to `lib/preconditions/definitions/extensions/` or `core/`
+2. Update `lib/preconditions/definitions/index.yaml` with type lookup
+3. Workflows using new type will pass schema validation immediately
+4. Runtime validation checks type exists in index
 
 ### Adding New Consequence Types
 
@@ -728,7 +832,8 @@ done
 ## Related Documentation
 
 - **Schema:** `lib/workflow/schema.md` - Workflow YAML structure
-- **Preconditions:** `lib/workflow/preconditions.md` - Precondition types
+- **Preconditions:** `lib/preconditions/definitions/` - Precondition type definitions
+- **Precondition Docs:** `lib/workflow/preconditions.md` - Precondition usage guide
 - **Consequences:** `lib/consequences/definitions/` - Consequence type definitions
 - **Capability Detection:** `lib/consequences/capabilities/` - Tool availability checks
 - **Validate Skill:** `skills/hiivmind-blueprint-validate/SKILL.md`
