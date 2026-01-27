@@ -28,44 +28,63 @@ The core value: Transform imperative prose instructions into declarative YAML wo
 │       └── intent-mapping.yaml
 │
 ├── lib/
-│   ├── workflow/                     # COPIED from hiivmind-corpus
+│   ├── consequences/                 # Consequence type definitions (extracted to hiivmind-blueprint-types)
+│   │   ├── definitions/
+│   │   │   ├── index.yaml            # Master registry (43 types)
+│   │   │   ├── core/                 # 30 core consequences
+│   │   │   │   ├── state.yaml        # set_flag, set_state, append_state, clear_state, merge_state
+│   │   │   │   ├── evaluation.yaml   # evaluate, compute
+│   │   │   │   ├── interaction.yaml  # display_message, display_table
+│   │   │   │   ├── control.yaml      # create_checkpoint, rollback_checkpoint, spawn_agent
+│   │   │   │   ├── skill.yaml        # invoke_pattern, invoke_skill
+│   │   │   │   ├── utility.yaml      # set_timestamp, compute_hash
+│   │   │   │   ├── intent.yaml       # evaluate_keywords, parse_intent_flags, match_3vl_rules, dynamic_route
+│   │   │   │   └── logging.yaml      # init_log, log_node, log_event, etc. (10 types)
+│   │   │   └── extensions/           # 13 extension consequences
+│   │   │       ├── file-system.yaml  # read_file, write_file, create_directory, delete_file
+│   │   │       ├── git.yaml          # clone_repo, get_sha, git_pull, git_fetch
+│   │   │       ├── web.yaml          # web_fetch, cache_web_content
+│   │   │       └── scripting.yaml    # run_script, run_python, run_bash
+│   │   └── schema/
+│   │       └── consequence-definition.json
+│   │
+│   ├── preconditions/                # Precondition type definitions (extracted to hiivmind-blueprint-types)
+│   │   ├── definitions/
+│   │   │   ├── index.yaml            # Master registry (27 types)
+│   │   │   ├── core/                 # 22 core preconditions
+│   │   │   │   ├── filesystem.yaml   # config_exists, file_exists, directory_exists, etc.
+│   │   │   │   ├── state.yaml        # flag_set, state_equals, count_above, etc.
+│   │   │   │   ├── tool.yaml         # tool_available, python_module_available
+│   │   │   │   ├── composite.yaml    # all_of, any_of, none_of
+│   │   │   │   ├── expression.yaml   # evaluate_expression
+│   │   │   │   └── logging.yaml      # log_initialized, log_level_enabled, log_finalized
+│   │   │   └── extensions/           # 5 extension preconditions
+│   │   │       ├── source.yaml       # source_exists, source_cloned, source_has_updates
+│   │   │       └── web.yaml          # fetch_succeeded, fetch_returned_content
+│   │   └── schema/
+│   │       └── precondition-definition.json
+│   │
+│   ├── workflow/                     # Workflow reference documentation
 │   │   ├── schema.md                 # YAML workflow schema definition
 │   │   ├── execution.md              # Workflow execution semantics
-│   │   ├── preconditions.md          # 30+ precondition types
-│   │   ├── consequences/             # Modular consequence structure
-│   │   │   ├── README.md             # Taxonomy and overview (40 types)
-│   │   │   ├── core/                 # 30 core workflow consequences
-│   │   │   │   ├── shared.md         # Common patterns
-│   │   │   │   ├── workflow.md       # State, evaluation, control flow (16)
-│   │   │   │   ├── intent-detection.md # 3VL routing (4)
-│   │   │   │   └── logging.md        # Workflow execution logging (10)
-│   │   │   └── extensions/           # 10 generic domain extensions
-│   │   │       ├── README.md         # Extension meta-pattern
-│   │   │       ├── file-system.md    # File operations (4)
-│   │   │       ├── git.md            # Git operations (4)
-│   │   │       └── web.md            # Web operations (2)
 │   │   ├── state.md                  # State management patterns
 │   │   ├── validation-queries.md     # yq validation patterns
-│   │   └── validation-report-format.md  # Report output format
+│   │   └── validation-report-format.md
 │   │
 │   ├── schema/                       # JSON Schema definitions
-│   │   ├── workflow-schema.json      # Formal workflow.yaml schema
-│   │   └── intent-mapping-schema.json  # Formal intent-mapping.yaml schema
+│   │   ├── workflow-schema.json      # Formal workflow.yaml schema (v2.1 with definitions)
+│   │   └── intent-mapping-schema.json
 │   │
-│   ├── intent_detection/             # COPIED from hiivmind-corpus
-│   │   ├── framework.md              # 3VL intent detection framework
+│   ├── intent_detection/             # 3VL intent detection framework
+│   │   ├── framework.md              # 3VL concepts and rules
 │   │   ├── execution.md              # Intent resolution semantics
 │   │   └── variables.md              # Variable extraction patterns
 │   │
-│   └── blueprint/patterns/           # NEW blueprint-specific patterns
+│   └── blueprint/patterns/           # Blueprint-specific patterns
 │       ├── skill-analysis.md         # How to analyze SKILL.md structure
-│       ├── phase-extraction.md       # Extract phases from prose
-│       ├── conditional-detection.md  # Detect branching patterns
-│       ├── action-identification.md  # Identify discrete actions
 │       ├── node-mapping.md           # Map prose → workflow nodes
 │       ├── workflow-generation.md    # Generate workflow.yaml
-│       ├── thin-loader-generation.md # Generate minimal SKILL.md
-│       ├── gateway-generation.md     # Generate gateway commands
+│       ├── type-resolution.md        # External type resolution protocol (NEW)
 │       └── consequence-extensions.md # Creating custom extensions
 │
 ├── templates/                        # Templates for generation
@@ -280,6 +299,65 @@ These features span multiple skills and must stay synchronized:
 | Report format | validate | Consistent status icons and structure |
 | JSON Schema definitions | validate, upgrade | Match YAML schema docs, all types included |
 | Logging configuration | analyze, convert, generate, validate | Config/usage alignment |
+
+## External Type Definitions
+
+Type definitions (consequences and preconditions) can be externalized for versioning and reuse.
+
+### Repository: hiivmind-blueprint-types
+
+The canonical type definitions are published at:
+- **GitHub**: `hiivmind/hiivmind-blueprint-types`
+- **Bundle**: `https://github.com/hiivmind/hiivmind-blueprint-types/releases/download/v1.0.0/bundle.yaml`
+
+### Using External Definitions
+
+Workflows can reference external types:
+
+```yaml
+# workflow.yaml
+definitions:
+  source: https://github.com/hiivmind/hiivmind-blueprint-types/releases/download/v1.0.0/bundle.yaml
+
+nodes:
+  clone_source:
+    type: action
+    actions:
+      - type: clone_repo          # Resolved from external definitions
+        url: "${source.url}"
+```
+
+### Source Options
+
+| Format | Example | Usage |
+|--------|---------|-------|
+| URL | `https://github.com/.../bundle.yaml` | Direct fetch |
+| Local | `source: local` + `path: ./vendor/...` | Embedded |
+| Shorthand | `hiivmind/hiivmind-blueprint-types@v1.0.0` | GitHub release |
+
+### Hybrid Model
+
+Both external and embedded definitions are supported:
+
+- **External** (default for new workflows): Reference by URL
+- **Embedded** (for offline/airgapped): Bundle in `vendor/` directory
+
+### Version Pinning
+
+| Reference | Behavior |
+|-----------|----------|
+| `@v1.0.0` | Exact version (recommended for production) |
+| `@v1.0` | Latest patch in v1.0.x |
+| `@v1` | Latest minor in v1.x.x (development) |
+
+### Type Inventory (v1.0.0)
+
+| Category | Count | Examples |
+|----------|-------|----------|
+| Consequences | 43 | set_state, clone_repo, web_fetch, init_log |
+| Preconditions | 27 | file_exists, flag_set, all_of, source_cloned |
+
+See `lib/blueprint/patterns/type-resolution.md` for implementation details.
 
 ## Self-Dogfooding
 
