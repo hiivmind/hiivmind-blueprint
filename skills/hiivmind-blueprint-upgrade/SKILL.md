@@ -19,9 +19,10 @@ Migrate existing workflow.yaml files to the latest schema version with deprecati
 
 This skill upgrades workflows by:
 1. Detecting the current schema version
-2. Identifying deprecated patterns
-3. Applying migrations to latest schema
-4. Optionally adding new features
+2. Checking for engine and types updates
+3. Identifying deprecated patterns
+4. Applying migrations to latest schema
+5. Updating `.hiivmind/blueprint/` files
 
 ---
 
@@ -33,12 +34,46 @@ This skill upgrades workflows by:
 | 1.1.0 | Added `validation_gate` node type | None |
 | 1.2.0 | Added `reference` node type | None |
 | 2.0.0 | New consequence format | `set_state` syntax changed |
+| 2.1.0 | External definitions, `.hiivmind/blueprint/` structure | Lock file location changed |
 
 ---
 
-## Phase 1: Discover Workflows
+## Upgrade Modes
 
-### Step 1.1: Find Workflow Files
+This skill supports two upgrade modes:
+
+### Mode 1: Workflow Schema Upgrade
+Migrate workflow.yaml files to latest schema version (2.0.0+).
+
+### Mode 2: Infrastructure Upgrade
+Update `.hiivmind/blueprint/` files (engine.md, types.lock) to latest versions.
+
+**Invocation:**
+- `/hiivmind-blueprint upgrade` - Full upgrade (schema + infrastructure)
+- `/hiivmind-blueprint upgrade --check` - Check for updates without applying
+- `/hiivmind-blueprint upgrade --schema-only` - Only upgrade workflow schema
+- `/hiivmind-blueprint upgrade --infra-only` - Only upgrade engine/types
+
+---
+
+## Phase 1: Discover Workflows and Infrastructure
+
+### Step 1.1: Check Infrastructure Version
+
+Read current infrastructure versions from `.hiivmind/blueprint/types.lock`:
+
+```
+IF file_exists(".hiivmind/blueprint/types.lock"):
+  lock_file = read_yaml(".hiivmind/blueprint/types.lock")
+  current_engine_version = lock_file.engine.version
+  current_types_versions = lock_file.types
+ELSE:
+  # Legacy plugin without types.lock
+  current_engine_version = null
+  current_types_versions = {}
+```
+
+### Step 1.2: Find Workflow Files
 
 Scan for existing workflows:
 
@@ -54,7 +89,7 @@ workflows:
     directory: "skills/example-skill"
 ```
 
-### Step 1.2: Select Target
+### Step 1.3: Select Target
 
 If multiple workflows found:
 
@@ -303,24 +338,119 @@ Write(workflow_path, updated_workflow_yaml)
 
 ---
 
-## Phase 5: Update SKILL.md (if needed)
+## Phase 5: Update Infrastructure
 
-### Step 5.1: Check Thin Loader
+### Step 5.1: Check for Engine Updates
+
+Fetch latest engine version from GitHub:
+
+```
+latest_engine = fetch_github_release("hiivmind/hiivmind-blueprint", "latest")
+current_engine = lock_file.engine.version
+
+IF latest_engine.version > current_engine:
+  engine_update_available = true
+  engine_update = {
+    from: current_engine,
+    to: latest_engine.version,
+    url: latest_engine.assets["engine.md"]
+  }
+```
+
+### Step 5.2: Check for Types Updates
+
+For each type source in lock file:
+
+```
+FOR each source, entry IN lock_file.types:
+  # Parse version request (e.g., "@v1" → major version constraint)
+  IF entry.requested is not exact version:
+    latest = resolve_latest_version(source, entry.requested)
+    IF latest > entry.resolved:
+      types_updates.append({
+        source: source,
+        from: entry.resolved,
+        to: latest
+      })
+```
+
+### Step 5.3: Present Infrastructure Update Plan
+
+If updates available:
+
+```
+## Infrastructure Updates Available
+
+**Engine:**
+- Current: {current_engine_version}
+- Latest: {latest_engine_version}
+- Changelog: {changelog_url}
+
+**Types:**
+{for each update}
+- {source}: {from} → {to}
+{/for}
+```
+
+### Step 5.4: Apply Infrastructure Updates
+
+**Ask user:**
+```json
+{
+  "questions": [{
+    "question": "Apply infrastructure updates?",
+    "header": "Update",
+    "multiSelect": false,
+    "options": [
+      {"label": "Apply all", "description": "Update engine and types"},
+      {"label": "Engine only", "description": "Only update engine.md"},
+      {"label": "Types only", "description": "Only update type definitions"},
+      {"label": "Skip", "description": "Keep current versions"}
+    ]
+  }]
+}
+```
+
+If updates requested:
+
+```bash
+# Update engine.md
+IF engine_update:
+  # Fetch new engine from cache or download
+  cache_path="~/.claude/cache/hiivmind/blueprint/engine/{latest_version}/"
+  mkdir -p "{cache_path}"
+
+  # Download if not cached
+  IF NOT file_exists("{cache_path}/engine.md"):
+    fetch_and_cache(engine_update.url, cache_path)
+
+  # Copy to plugin
+  cp "{cache_path}/engine.md" ".hiivmind/blueprint/engine.md"
+
+# Update types.lock
+update_lock_file(".hiivmind/blueprint/types.lock", {
+  engine: {
+    version: latest_engine_version,
+    sha256: compute_sha256(".hiivmind/blueprint/engine.md"),
+    source: "hiivmind/hiivmind-blueprint@{latest_version}"
+  },
+  types: updated_types_entries
+})
+```
+
+### Step 5.5: Update SKILL.md (if needed)
 
 If the skill's SKILL.md is a thin loader, check if it needs updates:
 
-- References to old library paths
+- References to old library paths (e.g., `lib/workflow/` → `.hiivmind/blueprint/`)
 - Missing new node type documentation
 - Outdated execution instructions
-
-### Step 5.2: Update Thin Loader
 
 If updates needed:
 
 ```
-# Update execution loop to include new node types
-# Update reference documentation paths
-# Add any new sections
+# Update paths to use new .hiivmind/blueprint/ structure
+sed -i 's|lib/workflow/engine.md|.hiivmind/blueprint/engine.md|g' SKILL.md
 ```
 
 ---
@@ -335,7 +465,14 @@ Read back and verify:
 3. All transitions valid
 4. No orphaned endings
 
-### Step 6.2: Report Results
+### Step 6.2: Validate Infrastructure
+
+Check infrastructure files:
+1. `.hiivmind/blueprint/engine.md` exists and is readable
+2. `.hiivmind/blueprint/types.lock` has valid schema
+3. Lock file versions match actual files
+
+### Step 6.3: Report Results
 
 ```
 ## Upgrade Complete
@@ -349,9 +486,21 @@ Read back and verify:
 - {migration_name}: {changes_made} changes
 {/for}
 
+### Infrastructure Updates
+{if engine_updated}
+- Engine: {old_engine_version} → {new_engine_version}
+{/if}
+{if types_updated}
+- Types: {for each update}{source}: {from} → {to}{/for}
+{/if}
+
 ### Files Modified
 - `{workflow_path}` (upgraded)
 - `{workflow_path}.backup` (backup created)
+{if infra_updated}
+- `.hiivmind/blueprint/engine.md` (updated)
+- `.hiivmind/blueprint/types.lock` (updated)
+{/if}
 {if skill_updated}
 - `{skill_path}` (thin loader updated)
 {/if}
@@ -360,6 +509,7 @@ Read back and verify:
 - YAML syntax: Valid
 - Node reachability: All nodes reachable
 - Transition validity: All transitions valid
+- Infrastructure: Valid
 
 ### Next Steps
 1. Test the skill to verify behavior unchanged
@@ -485,9 +635,10 @@ cp "{workflow_path}.backup" "{workflow_path}"
 
 ## Reference Documentation
 
-- **Workflow Schema:** `${CLAUDE_PLUGIN_ROOT}/lib/workflow/schema.md`
-- **Consequences:** `${CLAUDE_PLUGIN_ROOT}/lib/workflow/consequences.md`
-- **State Model:** `${CLAUDE_PLUGIN_ROOT}/lib/workflow/state.md`
+- **Workflow Engine:** `${CLAUDE_PLUGIN_ROOT}/lib/workflow/engine.md`
+- **Type Loader:** `${CLAUDE_PLUGIN_ROOT}/lib/workflow/type-loader.md`
+- **Plugin Structure:** `${CLAUDE_PLUGIN_ROOT}/lib/blueprint/patterns/plugin-structure.md`
+- **Types Lock Schema:** `${CLAUDE_PLUGIN_ROOT}/lib/schema/types-lock-schema.json`
 
 ---
 

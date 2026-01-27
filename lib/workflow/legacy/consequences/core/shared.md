@@ -1,5 +1,10 @@
 # Shared Consequence Patterns
 
+> **ARCHIVED:** This document is preserved for reference. The authoritative sources are:
+> - `lib/consequences/definitions/` - YAML type definitions with examples
+
+---
+
 Common patterns and conventions used across all consequence types.
 
 ---
@@ -182,93 +187,8 @@ actions:
 
 ---
 
-## Result Structures
-
-### Success Results
-
-Most consequences set state fields directly:
-
-```yaml
-# After read_file
-state.config = { sources: [...], ... }
-
-# After get_sha
-state.computed.sha = "abc123..."
-```
-
-### Structured Results
-
-Some consequences return objects with metadata:
-
-```yaml
-# After web_fetch
-state.computed.fetch_result:
-  status: 200
-  content: "..."
-  url: "https://..."
-
-# After match_3vl_rules
-state.computed.intent_matches:
-  clear_winner: true
-  winner: { name: "...", action: "..." }
-  top_candidates: [...]
-```
-
----
-
-## Cross-Domain Patterns
-
-### Read-Then-Write
-
-Many workflows follow read-modify-write:
-
-```yaml
-actions:
-  - type: read_file
-    path: "config.yaml"
-    store_as: config
-  - type: compute
-    expression: "config.sources.length + 1"
-    store_as: computed.next_index
-  - type: write_file
-    path: "config.yaml"
-    content: "${computed.updated_config}"
-```
-
-### Conditional Branching
-
-Use `evaluate` to set flags, then branch in routing:
-
-```yaml
-actions:
-  - type: evaluate
-    expression: "computed.sha != config.sources[0].last_commit_sha"
-    set_flag: needs_update
-
-routing:
-  - condition:
-      flag_is_set: needs_update
-    goto: update_index
-  - goto: skip_update  # Default
-```
-
-### Error Accumulation
-
-Use `append_state` to collect errors:
-
-```yaml
-actions:
-  - type: append_state
-    field: computed.errors
-    value: "Missing required field: ${computed.missing_field}"
-```
-
----
-
 ## Related Documentation
 
 - **Parent:** [../README.md](../README.md) - Consequence taxonomy
 - **Core consequences:** [workflow.md](workflow.md) - State, evaluation, control flow, etc.
 - **Extensions:** [../extensions/](../extensions/) - Domain-specific consequences
-- **Schema:** `lib/workflow/schema.md` - Workflow YAML structure
-- **State:** `lib/workflow/state.md` - Runtime state structure

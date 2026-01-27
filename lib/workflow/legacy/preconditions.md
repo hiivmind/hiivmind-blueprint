@@ -1,5 +1,11 @@
 # Workflow Preconditions
 
+> **ARCHIVED:** This document is preserved for reference. The authoritative source is:
+> - **YAML Definitions:** `lib/preconditions/definitions/index.yaml`
+> - **Full type catalog:** `lib/preconditions/definitions/core/*.yaml` and `extensions/*.yaml`
+
+---
+
 Preconditions are boolean evaluations used for:
 - **Entry gates** - Determine if workflow can start
 - **Conditional nodes** - Route based on state
