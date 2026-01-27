@@ -74,6 +74,17 @@ sources:
       - fetch_succeeded
       - fetch_returned_content
 
+  - path: extensions/validation.yaml
+    category: extensions/validation
+    description: Workflow validation state checks
+    types:
+      - schema_valid
+      - references_valid
+      - types_exist
+      - graph_connected
+      - no_dead_ends
+      - validation_passed
+
 # Remote extension definitions (public URLs)
 # Users can add custom preconditions from external sources
 remote_sources:
@@ -131,9 +142,17 @@ type_lookup:
   fetch_succeeded: extensions/web.yaml
   fetch_returned_content: extensions/web.yaml
 
+  # Extensions - Validation (6)
+  schema_valid: extensions/validation.yaml
+  references_valid: extensions/validation.yaml
+  types_exist: extensions/validation.yaml
+  graph_connected: extensions/validation.yaml
+  no_dead_ends: extensions/validation.yaml
+  validation_passed: extensions/validation.yaml
+
 # Statistics
 stats:
-  total_types: 27
+  total_types: 33
   core_types: 22
-  extension_types: 5
-  definition_files: 8
+  extension_types: 11
+  definition_files: 9

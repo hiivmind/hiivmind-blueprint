@@ -1,0 +1,276 @@
+# Validation Extension Preconditions
+# Workflow validation state checks for hiivmind-blueprint-validate
+
+schema_version: "1.0"
+category: extensions/validation
+description: Preconditions for checking workflow validation state
+
+preconditions:
+  # --------------------------------------------------------------------------
+  # schema_valid
+  # --------------------------------------------------------------------------
+  - type: schema_valid
+    description:
+      brief: Check if schema validation passed
+      detail: |
+        Checks if the schema validation result indicates no errors. Typically
+        used after running validate_yaml_schema consequence to gate further
+        validation steps.
+      notes:
+        - Requires validate_yaml_schema to have run first
+        - Checks the .valid field of the result
+
+    parameters:
+      - name: result_field
+        type: string
+        required: false
+        default: "computed.schema_result"
+        description: State field containing schema validation result
+        pattern: "^[a-zA-Z_][a-zA-Z0-9_.\\[\\]]*$"
+
+    evaluation:
+      effect: |
+        result = get_state_value(result_field)
+        return result != null and result.valid == true
+      state_reads:
+        - "${result_field}"
+
+    examples:
+      - title: Check schema validation passed
+        yaml: |
+          condition:
+            type: schema_valid
+            result_field: computed.schema_result
+        context: After validate_yaml_schema has stored results
+
+      - title: Use default field
+        yaml: |
+          condition:
+            type: schema_valid
+
+    related:
+      - references_valid
+      - types_exist
+    since: "1.1.0"
+
+  # --------------------------------------------------------------------------
+  # references_valid
+  # --------------------------------------------------------------------------
+  - type: references_valid
+    description:
+      brief: Check if all node references are valid
+      detail: |
+        Checks if the node reference validation result indicates all transitions
+        point to valid targets. Typically used after validate_node_references.
+      notes:
+        - Requires validate_node_references to have run first
+        - Checks the .valid field of the result
+
+    parameters:
+      - name: result_field
+        type: string
+        required: false
+        default: "computed.refs_result"
+        description: State field containing reference validation result
+        pattern: "^[a-zA-Z_][a-zA-Z0-9_.\\[\\]]*$"
+
+    evaluation:
+      effect: |
+        result = get_state_value(result_field)
+        return result != null and result.valid == true
+      state_reads:
+        - "${result_field}"
+
+    examples:
+      - title: Check references valid
+        yaml: |
+          condition:
+            type: references_valid
+            result_field: computed.refs_result
+
+    related:
+      - schema_valid
+      - graph_connected
+    since: "1.1.0"
+
+  # --------------------------------------------------------------------------
+  # types_exist
+  # --------------------------------------------------------------------------
+  - type: types_exist
+    description:
+      brief: Check if all types are defined
+      detail: |
+        Checks if the type existence validation result indicates all used
+        consequence and precondition types are defined in the registry.
+      notes:
+        - Requires validate_type_existence to have run first
+        - Checks the .valid field of the result
+
+    parameters:
+      - name: result_field
+        type: string
+        required: false
+        default: "computed.types_result"
+        description: State field containing type validation result
+        pattern: "^[a-zA-Z_][a-zA-Z0-9_.\\[\\]]*$"
+
+    evaluation:
+      effect: |
+        result = get_state_value(result_field)
+        return result != null and result.valid == true
+      state_reads:
+        - "${result_field}"
+
+    examples:
+      - title: Check types exist
+        yaml: |
+          condition:
+            type: types_exist
+            result_field: computed.types_result
+
+    related:
+      - schema_valid
+      - references_valid
+    since: "1.1.0"
+
+  # --------------------------------------------------------------------------
+  # graph_connected
+  # --------------------------------------------------------------------------
+  - type: graph_connected
+    description:
+      brief: Check if all nodes are reachable
+      detail: |
+        Checks if the graph connectivity analysis indicates all nodes are
+        reachable from start_node (no orphan nodes).
+      notes:
+        - Requires check_graph_connectivity to have run first
+        - Checks the .connected field of the result
+
+    parameters:
+      - name: result_field
+        type: string
+        required: false
+        default: "computed.graph_result"
+        description: State field containing graph analysis result
+        pattern: "^[a-zA-Z_][a-zA-Z0-9_.\\[\\]]*$"
+
+    evaluation:
+      effect: |
+        result = get_state_value(result_field)
+        return result != null and result.connected == true
+      state_reads:
+        - "${result_field}"
+
+    examples:
+      - title: Check graph connected
+        yaml: |
+          condition:
+            type: graph_connected
+            result_field: computed.graph_result
+
+    related:
+      - no_dead_ends
+      - references_valid
+    since: "1.1.0"
+
+  # --------------------------------------------------------------------------
+  # no_dead_ends
+  # --------------------------------------------------------------------------
+  - type: no_dead_ends
+    description:
+      brief: Check if no dead end nodes exist
+      detail: |
+        Checks if the dead end detection result indicates all nodes have
+        outgoing transitions (no nodes where execution would get stuck).
+      notes:
+        - Requires detect_dead_ends to have run first
+        - Checks the .has_dead_ends field is false
+
+    parameters:
+      - name: result_field
+        type: string
+        required: false
+        default: "computed.dead_ends_result"
+        description: State field containing dead end detection result
+        pattern: "^[a-zA-Z_][a-zA-Z0-9_.\\[\\]]*$"
+
+    evaluation:
+      effect: |
+        result = get_state_value(result_field)
+        return result != null and result.has_dead_ends == false
+      state_reads:
+        - "${result_field}"
+
+    examples:
+      - title: Check no dead ends
+        yaml: |
+          condition:
+            type: no_dead_ends
+            result_field: computed.dead_ends_result
+
+    related:
+      - graph_connected
+    since: "1.1.0"
+
+  # --------------------------------------------------------------------------
+  # validation_passed
+  # --------------------------------------------------------------------------
+  - type: validation_passed
+    description:
+      brief: Check if all validations passed
+      detail: |
+        Composite check that verifies all validation categories passed. Combines
+        schema_valid, references_valid, types_exist, graph_connected, and
+        no_dead_ends into a single check.
+      notes:
+        - Aggregates multiple validation results
+        - Returns true only if ALL validations passed
+        - Uses default field names for each validation type
+
+    parameters:
+      - name: results_field
+        type: string
+        required: false
+        default: "computed.all_validation_results"
+        description: State field containing aggregated validation results
+        pattern: "^[a-zA-Z_][a-zA-Z0-9_.\\[\\]]*$"
+
+    evaluation:
+      effect: |
+        results = get_state_value(results_field)
+        if results == null:
+          return false
+        return (
+          results.schema?.valid == true and
+          results.references?.valid == true and
+          results.types?.valid == true and
+          results.graph?.connected == true and
+          results.dead_ends?.has_dead_ends == false
+        )
+      state_reads:
+        - "${results_field}"
+
+    examples:
+      - title: Check all validations passed
+        yaml: |
+          condition:
+            type: validation_passed
+            results_field: computed.all_validation_results
+
+      - title: Gate on validation before proceeding
+        yaml: |
+          validate_before_generate:
+            type: conditional
+            condition:
+              type: validation_passed
+            branches:
+              true: proceed_to_generate
+              false: show_validation_errors
+
+    related:
+      - schema_valid
+      - references_valid
+      - types_exist
+      - graph_connected
+      - no_dead_ends
+    since: "1.1.0"

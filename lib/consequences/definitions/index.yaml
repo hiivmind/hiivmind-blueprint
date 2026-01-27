@@ -110,6 +110,17 @@ sources:
       - run_python
       - run_bash
 
+  - path: extensions/validation.yaml
+    category: extensions/validation
+    description: Workflow validation and report generation
+    types:
+      - validate_yaml_schema
+      - validate_node_references
+      - validate_type_existence
+      - check_graph_connectivity
+      - detect_dead_ends
+      - format_validation_report
+
 # Remote extension definitions (public URLs)
 # Users can add custom consequences from external sources
 remote_sources:
@@ -191,9 +202,17 @@ type_lookup:
   run_python: extensions/scripting.yaml
   run_bash: extensions/scripting.yaml
 
+  # Extensions - Validation (6)
+  validate_yaml_schema: extensions/validation.yaml
+  validate_node_references: extensions/validation.yaml
+  validate_type_existence: extensions/validation.yaml
+  check_graph_connectivity: extensions/validation.yaml
+  detect_dead_ends: extensions/validation.yaml
+  format_validation_report: extensions/validation.yaml
+
 # Statistics
 stats:
-  total_types: 43
+  total_types: 49
   core_types: 30
-  extension_types: 13
-  definition_files: 12
+  extension_types: 19
+  definition_files: 13

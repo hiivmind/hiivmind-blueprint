@@ -2,6 +2,26 @@
 
 This document describes how workflow type definitions (consequences and preconditions) are resolved from external sources, following a model similar to GitHub Actions.
 
+## Plugin-Level Structure
+
+Blueprint-enabled plugins use a standard directory structure:
+
+```
+{target_plugin}/
+├── .hiivmind/
+│   └── blueprint/
+│       ├── engine.md              # Workflow execution semantics (copied)
+│       └── types.lock             # Pinned versions and SHAs
+├── skills/
+│   └── my-skill/
+│       ├── SKILL.md               # References .hiivmind/blueprint/engine.md
+│       └── workflow.yaml
+```
+
+This structure aligns with the hiivmind ecosystem pattern (e.g., `.hiivmind/github/` for hiivmind-pulse-gh).
+
+---
+
 ## Overview
 
 Workflows can reference type definitions from external sources:
@@ -52,14 +72,16 @@ owner/repo@v1      →  Requires version resolution (not recommended for product
 Before fetching, check if the definitions are cached:
 
 ```
-~/.claude/cache/blueprint-types/
-├── hiivmind/
-│   └── hiivmind-blueprint-types/
-│       ├── v1.0.0/
-│       │   ├── bundle.yaml
-│       │   └── fetched_at.txt
-│       └── v1.2.0/
-│           └── ...
+~/.claude/cache/hiivmind/blueprint/
+├── types/
+│   └── {owner}/
+│       └── {repo}/
+│           └── {version}/
+│               ├── bundle.yaml
+│               └── metadata.yaml
+└── engine/
+    └── {version}/
+        └── engine.md
 ```
 
 **Cache key**: `{owner}/{repo}/{version}` or SHA256 of URL for direct URLs.
@@ -92,55 +114,60 @@ for node in workflow.nodes:
 
 ## Lock File Format
 
-The `.blueprint-types.lock` file ensures reproducible builds:
+The `.hiivmind/blueprint/types.lock` file ensures reproducible builds:
 
 ```yaml
-# .blueprint-types.lock
+# .hiivmind/blueprint/types.lock
 # Auto-generated - do not edit manually
 
-schema_version: "1.0"
-generated_at: "2026-01-27T05:30:00Z"
+schema: "1.0"
+generated_at: "2026-01-27T12:00:00Z"
+generated_by: "hiivmind-blueprint v1.1.0"
 
-resolved:
+engine:
+  version: "1.1.0"
+  sha256: "abc123..."
+  source: "hiivmind/hiivmind-blueprint@v1.1.0"
+
+types:
   hiivmind/hiivmind-blueprint-types:
     requested: "@v1"
     resolved: "v1.3.2"
-    sha256: "a1b2c3d4e5f6789..."
-    url: "https://github.com/hiivmind/hiivmind-blueprint-types/releases/download/v1.3.2/bundle.yaml"
+    sha256: "def456..."
     fetched_at: "2026-01-27T05:30:00Z"
 
+  # Additional type sources (extensions)
   mycorp/custom-types:
     requested: "@v2.0.0"
     resolved: "v2.0.0"
-    sha256: "f6e5d4c3b2a1..."
-    url: "https://github.com/mycorp/custom-types/releases/download/v2.0.0/bundle.yaml"
-    fetched_at: "2026-01-27T05:30:00Z"
+    sha256: "ghi789..."
 ```
 
 **Lock file semantics:**
 - If lock file exists and entry matches `requested`, use `resolved` version
 - If no lock file or entry missing, resolve latest matching version
 - `sha256` enables integrity verification (optional)
+- `engine` section tracks the engine.md version for the plugin
 
 ## Caching Architecture
 
 ### Layer 1: Global Cache (User-Level)
 
-Location: `~/.claude/cache/blueprint-types/`
+Location: `~/.claude/cache/hiivmind/blueprint/`
 
 Shared across all plugins. Fetched once per version.
 
 ```
-~/.claude/cache/blueprint-types/
-├── hiivmind/
-│   └── hiivmind-blueprint-types/
-│       └── v1.0.0/
-│           ├── bundle.yaml
-│           ├── consequences/
-│           │   ├── index.yaml
-│           │   └── definitions/
-│           ├── preconditions/
-│           └── metadata.yaml
+~/.claude/cache/hiivmind/blueprint/
+├── types/
+│   └── {owner}/
+│       └── {repo}/
+│           └── {version}/
+│               ├── bundle.yaml
+│               └── metadata.yaml
+└── engine/
+    └── {version}/
+        └── engine.md
 ```
 
 **metadata.yaml:**
@@ -150,9 +177,19 @@ fetched_at: "2026-01-27T05:30:00Z"
 sha256: "a1b2c3d4..."
 ```
 
-### Layer 2: Lock File (Plugin-Level)
+### Layer 2: Plugin-Level Structure
 
-Location: `<plugin_root>/.blueprint-types.lock`
+Location: `<plugin_root>/.hiivmind/blueprint/`
+
+The plugin contains a copy of the engine and a lock file:
+
+```
+{plugin_root}/
+├── .hiivmind/
+│   └── blueprint/
+│       ├── engine.md              # Copied from source/cache
+│       └── types.lock             # Version pinning
+```
 
 Committed to version control for reproducibility.
 
@@ -238,7 +275,7 @@ workflow.yaml:
 
 Resolution:
 1. Parse: owner=hiivmind, repo=hiivmind-blueprint-types, version=v1.0.0
-2. Cache check: ~/.claude/cache/blueprint-types/hiivmind/hiivmind-blueprint-types/v1.0.0/
+2. Cache check: ~/.claude/cache/hiivmind/blueprint/types/hiivmind/hiivmind-blueprint-types/v1.0.0/
 3. Cache miss → Construct URL:
    https://github.com/hiivmind/hiivmind-blueprint-types/releases/download/v1.0.0/bundle.yaml
 4. Fetch bundle.yaml
@@ -300,3 +337,43 @@ Suggestions:
 3. Publish both bundle.yaml and directory structure
 4. Include checksums in release artifacts
 5. Document breaking changes in CHANGELOG.md
+
+---
+
+## Update Flow
+
+The upgrade skill uses this flow to update infrastructure:
+
+```
+/hiivmind-blueprint upgrade --check
+    │
+    ▼
+Read .hiivmind/blueprint/types.lock
+    │
+    ▼
+Fetch latest from GitHub releases API
+    │
+    ▼
+Report: "Types: v1.3.2 → v1.4.0, Engine: 1.1.0 → 1.2.0"
+    │
+    ▼
+/hiivmind-blueprint upgrade
+    │
+    ▼
+Download to ~/.claude/cache/hiivmind/blueprint/
+    │
+    ▼
+Copy engine.md → .hiivmind/blueprint/
+    │
+    ▼
+Update types.lock
+```
+
+---
+
+## Related Documentation
+
+- **Engine:** `lib/workflow/engine.md` - Abstract execution engine that uses type loading
+- **Type Loader:** `lib/workflow/type-loader.md` - Detailed loading protocol implementation
+- **Plugin Structure:** `lib/blueprint/patterns/plugin-structure.md` - `.hiivmind/blueprint/` layout
+- **Embedded Types:** `lib/types/bundle.yaml` - Fallback type definitions

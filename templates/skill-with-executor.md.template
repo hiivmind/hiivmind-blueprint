@@ -1,0 +1,166 @@
+# Skill with Abstract Executor Template
+#
+# This template generates a minimal SKILL.md that references the abstract
+# workflow engine for execution. The engine pattern (engine.md) handles
+# all execution logic, making this loader extremely thin.
+#
+# Placeholders use {{placeholder}} syntax and are replaced at generation time.
+#
+# See: .hiivmind/blueprint/engine.md for execution semantics (includes type loading, schema, state)
+
+---
+name: {{skill_name}}
+description: >
+  {{description}}
+allowed-tools: {{allowed_tools}}
+---
+
+# {{title}}
+
+Execute this workflow using the abstract engine pattern.
+
+---
+
+## Resources
+
+| Resource | Path |
+|----------|------|
+| **Workflow** | `${CLAUDE_PLUGIN_ROOT}/skills/{{skill_directory}}/workflow.yaml` |
+| **Engine** | `${CLAUDE_PLUGIN_ROOT}/.hiivmind/blueprint/engine.md` |
+| **Types Lock** | `${CLAUDE_PLUGIN_ROOT}/.hiivmind/blueprint/types.lock` |
+
+---
+
+## Execution
+
+Follow the abstract workflow engine pattern to execute this workflow.
+
+### Quick Reference
+
+**Phase 1: Initialize**
+1. Load workflow.yaml from this skill directory
+2. Load type definitions per `workflow.definitions` block (see engine.md)
+3. Validate schema, types, and graph connectivity
+4. Check entry preconditions - stop if any fail
+5. Initialize runtime state with `interface` detection
+
+**Phase 2: Execute**
+Execute nodes in a loop until an ending is reached:
+- **action**: Execute consequences sequentially, route on success/failure
+- **conditional**: Evaluate precondition, route to true/false branch
+- **user_prompt**: Present options (interface-aware), handle response
+- **validation_gate**: Check all validations, collect errors
+- **reference**: Load document section, execute with shared state
+
+**Phase 3: Complete**
+Display ending message with interpolated values.
+
+---
+
+## Full Engine Reference
+
+For complete execution semantics, see:
+
+```
+${CLAUDE_PLUGIN_ROOT}/.hiivmind/blueprint/engine.md
+```
+
+This document specifies:
+- Workflow YAML schema structure
+- Type loading protocol (external definitions)
+- Node execution patterns (all 5 node types)
+- Consequence dispatch (state_mutation, tool_call, etc.)
+- State management structure and interpolation
+- Error recovery and checkpoints
+
+---
+
+## Workflow Overview
+
+{{#workflow_summary}}
+**Start:** `{{start_node}}`
+
+**Entry Preconditions:**
+{{#entry_preconditions}}
+- {{type}}: {{description}}
+{{/entry_preconditions}}
+{{^entry_preconditions}}
+- None
+{{/entry_preconditions}}
+
+**Endings:**
+{{#endings}}
+- `{{id}}` ({{type}}): {{message_preview}}
+{{/endings}}
+{{/workflow_summary}}
+
+{{^workflow_summary}}
+See workflow.yaml for graph structure.
+{{/workflow_summary}}
+
+---
+
+## Type Definitions
+
+This workflow uses type definitions from:
+
+```yaml
+definitions:
+  source: {{definitions_source}}
+  {{#definitions_fallback}}
+  fallback: {{definitions_fallback}}
+  {{/definitions_fallback}}
+```
+
+Types are loaded at workflow start per `${CLAUDE_PLUGIN_ROOT}/.hiivmind/blueprint/engine.md`.
+
+Version pinning is managed via `${CLAUDE_PLUGIN_ROOT}/.hiivmind/blueprint/types.lock`.
+
+---
+
+## State Structure
+
+Initial state structure:
+
+```yaml
+workflow_name: {{skill_name}}
+workflow_version: "{{version}}"
+current_node: {{start_node}}
+previous_node: null
+interface: null  # Detected: "claude_code" or "claude_ai"
+history: []
+user_responses: {}
+computed: {}
+flags:
+  {{#initial_flags}}
+  {{name}}: {{default}}
+  {{/initial_flags}}
+checkpoints: {}
+{{#custom_state_fields}}
+{{name}}: {{default}}
+{{/custom_state_fields}}
+```
+
+{{#variable_examples}}
+### Key Variables
+
+| Variable | Description |
+|----------|-------------|
+{{#items}}
+| `${{{path}}}` | {{description}} |
+{{/items}}
+{{/variable_examples}}
+
+---
+
+{{#related_skills}}
+## Related Skills
+
+{{#skills}}
+- **{{name}}**: {{description}}
+{{/skills}}
+{{/related_skills}}
+
+## Reference Documentation
+
+- **Engine:** `${CLAUDE_PLUGIN_ROOT}/.hiivmind/blueprint/engine.md` (comprehensive reference: execution, schema, state, types)

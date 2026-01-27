@@ -30,7 +30,7 @@ The core value: Transform imperative prose instructions into declarative YAML wo
 ├── lib/
 │   ├── consequences/                 # Consequence type definitions (extracted to hiivmind-blueprint-types)
 │   │   ├── definitions/
-│   │   │   ├── index.yaml            # Master registry (43 types)
+│   │   │   ├── index.yaml            # Master registry (49 types)
 │   │   │   ├── core/                 # 30 core consequences
 │   │   │   │   ├── state.yaml        # set_flag, set_state, append_state, clear_state, merge_state
 │   │   │   │   ├── evaluation.yaml   # evaluate, compute
@@ -40,17 +40,18 @@ The core value: Transform imperative prose instructions into declarative YAML wo
 │   │   │   │   ├── utility.yaml      # set_timestamp, compute_hash
 │   │   │   │   ├── intent.yaml       # evaluate_keywords, parse_intent_flags, match_3vl_rules, dynamic_route
 │   │   │   │   └── logging.yaml      # init_log, log_node, log_event, etc. (10 types)
-│   │   │   └── extensions/           # 13 extension consequences
+│   │   │   └── extensions/           # 19 extension consequences
 │   │   │       ├── file-system.yaml  # read_file, write_file, create_directory, delete_file
 │   │   │       ├── git.yaml          # clone_repo, get_sha, git_pull, git_fetch
 │   │   │       ├── web.yaml          # web_fetch, cache_web_content
-│   │   │       └── scripting.yaml    # run_script, run_python, run_bash
+│   │   │       ├── scripting.yaml    # run_script, run_python, run_bash
+│   │   │       └── validation.yaml   # validate_yaml_schema, validate_node_references, etc. (6 types)
 │   │   └── schema/
 │   │       └── consequence-definition.json
 │   │
 │   ├── preconditions/                # Precondition type definitions (extracted to hiivmind-blueprint-types)
 │   │   ├── definitions/
-│   │   │   ├── index.yaml            # Master registry (27 types)
+│   │   │   ├── index.yaml            # Master registry (33 types)
 │   │   │   ├── core/                 # 22 core preconditions
 │   │   │   │   ├── filesystem.yaml   # config_exists, file_exists, directory_exists, etc.
 │   │   │   │   ├── state.yaml        # flag_set, state_equals, count_above, etc.
@@ -58,22 +59,36 @@ The core value: Transform imperative prose instructions into declarative YAML wo
 │   │   │   │   ├── composite.yaml    # all_of, any_of, none_of
 │   │   │   │   ├── expression.yaml   # evaluate_expression
 │   │   │   │   └── logging.yaml      # log_initialized, log_level_enabled, log_finalized
-│   │   │   └── extensions/           # 5 extension preconditions
+│   │   │   └── extensions/           # 11 extension preconditions
 │   │   │       ├── source.yaml       # source_exists, source_cloned, source_has_updates
-│   │   │       └── web.yaml          # fetch_succeeded, fetch_returned_content
+│   │   │       ├── web.yaml          # fetch_succeeded, fetch_returned_content
+│   │   │       └── validation.yaml   # schema_valid, references_valid, types_exist, etc. (6 types)
 │   │   └── schema/
 │   │       └── precondition-definition.json
 │   │
 │   ├── workflow/                     # Workflow reference documentation
-│   │   ├── schema.md                 # YAML workflow schema definition
-│   │   ├── execution.md              # Workflow execution semantics
-│   │   ├── state.md                  # State management patterns
-│   │   ├── validation-queries.md     # yq validation patterns
-│   │   └── validation-report-format.md
+│   │   ├── engine.md                 # Comprehensive workflow execution reference (schema + state + execution)
+│   │   ├── type-loader.md            # External type definitions loader
+│   │   └── legacy/                   # Archived redundant documentation
+│   │       ├── README.md             # Archive index with deprecation notices
+│   │       ├── schema.md             # Redirect to engine.md
+│   │       ├── state.md              # Redirect to engine.md
+│   │       ├── execution.md          # Redirect to engine.md
+│   │       ├── preconditions.md      # YAML definitions authoritative
+│   │       ├── validation-queries.md # Converted to validation workflow
+│   │       ├── validation-report-format.md
+│   │       ├── logging-schema.md     # JSON Schema at lib/schema/logging-schema.json
+│   │       └── consequences/         # YAML definitions authoritative
+│   │
+│   ├── types/                        # Embedded type definitions fallback (NEW)
+│   │   ├── bundle.yaml               # Aggregated types (43 consequences, 27 preconditions)
+│   │   └── README.md                 # Embedded types documentation
 │   │
 │   ├── schema/                       # JSON Schema definitions
 │   │   ├── workflow-schema.json      # Formal workflow.yaml schema (v2.1 with definitions)
-│   │   └── intent-mapping-schema.json
+│   │   ├── logging-schema.json       # Workflow execution log structure
+│   │   ├── intent-mapping-schema.json
+│   │   └── types-lock-schema.json    # Lock file validation schema
 │   │
 │   ├── intent_detection/             # 3VL intent detection framework
 │   │   ├── framework.md              # 3VL concepts and rules
@@ -84,12 +99,14 @@ The core value: Transform imperative prose instructions into declarative YAML wo
 │       ├── skill-analysis.md         # How to analyze SKILL.md structure
 │       ├── node-mapping.md           # Map prose → workflow nodes
 │       ├── workflow-generation.md    # Generate workflow.yaml
-│       ├── type-resolution.md        # External type resolution protocol (NEW)
+│       ├── type-resolution.md        # External type resolution protocol
+│       ├── plugin-structure.md       # .hiivmind/blueprint/ layout
 │       └── consequence-extensions.md # Creating custom extensions
 │
 ├── templates/                        # Templates for generation
 │   ├── workflow.yaml.template        # Base workflow structure
 │   ├── thin-loader.md.template       # Minimal SKILL.md template
+│   ├── skill-with-executor.md.template # Thin SKILL.md with engine reference (NEW)
 │   ├── gateway-command.md.template   # Gateway command template
 │   ├── intent-mapping.yaml.template  # 3VL intent config template
 │   ├── plugin.json.template          # Plugin manifest template
@@ -203,7 +220,7 @@ phases:
 - `validation-gate` - Verify state before continuing
 - `reference` - Include another workflow
 
-See `lib/workflow/schema.md` for complete specification.
+See `lib/workflow/engine.md` for complete specification.
 
 ## Analysis Output Format
 
@@ -244,7 +261,7 @@ Skills reference workflow patterns from `lib/workflow/`:
 ```markdown
 ## Execute Phase
 
-**See:** `lib/workflow/execution.md` - Phase execution semantics
+**See:** `lib/workflow/engine.md` - Phase execution semantics
 
 For each phase in workflow.phases:
 1. Check all preconditions
@@ -291,11 +308,11 @@ These features span multiple skills and must stay synchronized:
 |---------|-----------------|---------------|
 | Workflow schema version | all skills | Schema compatibility |
 | Node type catalog | analyze, convert, validate, templates | All node types documented |
-| Precondition types | convert, generate, validate | Match lib/workflow/preconditions.md |
-| Consequence types | convert, generate, validate | Match lib/workflow/consequences/ (40 types) |
+| Precondition types | convert, generate, validate | Match lib/preconditions/definitions/ (33 types) |
+| Consequence types | convert, generate, validate | Match lib/consequences/definitions/ (49 types) |
 | 3VL intent rules | gateway, discover, validate | Rule syntax consistency |
 | Complexity classification | analyze, discover | Thresholds aligned |
-| Validation queries | validate | Match schema.md, preconditions.md, consequences.md |
+| Validation queries | validate | Match engine.md and type definitions |
 | Report format | validate | Consistent status icons and structure |
 | JSON Schema definitions | validate, upgrade | Match YAML schema docs, all types included |
 | Logging configuration | analyze, convert, generate, validate | Config/usage alignment |
@@ -350,14 +367,67 @@ Both external and embedded definitions are supported:
 | `@v1.0` | Latest patch in v1.0.x |
 | `@v1` | Latest minor in v1.x.x (development) |
 
-### Type Inventory (v1.0.0)
+### Type Inventory (v1.1.0)
 
 | Category | Count | Examples |
 |----------|-------|----------|
-| Consequences | 43 | set_state, clone_repo, web_fetch, init_log |
-| Preconditions | 27 | file_exists, flag_set, all_of, source_cloned |
+| Consequences | 49 | set_state, clone_repo, web_fetch, validate_yaml_schema |
+| Preconditions | 33 | file_exists, flag_set, all_of, schema_valid |
+| Node Types | 5 | action, conditional, user_prompt, validation_gate, reference |
 
 See `lib/blueprint/patterns/type-resolution.md` for implementation details.
+
+## Target Plugin Structure
+
+When generating workflows for a target plugin, Blueprint creates this structure:
+
+```
+{target_plugin}/
+├── .hiivmind/
+│   └── blueprint/
+│       ├── engine.md              # Workflow execution semantics (copied)
+│       └── types.lock             # Pinned versions and SHAs
+├── skills/
+│   └── my-skill/
+│       ├── SKILL.md               # Thin loader referencing engine
+│       └── workflow.yaml
+```
+
+### Lock File Format
+
+```yaml
+# .hiivmind/blueprint/types.lock
+schema: "1.0"
+generated_at: "2026-01-27T12:00:00Z"
+generated_by: "hiivmind-blueprint v1.1.0"
+
+engine:
+  version: "1.1.0"
+  sha256: "abc123..."
+  source: "hiivmind/hiivmind-blueprint@v1.1.0"
+
+types:
+  hiivmind/hiivmind-blueprint-types:
+    requested: "@v1"
+    resolved: "v1.3.2"
+    sha256: "def456..."
+    fetched_at: "2026-01-27T05:30:00Z"
+```
+
+### Global Cache
+
+Types and engine versions are cached at user level:
+
+```
+~/.claude/cache/hiivmind/blueprint/
+├── types/{owner}/{repo}/{version}/
+│   ├── bundle.yaml
+│   └── metadata.yaml
+└── engine/{version}/
+    └── engine.md
+```
+
+See `lib/blueprint/patterns/plugin-structure.md` for full documentation.
 
 ## Self-Dogfooding
 
