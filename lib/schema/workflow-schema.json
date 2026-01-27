@@ -77,7 +77,13 @@
       "properties": {
         "type": {
           "type": "string",
-          "enum": ["action", "conditional", "user_prompt", "validation_gate", "reference"],
+          "enum": [
+            "action",
+            "conditional",
+            "user_prompt",
+            "validation_gate",
+            "reference"
+          ],
           "description": "Node type"
         },
         "description": {
@@ -237,7 +243,21 @@
     },
     "prompt": {
       "type": "object",
-      "required": ["question", "header", "options"],
+      "required": ["question", "header"],
+      "oneOf": [
+        {
+          "required": ["options"],
+          "properties": {
+            "options_from_state": { "not": {} }
+          }
+        },
+        {
+          "required": ["options_from_state", "option_mapping"],
+          "properties": {
+            "options": { "not": {} }
+          }
+        }
+      ],
       "properties": {
         "question": {
           "type": "string",
@@ -253,18 +273,31 @@
           "items": { "$ref": "#/$defs/prompt_option" },
           "minItems": 2,
           "maxItems": 4,
-          "description": "Available choices (2-4 options)"
+          "description": "Static choices (2-4 options). Mutually exclusive with options_from_state."
         },
         "options_from_state": {
           "type": "string",
-          "description": "State field containing dynamic options"
+          "description": "State path to array of items for dynamic options. Mutually exclusive with options."
         },
-        "option_template": {
+        "option_mapping": {
           "type": "object",
+          "description": "Expressions to transform each item from options_from_state into an option",
+          "required": ["id", "label", "description"],
           "properties": {
-            "label": { "type": "string" },
-            "description": { "type": "string" }
-          }
+            "id": {
+              "type": "string",
+              "description": "Expression for option ID (e.g., 'rule.name')"
+            },
+            "label": {
+              "type": "string",
+              "description": "Expression for display label"
+            },
+            "description": {
+              "type": "string",
+              "description": "Expression for option description"
+            }
+          },
+          "additionalProperties": false
         }
       }
     },
@@ -307,8 +340,8 @@
       "properties": {
         "type": {
           "type": "string",
-          "enum": ["success", "error"],
-          "description": "Ending type"
+          "enum": ["success", "failure", "error", "cancelled"],
+          "description": "Ending type (success, failure/error, or cancelled)"
         },
         "message": {
           "type": "string",
@@ -367,7 +400,7 @@
       "$comment": "Schema version 1.0 - External type definitions support (GitHub Actions-style references)",
       "properties": {
         "source": {
-          "description": "Type definitions source. Can be a URL to bundle.yaml, 'local' for embedded definitions, or a shorthand like 'hiivmind/hiivmind-blueprint-types@v1'",
+          "description": "Type definitions source. Can be a URL to bundle.yaml, 'local' for embedded definitions, or a shorthand like 'hiivmind/hiivmind-blueprint-lib@v1'",
           "oneOf": [
             {
               "type": "string",

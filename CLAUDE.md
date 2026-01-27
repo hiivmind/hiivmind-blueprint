@@ -28,7 +28,7 @@ The core value: Transform imperative prose instructions into declarative YAML wo
 │       └── intent-mapping.yaml
 │
 ├── lib/
-│   ├── consequences/                 # Consequence type definitions (extracted to hiivmind-blueprint-types)
+│   ├── consequences/                 # Consequence type definitions (extracted to hiivmind-blueprint-lib)
 │   │   ├── definitions/
 │   │   │   ├── index.yaml            # Master registry (49 types)
 │   │   │   ├── core/                 # 30 core consequences
@@ -49,7 +49,7 @@ The core value: Transform imperative prose instructions into declarative YAML wo
 │   │   └── schema/
 │   │       └── consequence-definition.json
 │   │
-│   ├── preconditions/                # Precondition type definitions (extracted to hiivmind-blueprint-types)
+│   ├── preconditions/                # Precondition type definitions (extracted to hiivmind-blueprint-lib)
 │   │   ├── definitions/
 │   │   │   ├── index.yaml            # Master registry (33 types)
 │   │   │   ├── core/                 # 22 core preconditions
@@ -328,15 +328,79 @@ These features span multiple skills and must stay synchronized:
 | Logging config loader | engine.md, logging-config-loader.md | 4-tier hierarchy, auto-injection |
 | Bundle logging_defaults | bundle.yaml, types-lock-schema | Version sync, cache structure |
 
+## Schema Validation
+
+Use `check-jsonschema` to validate YAML files against JSON schemas. This tool is available at `~/.rye/shims/check-jsonschema`.
+
+### Available Schemas
+
+| Schema | Validates | Location |
+|--------|-----------|----------|
+| `workflow-schema.json` | workflow.yaml files | `lib/schema/workflow-schema.json` |
+| `intent-mapping-schema.json` | intent-mapping.yaml files | `lib/schema/intent-mapping-schema.json` |
+| `logging-schema.json` | Workflow execution logs | `lib/schema/logging-schema.json` |
+| `logging-config-schema.json` | Plugin logging.yaml | `lib/schema/logging-config-schema.json` |
+| `types-lock-schema.json` | types.lock files | `lib/schema/types-lock-schema.json` |
+
+### Validation Commands
+
+```bash
+# Validate a workflow file
+check-jsonschema --schemafile lib/schema/workflow-schema.json path/to/workflow.yaml
+
+# Validate intent mapping
+check-jsonschema --schemafile lib/schema/intent-mapping-schema.json path/to/intent-mapping.yaml
+
+# Validate logging config
+check-jsonschema --schemafile lib/schema/logging-config-schema.json .hiivmind/blueprint/logging.yaml
+
+# Validate types.lock
+check-jsonschema --schemafile lib/schema/types-lock-schema.json .hiivmind/blueprint/types.lock
+
+# Verify a schema is valid JSON Schema
+check-jsonschema --check-metaschema lib/schema/workflow-schema.json
+```
+
+### Validating hiivmind-blueprint-lib Files
+
+```bash
+# Validate intent-detection workflow against schema
+check-jsonschema \
+  --schemafile /home/nathanielramm/git/hiivmind/hiivmind-blueprint/lib/schema/workflow-schema.json \
+  /home/nathanielramm/git/hiivmind/hiivmind-blueprint-lib/workflows/core/intent-detection.yaml
+```
+
+### YAML Gotchas
+
+When writing YAML that will be validated against JSON Schema:
+
+| Issue | Problem | Solution |
+|-------|---------|----------|
+| Boolean keys | `true:` parsed as boolean `True` | Quote: `"true":` |
+| Numeric strings | `version: 1.0` becomes float | Quote: `version: "1.0"` |
+| Yes/No values | `enabled: yes` becomes boolean | Quote: `enabled: "yes"` |
+
+Example - conditional node branches must use quoted keys:
+```yaml
+branches:
+  "true": next_node_a   # Correct - string key
+  "false": next_node_b  # Correct - string key
+
+# NOT:
+branches:
+  true: next_node_a     # Wrong - parsed as boolean True
+  false: next_node_b    # Wrong - parsed as boolean False
+```
+
 ## External Type Definitions
 
 Type definitions (consequences and preconditions) can be externalized for versioning and reuse.
 
-### Repository: hiivmind-blueprint-types
+### Repository: hiivmind-blueprint-lib
 
 The canonical type definitions are published at:
-- **GitHub**: `hiivmind/hiivmind-blueprint-types`
-- **Bundle**: `https://github.com/hiivmind/hiivmind-blueprint-types/releases/download/v1.0.0/bundle.yaml`
+- **GitHub**: `hiivmind/hiivmind-blueprint-lib`
+- **Bundle**: `https://github.com/hiivmind/hiivmind-blueprint-lib/releases/download/v1.0.0/bundle.yaml`
 
 ### Using External Definitions
 
@@ -345,7 +409,7 @@ Workflows can reference external types:
 ```yaml
 # workflow.yaml
 definitions:
-  source: https://github.com/hiivmind/hiivmind-blueprint-types/releases/download/v1.0.0/bundle.yaml
+  source: https://github.com/hiivmind/hiivmind-blueprint-lib/releases/download/v1.0.0/bundle.yaml
 
 nodes:
   clone_source:
@@ -361,7 +425,7 @@ nodes:
 |--------|---------|-------|
 | URL | `https://github.com/.../bundle.yaml` | Direct fetch |
 | Local | `source: local` + `path: ./vendor/...` | Embedded |
-| Shorthand | `hiivmind/hiivmind-blueprint-types@v1.0.0` | GitHub release |
+| Shorthand | `hiivmind/hiivmind-blueprint-lib@v1.0.0` | GitHub release |
 
 ### Hybrid Model
 
@@ -415,7 +479,7 @@ Gateway workflows can reference sub-workflows from the bundle:
 ```yaml
 detect_intent:
   type: reference
-  workflow: hiivmind/hiivmind-blueprint-types@v1.0.0:intent-detection
+  workflow: hiivmind/hiivmind-blueprint-lib@v1.0.0:intent-detection
   context:
     arguments: "${arguments}"
     intent_flags: "${intent_flags}"
@@ -456,14 +520,14 @@ engine:
   source: "hiivmind/hiivmind-blueprint@v1.3.0"
 
 types:
-  hiivmind/hiivmind-blueprint-types:
+  hiivmind/hiivmind-blueprint-lib:
     requested: "@v1"
     resolved: "v1.3.0"
     sha256: "def456..."
     fetched_at: "2026-01-28T05:30:00Z"
 
 logging:                            # NEW: Logging config pins (v1.3+)
-  hiivmind/hiivmind-blueprint-types:
+  hiivmind/hiivmind-blueprint-lib:
     resolved: "v1.0.0"
     sha256: "ghi789..."
     fetched_at: "2026-01-28T05:30:00Z"
