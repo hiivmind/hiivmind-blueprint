@@ -168,10 +168,8 @@ UNTIL ending reached
 
 ## Reference Documentation
 
-- **3VL Framework:** `${CLAUDE_PLUGIN_ROOT}/lib/intent_detection/framework.md`
-- **Intent Execution:** `${CLAUDE_PLUGIN_ROOT}/lib/intent_detection/execution.md`
-- **Variables:** `${CLAUDE_PLUGIN_ROOT}/lib/intent_detection/variables.md`
-- **Workflow Schema:** `${CLAUDE_PLUGIN_ROOT}/lib/workflow/schema.md`
+- **Workflow Engine:** `${CLAUDE_PLUGIN_ROOT}/lib/workflow/engine.md`
+- **Intent Composition:** `${CLAUDE_PLUGIN_ROOT}/lib/blueprint/patterns/intent-composition.md`
 
 ---
 

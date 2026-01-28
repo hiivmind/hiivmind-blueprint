@@ -27,8 +27,8 @@ nodes:
       type: state_not_null
       field: arguments
     branches:
-      true: parse_intent
-      false: show_main_menu
+      on_true: parse_intent
+      on_false: show_main_menu
 
   parse_intent:
     type: action
@@ -52,8 +52,8 @@ nodes:
       type: flag_set
       flag: computed.intent_matches.clear_winner
     branches:
-      true: execute_matched_intent
-      false: show_disambiguation
+      on_true: execute_matched_intent
+      on_false: show_disambiguation
 
   execute_matched_intent:
     type: action
