@@ -1,35 +1,17 @@
 # Type Resolution Pattern
 
-This document describes how workflow type definitions (consequences and preconditions) are resolved from external sources, following a model similar to GitHub Actions.
-
-## Plugin-Level Structure
-
-Blueprint-enabled plugins use a standard directory structure:
-
-```
-{target_plugin}/
-├── .hiivmind/
-│   └── blueprint/
-│       ├── engine.md              # Workflow execution semantics (copied)
-│       └── types.lock             # Pinned versions and SHAs
-├── skills/
-│   └── my-skill/
-│       ├── SKILL.md               # References .hiivmind/blueprint/engine.md
-│       └── workflow.yaml
-```
-
-This structure aligns with the hiivmind ecosystem pattern (e.g., `.hiivmind/github/` for hiivmind-pulse-gh).
+This document describes how workflow type definitions (consequences and preconditions) are resolved from external sources.
 
 ---
 
 ## Overview
 
-Workflows can reference type definitions from external sources:
+Workflows reference type definitions from hiivmind-blueprint-lib via raw GitHub URLs:
 
 ```yaml
 # workflow.yaml
 definitions:
-  source: https://github.com/hiivmind/hiivmind-blueprint-types/releases/download/v1.0.0/bundle.yaml
+  source: hiivmind/hiivmind-blueprint-lib@v2.0.0
 
 nodes:
   my_node:
@@ -47,61 +29,40 @@ When a workflow is loaded, examine the `definitions` block:
 
 ```yaml
 definitions:
-  source: <URL | "local" | "owner/repo@version">
-  path: <local path if source is "local">
+  source: <"owner/repo@version">
   extensions: [<additional sources>]
-  fallback: <error | warn | embedded>
 ```
 
-### 2. Determine Source Type
+### 2. Construct Raw GitHub URL
 
-| Source Format | Resolution |
-|---------------|------------|
-| `https://...` | Direct URL fetch |
-| `local` | Load from `path` |
-| `owner/repo@version` | Construct GitHub release URL |
-
-**GitHub URL Construction:**
-```
-owner/repo@v1.0.0  →  https://github.com/{owner}/{repo}/releases/download/v1.0.0/bundle.yaml
-owner/repo@v1      →  Requires version resolution (not recommended for production)
-```
-
-### 3. Check Local Cache
-
-Before fetching, check if the definitions are cached:
+The source is resolved to raw GitHub URLs:
 
 ```
-~/.claude/cache/hiivmind/blueprint/
-├── types/
-│   └── {owner}/
-│       └── {repo}/
-│           └── {version}/
-│               ├── bundle.yaml
-│               └── metadata.yaml
-└── engine/
-    └── {version}/
-        └── engine.md
+owner/repo@version  →  https://raw.githubusercontent.com/{owner}/{repo}/{version}/
 ```
 
-**Cache key**: `{owner}/{repo}/{version}` or SHA256 of URL for direct URLs.
+**Example:**
+```
+hiivmind/hiivmind-blueprint-lib@v2.0.0
+  → https://raw.githubusercontent.com/hiivmind/hiivmind-blueprint-lib/v2.0.0/
+```
 
-### 4. Fetch if Needed
+### 3. Fetch Type Definitions
 
-If not cached or cache is stale:
+Fetch the index files on demand:
 
-1. Fetch the bundle.yaml (or index files)
-2. Validate against the schema
-3. Store in cache with fetch timestamp
+1. Fetch `consequences/index.yaml` for consequence types
+2. Fetch `preconditions/index.yaml` for precondition types
+3. For each referenced type, fetch the individual definition file
 
-### 5. Load Extensions
+### 4. Load Extensions
 
 For each entry in `extensions`:
 1. Resolve using same protocol
 2. Merge types into the registry
 3. Handle namespace conflicts (see below)
 
-### 6. Validate Workflow Types
+### 5. Validate Workflow Types
 
 After loading definitions, validate that all types used in the workflow exist:
 
@@ -112,95 +73,27 @@ for node in workflow.nodes:
             raise ValidationError(f"Unknown consequence type: {consequence.type}")
 ```
 
-## Lock File Format
+---
 
-The `.hiivmind/blueprint/types.lock` file ensures reproducible builds:
+## Source Format
 
-```yaml
-# .hiivmind/blueprint/types.lock
-# Auto-generated - do not edit manually
+Only the GitHub shorthand format is supported:
 
-schema: "1.0"
-generated_at: "2026-01-27T12:00:00Z"
-generated_by: "hiivmind-blueprint v1.1.0"
+| Source Format | Example |
+|---------------|---------|
+| `owner/repo@version` | `hiivmind/hiivmind-blueprint-lib@v2.0.0` |
 
-engine:
-  version: "1.1.0"
-  sha256: "abc123..."
-  source: "hiivmind/hiivmind-blueprint@v1.1.0"
+**Version formats:**
 
-types:
-  hiivmind/hiivmind-blueprint-types:
-    requested: "@v1"
-    resolved: "v1.3.2"
-    sha256: "def456..."
-    fetched_at: "2026-01-27T05:30:00Z"
+| Format | Example | Behavior |
+|--------|---------|----------|
+| Exact | `@v2.0.0` | Use exact version (recommended) |
+| Minor | `@v2.0` | Latest patch in v2.0.x |
+| Major | `@v2` | Latest minor in v2.x.x |
 
-  # Additional type sources (extensions)
-  mycorp/custom-types:
-    requested: "@v2.0.0"
-    resolved: "v2.0.0"
-    sha256: "ghi789..."
-```
+**Note:** Use exact versions for reproducibility. Non-exact versions resolve to the latest matching tag.
 
-**Lock file semantics:**
-- If lock file exists and entry matches `requested`, use `resolved` version
-- If no lock file or entry missing, resolve latest matching version
-- `sha256` enables integrity verification (optional)
-- `engine` section tracks the engine.md version for the plugin
-
-## Caching Architecture
-
-### Layer 1: Global Cache (User-Level)
-
-Location: `~/.claude/cache/hiivmind/blueprint/`
-
-Shared across all plugins. Fetched once per version.
-
-```
-~/.claude/cache/hiivmind/blueprint/
-├── types/
-│   └── {owner}/
-│       └── {repo}/
-│           └── {version}/
-│               ├── bundle.yaml
-│               └── metadata.yaml
-└── engine/
-    └── {version}/
-        └── engine.md
-```
-
-**metadata.yaml:**
-```yaml
-url: "https://github.com/hiivmind/hiivmind-blueprint-types/releases/download/v1.0.0/bundle.yaml"
-fetched_at: "2026-01-27T05:30:00Z"
-sha256: "a1b2c3d4..."
-```
-
-### Layer 2: Plugin-Level Structure
-
-Location: `<plugin_root>/.hiivmind/blueprint/`
-
-The plugin contains a copy of the engine and a lock file:
-
-```
-{plugin_root}/
-├── .hiivmind/
-│   └── blueprint/
-│       ├── engine.md              # Copied from source/cache
-│       └── types.lock             # Version pinning
-```
-
-Committed to version control for reproducibility.
-
-### Layer 3: Offline Fallback
-
-If network is unavailable:
-
-1. Check lock file for exact version
-2. Use cached version if available
-3. Use embedded definitions if `fallback: embedded`
-4. Error with clear message if truly missing
+---
 
 ## Namespace Prefixes
 
@@ -214,7 +107,7 @@ When loading extensions, type collisions are handled via namespaces:
 - type: mycorp/custom-types:docker_build
 
 # Or when resolving collisions
-- type: hiivmind/hiivmind-blueprint-types:clone_repo
+- type: hiivmind/hiivmind-blueprint-lib:clone_repo
 ```
 
 **Resolution order:**
@@ -222,17 +115,7 @@ When loading extensions, type collisions are handled via namespaces:
 2. Then check extensions in order declared
 3. If collision, require explicit namespace
 
-## Fallback Strategies
-
-| `fallback` Value | Behavior on Fetch Failure |
-|------------------|---------------------------|
-| `error` | Fail workflow validation immediately |
-| `warn` | Log warning, try cache, then embedded |
-| `embedded` | Silently use embedded definitions |
-
-**Recommended:**
-- Production workflows: `error` or explicit version + lock file
-- Development workflows: `warn` for flexibility
+---
 
 ## Version Compatibility
 
@@ -240,10 +123,9 @@ When loading extensions, type collisions are handled via namespaces:
 
 | Version Request | Matches |
 |-----------------|---------|
-| `@v1.2.3` | Exact version only |
-| `@v1.2` | Latest v1.2.x |
-| `@v1` | Latest v1.x.x |
-| `@latest` | Most recent release (not recommended) |
+| `@v2.0.0` | Exact version only |
+| `@v2.0` | Latest v2.0.x |
+| `@v2` | Latest v2.x.x |
 
 ### Breaking Change Detection
 
@@ -251,57 +133,33 @@ Type definitions declare a `since` version. Workflows can declare minimum versio
 
 ```yaml
 definitions:
-  source: hiivmind/hiivmind-blueprint-types@v1
+  source: hiivmind/hiivmind-blueprint-lib@v2
   requires:
-    consequences: ">=1.1.0"  # Need run_script (added in 1.1)
-    preconditions: ">=1.0.0"
+    consequences: ">=2.0.0"
+    preconditions: ">=2.0.0"
 ```
 
-## Validation Steps
-
-After loading definitions, validate:
-
-1. **Schema Compliance**: definitions match expected structure
-2. **Type Existence**: all workflow types exist in definitions
-3. **Parameter Matching**: required parameters are provided
-4. **Version Compatibility**: definitions version satisfies requirements
+---
 
 ## Example Resolution Flow
 
 ```
 workflow.yaml:
   definitions:
-    source: hiivmind/hiivmind-blueprint-types@v1.0.0
+    source: hiivmind/hiivmind-blueprint-lib@v2.0.0
 
 Resolution:
-1. Parse: owner=hiivmind, repo=hiivmind-blueprint-types, version=v1.0.0
-2. Cache check: ~/.claude/cache/hiivmind/blueprint/types/hiivmind/hiivmind-blueprint-types/v1.0.0/
-3. Cache miss → Construct URL:
-   https://github.com/hiivmind/hiivmind-blueprint-types/releases/download/v1.0.0/bundle.yaml
-4. Fetch bundle.yaml
-5. Validate against schema
-6. Store in cache
-7. Return type registry
+1. Parse: owner=hiivmind, repo=hiivmind-blueprint-lib, version=v2.0.0
+2. Construct base URL:
+   https://raw.githubusercontent.com/hiivmind/hiivmind-blueprint-lib/v2.0.0/
+3. Fetch consequences/index.yaml
+4. Fetch preconditions/index.yaml
+5. For each type used in workflow, fetch individual definition file
+6. Build type registry
+7. Validate all workflow types exist
 ```
 
-## Configurable Registries
-
-For enterprise environments, configure alternate registries:
-
-```yaml
-# ~/.claude/blueprint-types.yaml
-registries:
-  default: https://github.com
-  mycorp: https://github.enterprise.mycorp.com
-  internal: https://gitops.internal.mycorp.com
-```
-
-Then reference:
-
-```yaml
-definitions:
-  source: mycorp://team/custom-types@v1  # Uses mycorp registry
-```
+---
 
 ## Error Messages
 
@@ -310,23 +168,23 @@ Provide clear, actionable error messages:
 ```
 Error: Failed to resolve type definitions
 
-Source: hiivmind/hiivmind-blueprint-types@v1.0.0
-URL: https://github.com/hiivmind/hiivmind-blueprint-types/releases/download/v1.0.0/bundle.yaml
+Source: hiivmind/hiivmind-blueprint-lib@v2.0.0
+URL: https://raw.githubusercontent.com/hiivmind/hiivmind-blueprint-lib/v2.0.0/consequences/index.yaml
 Error: 404 Not Found
 
 Suggestions:
-- Check the version exists at the URL
+- Check the version exists: https://github.com/hiivmind/hiivmind-blueprint-lib/tags
 - Verify network connectivity
-- Use --offline flag with cached definitions
-- Set fallback: embedded for graceful degradation
 ```
+
+---
 
 ## Implementation Notes
 
 ### For Workflow Executors
 
 1. Load definitions at workflow start (before first node)
-2. Cache loaded types in memory for the session
+2. Fetch types on demand (lazy loading)
 3. Validate all types exist before execution begins
 4. Provide clear errors with resolution suggestions
 
@@ -334,40 +192,8 @@ Suggestions:
 
 1. Use semantic versioning strictly
 2. Never remove or rename types in minor versions
-3. Publish both bundle.yaml and directory structure
-4. Include checksums in release artifacts
-5. Document breaking changes in CHANGELOG.md
-
----
-
-## Update Flow
-
-The upgrade skill uses this flow to update infrastructure:
-
-```
-/hiivmind-blueprint upgrade --check
-    │
-    ▼
-Read .hiivmind/blueprint/types.lock
-    │
-    ▼
-Fetch latest from GitHub releases API
-    │
-    ▼
-Report: "Types: v1.3.2 → v1.4.0, Engine: 1.1.0 → 1.2.0"
-    │
-    ▼
-/hiivmind-blueprint upgrade
-    │
-    ▼
-Download to ~/.claude/cache/hiivmind/blueprint/
-    │
-    ▼
-Copy engine.md → .hiivmind/blueprint/
-    │
-    ▼
-Update types.lock
-```
+3. Publish individual type files in structured directories
+4. Document breaking changes in CHANGELOG.md
 
 ---
 
@@ -376,4 +202,3 @@ Update types.lock
 - **Engine:** `lib/workflow/engine.md` - Abstract execution engine that uses type loading
 - **Type Loader:** `lib/workflow/type-loader.md` - Detailed loading protocol implementation
 - **Plugin Structure:** `lib/blueprint/patterns/plugin-structure.md` - `.hiivmind/blueprint/` layout
-- **Embedded Types:** `lib/types/bundle.yaml` - Fallback type definitions
