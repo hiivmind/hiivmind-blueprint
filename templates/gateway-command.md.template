@@ -3,8 +3,8 @@
 # This template generates the gateway command markdown file.
 # Placeholders use {{placeholder}} syntax and are replaced at generation time.
 #
-# See: lib/intent_detection/framework.md for 3VL semantics
-# See: lib/workflow/schema.md for workflow structure
+# See: lib/workflow/engine.md for workflow structure and dynamic routing
+# See: lib/workflow/workflow-loader.md for remote workflow references (v1.2+)
 
 ---
 name: {{plugin_name}}
@@ -56,7 +56,7 @@ Execute this workflow for intelligent routing to the appropriate skill.
 
 ## Intent Detection
 
-This gateway uses 3VL (3-valued logic) intent detection:
+This gateway uses 3VL (3-valued logic) intent detection with **dynamic routing**:
 
 | Value | Meaning | Example |
 |-------|---------|---------|
@@ -66,12 +66,13 @@ This gateway uses 3VL (3-valued logic) intent detection:
 
 ### How Intent Resolution Works
 
-1. **Parse input** against flag keywords
-2. **Evaluate rules** in priority order
-3. **Find matching rule** where all conditions match
-4. **Execute action** (delegate to skill or show menu)
+1. **Parse input** against flag keywords → `computed.intent_flags`
+2. **Match rules** in priority order → `computed.intent_matches`
+3. **Check for clear winner** (2+ point lead)
+4. **Dynamic route** to `${computed.matched_action}` → skill execution
 
-If multiple rules match, the highest priority rule wins.
+This gateway uses O(1) dynamic routing instead of N conditional nodes.
+
 If no clear winner, disambiguation is offered.
 
 ---
@@ -91,10 +92,13 @@ If no clear winner, disambiguation is offered.
    workflow_name: {{plugin_name}}-gateway
    current_node: check_arguments
    arguments: "${request}"
-   intent: null
+   intent_flags: <from intent-mapping.yaml>
+   intent_rules: <from intent-mapping.yaml>
+   fallback_action: "show_main_menu"
    flags:
      has_arguments: ${request != null}
-   computed: {}
+   computed:
+     matched_action: null
    ```
 
 ---
@@ -114,37 +118,85 @@ LOOP:
 
   3. Execute by node.type:
 
-     ACTION (parse_intent):
+     CONDITIONAL (check_has_arguments):
+     - Evaluate condition
+     - Route via branches.true or branches.false
+
+     ACTION (parse_and_match):
      - Parse user input against intent_flags
-     - Evaluate intent_rules in priority order
+     - Match against intent_rules
      - Store matches in computed.intent_matches
      - Route via on_success or on_failure
 
-     CONDITIONAL (check_arguments, check_clear_winner):
-     - Evaluate condition
-     - Route via branches.true or branches.false
+     CONDITIONAL (check_clear_winner):
+     - If clear_winner: route to set_matched_action
+     - Else: route to show_disambiguation
+
+     ACTION (set_matched_action):
+     - Set computed.matched_action from winner.action
+     - Route to execute_dynamic_route
+
+     ACTION (execute_dynamic_route):
+     - Use dynamic_route consequence
+     - on_success: "${computed.matched_action}"  # DYNAMIC!
+     - Routes directly to delegate_* node
 
      USER_PROMPT (show_main_menu, show_disambiguation):
      - Present AskUserQuestion
      - Store response, route via handler
-
-     DYNAMIC_ROUTE (execute_matched_intent):
-     - Get action from computed.intent_matches.winner
-     - Invoke corresponding skill
 
   4. Record in history and continue
 
 UNTIL ending reached
 ```
 
+### Key Pattern: Dynamic Routing
+
+The gateway workflow uses a single dynamic route node instead of N conditionals:
+
+```yaml
+execute_dynamic_route:
+  type: action
+  actions:
+    - type: dynamic_route
+      action: "${computed.matched_action}"
+  on_success: "${computed.dynamic_target}"  # Interpolated at runtime!
+  on_failure: show_main_menu
+```
+
+This means adding a new action only requires:
+1. Adding a rule in `intent-mapping.yaml` with `action: delegate_new_skill`
+2. Adding a `delegate_new_skill` node
+
+No cascade of conditional nodes needed.
+
+---
+
+## Alternative: Remote Intent Detection Workflow (v1.2+)
+
+For maximum composability, you can reference the intent-detection workflow from the distributed bundle:
+
+```yaml
+detect_intent:
+  type: reference
+  workflow: hiivmind/hiivmind-blueprint-lib@v1.0.0:intent-detection
+  context:
+    arguments: "${arguments}"
+    intent_flags: "${intent_flags}"
+    intent_rules: "${intent_rules}"
+    fallback_action: "show_main_menu"
+  next_node: execute_dynamic_route
+```
+
+This eliminates the need to maintain local intent detection nodes in your workflow.yaml.
+
 ---
 
 ## Reference Documentation
 
-- **3VL Framework:** `${CLAUDE_PLUGIN_ROOT}/lib/intent_detection/framework.md`
-- **Intent Execution:** `${CLAUDE_PLUGIN_ROOT}/lib/intent_detection/execution.md`
-- **Variables:** `${CLAUDE_PLUGIN_ROOT}/lib/intent_detection/variables.md`
-- **Workflow Schema:** `${CLAUDE_PLUGIN_ROOT}/lib/workflow/schema.md`
+- **Workflow Engine:** `${CLAUDE_PLUGIN_ROOT}/lib/workflow/engine.md`
+- **Workflow Loader:** `${CLAUDE_PLUGIN_ROOT}/lib/workflow/workflow-loader.md`
+- **Intent Composition:** `${CLAUDE_PLUGIN_ROOT}/lib/blueprint/patterns/intent-composition.md`
 
 ---
 

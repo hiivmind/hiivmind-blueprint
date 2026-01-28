@@ -11,7 +11,7 @@
 #   1. Runtime flags (--log-level=debug)
 #   2. Workflow initial_state.logging
 #   3. Plugin .hiivmind/blueprint/logging.yaml (this template)
-#   4. Bundle logging_defaults (hiivmind/hiivmind-blueprint-types@v1.3.0)
+#   4. Bundle logging_defaults (hiivmind/hiivmind-blueprint-lib@v1.3.0)
 
 logging:
   # ─────────────────────────────────────────────────

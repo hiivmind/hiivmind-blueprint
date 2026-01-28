@@ -27,7 +27,7 @@ Execute this workflow deterministically. State persists in conversation context.
 1. **Load workflow.yaml** from this skill directory:
    Read: `${CLAUDE_PLUGIN_ROOT}/skills/{{skill_directory}}/workflow.yaml`
 
-2. **Check entry preconditions** (see `${CLAUDE_PLUGIN_ROOT}/lib/workflow/preconditions.md`):
+2. **Check entry preconditions** (see `${CLAUDE_PLUGIN_ROOT}/.hiivmind/blueprint/engine.md`):
    {{#entry_preconditions}}
    - {{description}}
    {{/entry_preconditions}}
@@ -80,7 +80,7 @@ LOOP:
 
      ACTION NODE:
      - FOR each action IN node.actions:
-       - Execute action per ${CLAUDE_PLUGIN_ROOT}/lib/workflow/consequences.md
+       - Execute action per ${CLAUDE_PLUGIN_ROOT}/.hiivmind/blueprint/engine.md
        - Store results in state.computed if store_as specified
      - IF all actions succeed:
        - Set current_node = node.on_success
@@ -89,7 +89,7 @@ LOOP:
      - CONTINUE
 
      CONDITIONAL NODE:
-     - Evaluate node.condition per ${CLAUDE_PLUGIN_ROOT}/lib/workflow/preconditions.md
+     - Evaluate node.condition per ${CLAUDE_PLUGIN_ROOT}/.hiivmind/blueprint/engine.md
      - IF result == true:
        - Set current_node = node.branches.true
      - ELSE:
@@ -97,7 +97,7 @@ LOOP:
      - CONTINUE
 
      USER_PROMPT NODE:
-     - Execute per ${CLAUDE_PLUGIN_ROOT}/lib/workflow/execution.md (User Prompt Node)
+     - Execute per ${CLAUDE_PLUGIN_ROOT}/.hiivmind/blueprint/engine.md (User Prompt Node)
      - Uses state.interface (detected in Phase 1) to select presentation:
        - claude_code: CALL AskUserQuestion tool with node.prompt parameters
        - claude_ai: DISPLAY markdown table
@@ -174,11 +174,8 @@ Replace `${...}` patterns in strings:
 
 ## Reference Documentation
 
-- **Workflow Schema:** `${CLAUDE_PLUGIN_ROOT}/lib/workflow/schema.md`
-- **Preconditions:** `${CLAUDE_PLUGIN_ROOT}/lib/workflow/preconditions.md`
-- **Consequences:** `${CLAUDE_PLUGIN_ROOT}/lib/workflow/consequences.md`
-- **Execution Model:** `${CLAUDE_PLUGIN_ROOT}/lib/workflow/execution.md`
-- **State Structure:** `${CLAUDE_PLUGIN_ROOT}/lib/workflow/state.md`
+- **Workflow Engine:** `${CLAUDE_PLUGIN_ROOT}/.hiivmind/blueprint/engine.md`
+- **Type Definitions:** `${CLAUDE_PLUGIN_ROOT}/../hiivmind-blueprint-lib/`
 
 ---
 

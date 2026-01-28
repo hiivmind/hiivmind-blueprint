@@ -27,7 +27,6 @@ Execute this workflow using the abstract engine pattern.
 |----------|------|
 | **Workflow** | `${CLAUDE_PLUGIN_ROOT}/skills/{{skill_directory}}/workflow.yaml` |
 | **Engine** | `${CLAUDE_PLUGIN_ROOT}/.hiivmind/blueprint/engine.md` |
-| **Types Lock** | `${CLAUDE_PLUGIN_ROOT}/.hiivmind/blueprint/types.lock` |
 
 ---
 
@@ -107,14 +106,9 @@ This workflow uses type definitions from:
 ```yaml
 definitions:
   source: {{definitions_source}}
-  {{#definitions_fallback}}
-  fallback: {{definitions_fallback}}
-  {{/definitions_fallback}}
 ```
 
-Types are loaded at workflow start per `${CLAUDE_PLUGIN_ROOT}/.hiivmind/blueprint/engine.md`.
-
-Version pinning is managed via `${CLAUDE_PLUGIN_ROOT}/.hiivmind/blueprint/types.lock`.
+Types are fetched from raw GitHub URLs at workflow start per `${CLAUDE_PLUGIN_ROOT}/.hiivmind/blueprint/engine.md`.
 
 ---
 

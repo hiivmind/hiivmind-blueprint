@@ -19,10 +19,10 @@ Migrate existing workflow.yaml files to the latest schema version with deprecati
 
 This skill upgrades workflows by:
 1. Detecting the current schema version
-2. Checking for engine and types updates
+2. Checking for engine updates
 3. Identifying deprecated patterns
 4. Applying migrations to latest schema
-5. Updating `.hiivmind/blueprint/` files
+5. Updating `.hiivmind/blueprint/engine.md` file
 
 ---
 
@@ -46,13 +46,13 @@ This skill supports two upgrade modes:
 Migrate workflow.yaml files to latest schema version (2.0.0+).
 
 ### Mode 2: Infrastructure Upgrade
-Update `.hiivmind/blueprint/` files (engine.md, types.lock) to latest versions.
+Update `.hiivmind/blueprint/engine.md` to latest version.
 
 **Invocation:**
 - `/hiivmind-blueprint upgrade` - Full upgrade (schema + infrastructure)
 - `/hiivmind-blueprint upgrade --check` - Check for updates without applying
 - `/hiivmind-blueprint upgrade --schema-only` - Only upgrade workflow schema
-- `/hiivmind-blueprint upgrade --infra-only` - Only upgrade engine/types
+- `/hiivmind-blueprint upgrade --infra-only` - Only upgrade engine
 
 ---
 
@@ -60,17 +60,16 @@ Update `.hiivmind/blueprint/` files (engine.md, types.lock) to latest versions.
 
 ### Step 1.1: Check Infrastructure Version
 
-Read current infrastructure versions from `.hiivmind/blueprint/types.lock`:
+Read current engine version from `.hiivmind/blueprint/engine.md`:
 
 ```
-IF file_exists(".hiivmind/blueprint/types.lock"):
-  lock_file = read_yaml(".hiivmind/blueprint/types.lock")
-  current_engine_version = lock_file.engine.version
-  current_types_versions = lock_file.types
+IF file_exists(".hiivmind/blueprint/engine.md"):
+  engine_content = Read(".hiivmind/blueprint/engine.md")
+  # Extract version from document header or metadata
+  current_engine_version = extract_version(engine_content)
 ELSE:
-  # Legacy plugin without types.lock
+  # Legacy plugin without engine.md
   current_engine_version = null
-  current_types_versions = {}
 ```
 
 ### Step 1.2: Find Workflow Files
@@ -346,35 +345,16 @@ Fetch latest engine version from GitHub:
 
 ```
 latest_engine = fetch_github_release("hiivmind/hiivmind-blueprint", "latest")
-current_engine = lock_file.engine.version
 
-IF latest_engine.version > current_engine:
+IF latest_engine.version > current_engine_version:
   engine_update_available = true
   engine_update = {
-    from: current_engine,
-    to: latest_engine.version,
-    url: latest_engine.assets["engine.md"]
+    from: current_engine_version,
+    to: latest_engine.version
   }
 ```
 
-### Step 5.2: Check for Types Updates
-
-For each type source in lock file:
-
-```
-FOR each source, entry IN lock_file.types:
-  # Parse version request (e.g., "@v1" → major version constraint)
-  IF entry.requested is not exact version:
-    latest = resolve_latest_version(source, entry.requested)
-    IF latest > entry.resolved:
-      types_updates.append({
-        source: source,
-        from: entry.resolved,
-        to: latest
-      })
-```
-
-### Step 5.3: Present Infrastructure Update Plan
+### Step 5.2: Present Infrastructure Update Plan
 
 If updates available:
 
@@ -385,57 +365,30 @@ If updates available:
 - Current: {current_engine_version}
 - Latest: {latest_engine_version}
 - Changelog: {changelog_url}
-
-**Types:**
-{for each update}
-- {source}: {from} → {to}
-{/for}
 ```
 
-### Step 5.4: Apply Infrastructure Updates
+### Step 5.3: Apply Infrastructure Updates
 
 **Ask user:**
 ```json
 {
   "questions": [{
-    "question": "Apply infrastructure updates?",
+    "question": "Apply engine update?",
     "header": "Update",
     "multiSelect": false,
     "options": [
-      {"label": "Apply all", "description": "Update engine and types"},
-      {"label": "Engine only", "description": "Only update engine.md"},
-      {"label": "Types only", "description": "Only update type definitions"},
-      {"label": "Skip", "description": "Keep current versions"}
+      {"label": "Apply", "description": "Update engine.md to latest version"},
+      {"label": "Skip", "description": "Keep current version"}
     ]
   }]
 }
 ```
 
-If updates requested:
+If update requested:
 
 ```bash
-# Update engine.md
-IF engine_update:
-  # Fetch new engine from cache or download
-  cache_path="~/.claude/cache/hiivmind/blueprint/engine/{latest_version}/"
-  mkdir -p "{cache_path}"
-
-  # Download if not cached
-  IF NOT file_exists("{cache_path}/engine.md"):
-    fetch_and_cache(engine_update.url, cache_path)
-
-  # Copy to plugin
-  cp "{cache_path}/engine.md" ".hiivmind/blueprint/engine.md"
-
-# Update types.lock
-update_lock_file(".hiivmind/blueprint/types.lock", {
-  engine: {
-    version: latest_engine_version,
-    sha256: compute_sha256(".hiivmind/blueprint/engine.md"),
-    source: "hiivmind/hiivmind-blueprint@{latest_version}"
-  },
-  types: updated_types_entries
-})
+# Update engine.md by copying from hiivmind-blueprint source
+cp "${HIIVMIND_BLUEPRINT_ROOT}/lib/workflow/engine.md" ".hiivmind/blueprint/engine.md"
 ```
 
 ### Step 5.5: Update SKILL.md (if needed)
@@ -469,8 +422,6 @@ Read back and verify:
 
 Check infrastructure files:
 1. `.hiivmind/blueprint/engine.md` exists and is readable
-2. `.hiivmind/blueprint/types.lock` has valid schema
-3. Lock file versions match actual files
 
 ### Step 6.3: Report Results
 
@@ -490,16 +441,12 @@ Check infrastructure files:
 {if engine_updated}
 - Engine: {old_engine_version} → {new_engine_version}
 {/if}
-{if types_updated}
-- Types: {for each update}{source}: {from} → {to}{/for}
-{/if}
 
 ### Files Modified
 - `{workflow_path}` (upgraded)
 - `{workflow_path}.backup` (backup created)
 {if infra_updated}
 - `.hiivmind/blueprint/engine.md` (updated)
-- `.hiivmind/blueprint/types.lock` (updated)
 {/if}
 {if skill_updated}
 - `{skill_path}` (thin loader updated)
@@ -638,7 +585,6 @@ cp "{workflow_path}.backup" "{workflow_path}"
 - **Workflow Engine:** `${CLAUDE_PLUGIN_ROOT}/lib/workflow/engine.md`
 - **Type Loader:** `${CLAUDE_PLUGIN_ROOT}/lib/workflow/type-loader.md`
 - **Plugin Structure:** `${CLAUDE_PLUGIN_ROOT}/lib/blueprint/patterns/plugin-structure.md`
-- **Types Lock Schema:** `${CLAUDE_PLUGIN_ROOT}/lib/schema/types-lock-schema.json`
 
 ---
 

@@ -36,7 +36,6 @@ flags:
   is_plugin: false         # Has .claude-plugin/plugin.json
   has_skills: false        # Has skills/ directory
   has_workflow_lib: false  # Has lib/workflow/
-  has_intent_lib: false    # Has lib/intent_detection/
 ```
 
 **Detection:**
@@ -55,10 +54,8 @@ flags:
 
 3. Check for existing libraries:
    ```
-   if file_exists("lib/workflow/schema.md"):
+   if file_exists("lib/workflow/engine.md"):
      flags.has_workflow_lib = true
-   if file_exists("lib/intent_detection/framework.md"):
-     flags.has_intent_lib = true
    ```
 
 ### Step 1.2: Determine Action
@@ -88,7 +85,6 @@ Based on flags, determine what needs to be done:
     "multiSelect": true,
     "options": [
       {"label": "Workflow library", "description": "Core workflow execution (lib/workflow/)"},
-      {"label": "Intent detection", "description": "3VL intent routing (lib/intent_detection/)"},
       {"label": "Blueprint patterns", "description": "Skill analysis patterns (lib/blueprint/)"},
       {"label": "Templates", "description": "Workflow and loader templates"}
     ]
@@ -127,7 +123,6 @@ Create required directory structure:
 
 ```bash
 mkdir -p lib/workflow
-mkdir -p lib/intent_detection
 mkdir -p lib/blueprint/patterns
 mkdir -p templates
 mkdir -p templates/node-templates
@@ -150,17 +145,7 @@ If "Workflow library" selected, copy these files from hiivmind-blueprint:
 2. Write to target location
 3. Track copied files in `computed.copied_files`
 
-### Step 3.3: Copy Intent Detection Library
-
-If "Intent detection" selected, copy:
-
-| Source | Destination |
-|--------|-------------|
-| `lib/intent_detection/framework.md` | `lib/intent_detection/framework.md` |
-| `lib/intent_detection/execution.md` | `lib/intent_detection/execution.md` |
-| `lib/intent_detection/variables.md` | `lib/intent_detection/variables.md` |
-
-### Step 3.4: Copy Blueprint Patterns
+### Step 3.3: Copy Blueprint Patterns
 
 If "Blueprint patterns" selected, copy:
 
@@ -170,7 +155,7 @@ If "Blueprint patterns" selected, copy:
 | `lib/blueprint/patterns/node-mapping.md` | `lib/blueprint/patterns/node-mapping.md` |
 | `lib/blueprint/patterns/workflow-generation.md` | `lib/blueprint/patterns/workflow-generation.md` |
 
-### Step 3.5: Copy Templates
+### Step 3.4: Copy Templates
 
 If "Templates" selected, copy:
 
@@ -295,15 +280,7 @@ Check all expected files exist:
 ```
 validation:
   workflow_lib:
-    - lib/workflow/schema.md
-    - lib/workflow/execution.md
-    - lib/workflow/preconditions.md
-    - lib/workflow/consequences.md
-    - lib/workflow/state.md
-  intent_lib:
-    - lib/intent_detection/framework.md
-    - lib/intent_detection/execution.md
-    - lib/intent_detection/variables.md
+    - lib/workflow/engine.md
 ```
 
 ### Step 6.2: Report Results

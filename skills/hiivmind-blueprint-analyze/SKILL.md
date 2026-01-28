@@ -406,7 +406,7 @@ The analysis is stored in conversation state and can be:
 
 - **Skill Analysis Pattern:** `${CLAUDE_PLUGIN_ROOT}/lib/blueprint/patterns/skill-analysis.md`
 - **Node Mapping:** `${CLAUDE_PLUGIN_ROOT}/lib/blueprint/patterns/node-mapping.md`
-- **Workflow Schema:** `${CLAUDE_PLUGIN_ROOT}/lib/workflow/schema.md`
+- **Workflow Schema:** `${CLAUDE_PLUGIN_ROOT}/lib/workflow/engine.md`
 
 ---
 

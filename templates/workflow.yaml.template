@@ -102,8 +102,8 @@ nodes:
   #     type: {{precondition_type}}
   #     {{#params}}{{key}}: {{value}}{{/params}}
   #   branches:
-  #     true: node_when_true
-  #     false: node_when_false
+  #     on_true: node_when_true
+  #     on_false: node_when_false
 
   # --------------------------------------------------------------------------
   # User Prompt Node Template
@@ -176,8 +176,8 @@ nodes:
       {{key}}: {{value}}
       {{/condition_params}}
     branches:
-      true: {{branch_true}}
-      false: {{branch_false}}
+      on_true: {{branch_true}}
+      on_false: {{branch_false}}
     {{/if_conditional}}
     {{#if_user_prompt}}
     prompt:

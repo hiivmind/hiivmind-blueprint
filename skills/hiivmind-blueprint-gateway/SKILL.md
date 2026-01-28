@@ -402,7 +402,7 @@ This gateway uses 3VL (3-valued logic) intent detection:
 - **F (False)**: Negative keyword matched
 - **U (Unknown)**: No match
 
-See `lib/intent_detection/framework.md` for details.
+See `docs/intent-detection-guide.md` for usage details.
 
 ## Execution Instructions
 
@@ -476,10 +476,9 @@ See: `${CLAUDE_PLUGIN_ROOT}/templates/gateway-command.md.template`
 
 ## Reference Documentation
 
-- **3VL Framework:** `${CLAUDE_PLUGIN_ROOT}/lib/intent_detection/framework.md`
-- **Intent Execution:** `${CLAUDE_PLUGIN_ROOT}/lib/intent_detection/execution.md`
-- **Variables:** `${CLAUDE_PLUGIN_ROOT}/lib/intent_detection/variables.md`
-- **Workflow Schema:** `${CLAUDE_PLUGIN_ROOT}/lib/workflow/schema.md`
+- **Workflow Engine:** `${CLAUDE_PLUGIN_ROOT}/lib/workflow/engine.md`
+- **Intent Composition:** `${CLAUDE_PLUGIN_ROOT}/lib/blueprint/patterns/intent-composition.md`
+- **3VL Framework:** See `docs/intent-detection/framework.md` for conceptual overview
 
 ---
 
