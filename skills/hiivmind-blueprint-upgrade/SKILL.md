@@ -3,9 +3,10 @@ name: hiivmind-blueprint-upgrade
 description: >
   This skill should be used when the user asks to "upgrade workflow", "migrate workflow schema",
   "update workflow to latest", "fix deprecated workflow", "modernize workflow.yaml",
-  or needs to update existing workflows to the latest schema version. Triggers on "upgrade workflow",
-  "blueprint upgrade", "hiivmind-blueprint upgrade", "migrate schema", "update workflow version",
-  or when workflows use deprecated patterns.
+  "normalize loader", "thin out SKILL.md", "reduce loader size", or needs to update existing
+  workflows to the latest schema version. Triggers on "upgrade workflow", "blueprint upgrade",
+  "hiivmind-blueprint upgrade", "migrate schema", "update workflow version", "normalize fat loader",
+  or when workflows use deprecated patterns or loaders exceed template size limits.
 allowed-tools: Read, Write, Edit, Glob, Grep, AskUserQuestion
 ---
 
@@ -23,6 +24,7 @@ This skill upgrades workflows by:
 3. Applying migrations to latest schema
 4. Migrating SKILL.md files to use remote execution references
 5. Removing obsolete `.hiivmind/blueprint/engine.md` files
+6. Normalizing "fat" loaders to match template patterns
 
 ---
 
@@ -41,7 +43,7 @@ This skill upgrades workflows by:
 
 ## Upgrade Modes
 
-This skill supports three upgrade modes:
+This skill supports four upgrade modes:
 
 ### Mode 1: Workflow Schema Upgrade
 Migrate workflow.yaml files to latest schema version (2.0.0+).
@@ -52,11 +54,16 @@ Migrate SKILL.md files from local engine.md references to remote execution URLs.
 ### Mode 3: Infrastructure Cleanup
 Remove obsolete `.hiivmind/blueprint/engine.md` files (no longer needed).
 
+### Mode 4: Loader Normalization
+Normalize "fat" loaders (commands or skills) to match their respective templates. Fat loaders contain execution pseudocode and framework documentation that belongs in blueprint-lib.
+
 **Invocation:**
-- `/hiivmind-blueprint upgrade` - Full upgrade (schema + execution refs + cleanup)
+- `/hiivmind-blueprint upgrade` - Full upgrade (all modes)
 - `/hiivmind-blueprint upgrade --check` - Check for updates without applying
 - `/hiivmind-blueprint upgrade --schema-only` - Only upgrade workflow schema
 - `/hiivmind-blueprint upgrade --refs-only` - Only migrate execution references
+- `/hiivmind-blueprint upgrade --normalize-only` - Only normalize fat loaders
+- `/hiivmind-blueprint upgrade --skip-normalize` - Skip loader normalization
 
 ---
 
@@ -473,9 +480,247 @@ If the removed engine.md had plugin-specific sections (customizations, notes):
 
 ---
 
-## Phase 6: Verify and Report
+## Phase 6: Normalize Fat Loaders
 
-### Step 6.1: Validate Upgraded Workflow
+Normalize loaders (SKILL.md or command .md files) that contain execution pseudocode and framework documentation that belongs in blueprint-lib, not in the loader.
+
+### Step 6.1: Detect Fat Loaders
+
+For each SKILL.md or command .md with sibling workflow.yaml:
+
+```
+loaders = []
+
+# Find all loaders with workflows
+for skill_md in Glob("**/SKILL.md"):
+  dir = dirname(skill_md)
+  if file_exists(dir + "/workflow.yaml"):
+    loaders.append({path: skill_md, type: "skill"})
+
+for cmd_md in Glob("commands/**/*.md"):
+  dir = dirname(cmd_md)
+  if file_exists(dir + "/workflow.yaml"):
+    loaders.append({path: cmd_md, type: "gateway"})
+
+# Classify each loader
+for loader in loaders:
+  is_gateway = file_exists(dirname(loader.path) + "/intent-mapping.yaml")
+  line_count = count_lines(loader.path)
+  threshold = is_gateway ? 200 : 120
+
+  content = Read(loader.path)
+
+  # Detection patterns
+  has_pseudocode = matches(content, /### Phase \d:|LOOP:|FOR each|CONTINUE/)
+  has_framework_docs = matches(content, /## Variable Interpolation/)
+  has_extended_3vl = matches(content, /## 3VL Intent Detection/) AND section_lines > 20
+  has_algorithm = matches(content, /# Algorithm:/)
+  has_execution_loop = matches(content, /## Execution Loop|### Phase.*: Execution/)
+  has_context_types = matches(content, /## Context Types/)
+
+  is_fat = (line_count > threshold) AND
+           (has_pseudocode OR has_framework_docs OR has_extended_3vl OR
+            has_algorithm OR has_execution_loop)
+
+  if is_fat:
+    fat_loaders.append({
+      path: loader.path,
+      type: "gateway" if is_gateway else "skill",
+      line_count: line_count,
+      threshold: threshold,
+      patterns_matched: [list of matched patterns]
+    })
+```
+
+### Step 6.2: Present Detection Results
+
+If fat loaders found:
+
+```
+## Loader Normalization Analysis
+
+Found {count} fat loaders that exceed template size:
+
+| Loader | Type | Lines | Threshold | Patterns |
+|--------|------|-------|-----------|----------|
+{for each fat_loader}
+| `{path}` | {type} | {line_count} | {threshold} | {patterns} |
+{/for}
+
+### What Will Be Normalized
+
+Fat loaders contain execution pseudocode and framework documentation that:
+- Duplicates content from blueprint-lib
+- Makes loaders hard to maintain
+- Violates the "thin loader" pattern
+
+After normalization, loaders will match their respective templates:
+- Gateway commands → `gateway-command.md.template` (~160 lines)
+- Skills → `thin-loader.md.template` (~60 lines)
+```
+
+### Step 6.3: Extract Preserved Content
+
+For each fat loader, extract sections to preserve:
+
+```
+function extract_preserved_sections(loader_path, is_gateway):
+  content = Read(loader_path)
+
+  preserved = {
+    frontmatter: extract_yaml_frontmatter(content),
+    title: extract_first_h1(content),
+    workflow_graph: extract_section(content, "## Workflow Graph"),
+    example_usage: extract_section(content, "## Quick Examples|## Example Usage"),
+    related_skills: extract_section(content, "## Related Skills")
+  }
+
+  if is_gateway:
+    preserved.skill_tables = extract_sections(content, "## Available Skills|## Build Skills|## Read Skills|## Shared Skills")
+    preserved.help_commands = extract_section(content, "## Help Commands")
+
+  return preserved
+```
+
+### Step 6.4: Read Workflow Metadata
+
+Extract library version from workflow.yaml:
+
+```
+workflow_path = dirname(loader_path) + "/workflow.yaml"
+workflow = parse_yaml(Read(workflow_path))
+
+# Extract version from definitions.source
+# e.g., "hiivmind/hiivmind-blueprint-lib@v2.0.0" → "v2.0.0"
+if workflow.definitions?.source:
+  lib_version = workflow.definitions.source.split("@")[1]
+else:
+  lib_version = "v2.0.0"  # Default fallback
+```
+
+### Step 6.5: Present Normalization Plan
+
+Show before/after comparison:
+
+```
+## Normalization Plan: {loader_path}
+
+**Current:** {line_count} lines
+**Target:** ~{target_lines} lines ({loader_type} template)
+**Reduction:** {reduction_percent}%
+
+### Sections to REMOVE (duplicates blueprint-lib)
+
+{for each removed_section}
+- **{section_name}** ({line_count} lines)
+  - Reason: {reason}
+{/for}
+
+### Sections to PRESERVE
+
+{for each preserved_section}
+- **{section_name}** ({line_count} lines)
+{/for}
+
+### Template to Apply
+
+`{template_name}` with:
+- lib_version: {lib_version}
+- skill_name: {skill_name}
+- description: [from frontmatter]
+```
+
+### Step 6.6: Confirm Normalization
+
+**Ask user:**
+```json
+{
+  "questions": [{
+    "question": "Normalize this loader to match template?",
+    "header": "Normalize",
+    "multiSelect": false,
+    "options": [
+      {"label": "Apply", "description": "Normalize to template (~{target_lines} lines)"},
+      {"label": "Preview", "description": "Show what the normalized loader will look like"},
+      {"label": "Skip", "description": "Keep current loader"}
+    ]
+  }]
+}
+```
+
+### Step 6.7: Apply Template
+
+If normalization approved:
+
+```
+if is_gateway:
+  template = Read("${CLAUDE_PLUGIN_ROOT}/templates/gateway-command.md.template")
+else:
+  template = Read("${CLAUDE_PLUGIN_ROOT}/templates/thin-loader.md.template")
+
+# Replace template placeholders with extracted/derived values
+normalized = template
+  .replace("{{plugin_name}}", preserved.frontmatter.name or skill_name)
+  .replace("{{plugin_title}}", title_case(skill_name))
+  .replace("{{skill_name}}", skill_name)
+  .replace("{{description}}", preserved.frontmatter.description)
+  .replace("{{allowed_tools}}", preserved.frontmatter["allowed-tools"])
+  .replace("{{lib_version}}", lib_version)
+  .replace("{{title}}", preserved.title)
+
+# Insert preserved sections
+if preserved.workflow_graph:
+  normalized = insert_section(normalized, "## Workflow Graph", preserved.workflow_graph)
+
+if preserved.example_usage:
+  normalized = insert_after_section(normalized, "## Usage", preserved.example_usage)
+
+if is_gateway AND preserved.skill_tables:
+  normalized = replace_section(normalized, "## Available Operations", preserved.skill_tables)
+
+if preserved.related_skills:
+  normalized = replace_section(normalized, "## Related Skills", preserved.related_skills)
+
+# Create backup
+Write(loader_path + ".backup", Read(loader_path))
+
+# Write normalized loader
+Write(loader_path, normalized)
+```
+
+### Step 6.8: Verify Normalization
+
+After writing:
+
+```
+new_line_count = count_lines(loader_path)
+
+# Verify size reduction
+if new_line_count > threshold:
+  warn("Normalized loader still exceeds threshold ({new_line_count} > {threshold})")
+
+# Verify required sections present
+required_sections = is_gateway ?
+  ["## Usage", "## Execution Reference", "## Related Skills"] :
+  ["## Execution Reference"]
+
+for section in required_sections:
+  if not contains_section(loader_path, section):
+    error("Missing required section: {section}")
+
+# Verify workflow.yaml unchanged
+workflow_unchanged = file_hash(workflow_path) == original_workflow_hash
+
+# Verify intent-mapping.yaml unchanged (gateways only)
+if is_gateway:
+  intent_unchanged = file_hash(intent_mapping_path) == original_intent_hash
+```
+
+---
+
+## Phase 7: Verify and Report
+
+### Step 7.1: Validate Upgraded Workflow
 
 Read back and verify:
 1. Valid YAML syntax
@@ -483,13 +728,13 @@ Read back and verify:
 3. All transitions valid
 4. No orphaned endings
 
-### Step 6.2: Validate Execution References
+### Step 7.2: Validate Execution References
 
 Check that all SKILL.md files now use remote URLs:
 1. No remaining references to local engine.md
 2. Execution Reference table present with valid URLs
 
-### Step 6.3: Report Results
+### Step 7.3: Report Results
 
 ```
 ## Upgrade Complete
@@ -509,11 +754,28 @@ Check that all SKILL.md files now use remote URLs:
 - Library version: {lib_version}
 {/if}
 
+### Loader Normalization
+{if loaders_normalized}
+| Loader | Before | After | Reduction |
+|--------|--------|-------|-----------|
+{for each normalized_loader}
+| `{path}` | {before_lines} | {after_lines} | {reduction}% |
+{/for}
+{else}
+- No fat loaders found (all loaders within template size limits)
+{/if}
+
 ### Files Modified
 - `{workflow_path}` (upgraded)
 - `{workflow_path}.backup` (backup created)
 {if skill_updated}
 - `{skill_path}` (execution references migrated)
+{/if}
+{if loaders_normalized}
+{for each normalized_loader}
+- `{path}` (normalized from {before_lines} to {after_lines} lines)
+- `{path}.backup` (backup created)
+{/for}
 {/if}
 
 ### Files Removed
@@ -526,6 +788,11 @@ Check that all SKILL.md files now use remote URLs:
 - Node reachability: All nodes reachable
 - Transition validity: All transitions valid
 - Remote URLs: All resolve correctly
+{if loaders_normalized}
+- Normalized loaders: All within template size limits
+- workflow.yaml files: Unchanged (verified)
+- intent-mapping.yaml files: Unchanged (verified, gateways only)
+{/if}
 
 ### Next Steps
 1. Test the skill to verify behavior unchanged
