@@ -91,6 +91,35 @@ initial_state:
     #   case_sensitive: false
     #   show_option_ids: true
   # {{/if_prompts}}
+  # --------------------------------------------------------------------------
+  # Display Configuration (optional)
+  # --------------------------------------------------------------------------
+  # Real-time terminal output (distinct from logging which writes to files).
+  # See: lib/workflow/display-config-loader.md
+  # {{#if_display}}
+  display:
+    enabled: true
+    verbosity: "normal"          # silent | terse | normal | verbose | debug
+    batch:
+      enabled: true              # Collapse non-interactive node segments
+      threshold: 3               # Min nodes to trigger batching
+      show_summary: true         # Show "N nodes executed"
+      show_node_list: false      # Include node IDs in summary
+      expand_on_error: true      # Expand batch on failure
+    show:
+      workflow_state: true       # Show state at verbose+
+      node_transitions: true     # Show → arrows
+      condition_eval: false      # Show condition expressions
+      branch_result: true        # Show branch decisions
+      tool_output: true          # Show tool output
+      phase_markers: false       # Show phase boundaries
+      spinner_text: true         # Show activeForm in spinner
+    format:
+      style: "structured"        # structured | minimal | inline
+      indent: 2
+      use_icons: true            # Use ✓ → ? icons
+      timestamp: false
+  # {{/if_display}}
 
 # ============================================================================
 # START NODE
@@ -342,3 +371,12 @@ endings:
   cancelled:
     type: error
     message: "Operation cancelled by user"
+
+  # Safety ending - route here when Claude detects harmful intent
+  # Claude's built-in safety (95.3% block rate) handles detection automatically
+  error_safety:
+    type: error
+    category: safety
+    message: "I can't help with that request."
+    recovery:
+      suggestion: "Please rephrase your request to focus on legitimate use cases."

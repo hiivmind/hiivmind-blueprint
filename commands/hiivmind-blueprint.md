@@ -24,6 +24,8 @@ Execute this workflow for intelligent routing to the appropriate skill.
 ```
 /hiivmind-blueprint                    # Show interactive menu
 /hiivmind-blueprint [request]          # Route by natural language intent
+/hiivmind-blueprint --help             # Show full help
+/hiivmind-blueprint [flags] [request]  # With runtime flags
 ```
 
 ## Quick Examples
@@ -36,6 +38,54 @@ Execute this workflow for intelligent routing to the appropriate skill.
 - `/hiivmind-blueprint gateway` → Generate gateway command
 - `/hiivmind-blueprint upgrade` → Upgrade existing workflows
 - `/hiivmind-blueprint visualize` → Generate Mermaid diagram
+- `/hiivmind-blueprint validate` → Check workflow for issues
+
+---
+
+## Runtime Flags
+
+Flags modify workflow execution behavior. They are **per-invocation only** and reset for each command.
+
+### Display Flags
+
+| Flag | Effect |
+|------|--------|
+| `--verbose`, `-v` | Show all node details and condition evaluations |
+| `--quiet`, `-q` | Only user prompts and final result |
+| `--terse` | Batch summaries only (non-interactive nodes) |
+| `--debug` | Full state dumps after each node |
+| `--no-display` | Silent mode (no terminal output) |
+
+### Logging Flags
+
+| Flag | Effect |
+|------|--------|
+| `--log-level=X` | Set logging level: `error`, `warn`, `info`, `debug`, `trace` |
+| `--log-format=X` | Output format: `json`, `yaml`, `pretty` |
+| `--log-dir=X` | Override log directory |
+| `--trace` | Shorthand for `--log-level=trace` |
+| `--no-log` | Disable all file logging |
+| `--ci` | CI mode: structured output, no progress indicators |
+
+### Flag Examples
+
+```
+/hiivmind-blueprint --verbose analyze my-skill
+/hiivmind-blueprint --quiet convert
+/hiivmind-blueprint --log-level=debug validate workflow.yaml
+```
+
+---
+
+## Help Commands
+
+| Command | Description |
+|---------|-------------|
+| `/hiivmind-blueprint --help` | Show full command reference |
+| `/hiivmind-blueprint -h` | Short form of --help |
+| `/hiivmind-blueprint help` | Same as --help |
+| `/hiivmind-blueprint help init` | Help for init skill |
+| `/hiivmind-blueprint help flags` | Explain runtime flags |
 
 ---
 

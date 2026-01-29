@@ -35,161 +35,199 @@ Guidance for plugins converted by hiivmind-blueprint that need domain-specific c
 
 ---
 
-## Extension File Template
+## Extension Locations
 
-Create your extension file at `lib/workflow/consequences/extensions/{domain}.md`:
+Custom consequences can live in three locations:
 
-```markdown
-# {Domain} Consequences
-
-Brief description of the domain and what these consequences handle.
+| Location | When to Use |
+|----------|-------------|
+| **hiivmind-blueprint-lib** | Common extensions useful across many plugins (contribute via PR) |
+| **Local to your plugin** | Plugin-specific operations not reusable elsewhere |
+| **Dedicated extension library** | Domain-specific extensions shared by related plugins (e.g., `myorg/blueprint-database-extensions`) |
 
 ---
 
-## {consequence_type}
+## Extension File Format
 
-One-line description.
+All consequence definitions use YAML format matching the hiivmind-blueprint-lib schema.
+
+**Schema Reference:** `hiivmind/hiivmind-blueprint-lib@v2.0.0/schema/consequence-definition.json`
+
+### Structure
 
 ```yaml
-- type: {consequence_type}
-  param1: value
-  param2: "${computed.dynamic_value}"
+# consequences/my-domain.yaml
+schema_version: "1.0"
+
+consequences:
+  - type: my_custom_action
+    description: Brief description of what this does
+    category: domain/subcategory
+
+    parameters:
+      - name: required_param
+        type: string
+        required: true
+        description: What this parameter does
+
+      - name: optional_param
+        type: string
+        required: false
+        default: "default_value"
+        description: Optional parameter description
+
+    payload:
+      tool: Bash  # or Read, Write, Edit, etc.
+      template: |
+        # Command template with ${param} interpolation
+        my-cli --input "${required_param}" --opt "${optional_param}"
+
+    # OR for computed results:
+    evaluation:
+      expression: "custom_logic(${required_param})"
+      store_as: computed.result
 ```
 
-**Parameters:**
-| Name | Type | Required | Description |
-|------|------|----------|-------------|
-| `param1` | string | Yes | What this parameter does |
-| `param2` | string | No | Optional parameter description |
-
-**Effect:**
-```
-pseudocode showing what happens
-```
-
-**Notes:**
-- Important behavioral notes
-- Failure conditions
-
----
-
-## Common Patterns
-
-### Pattern Name
+### Example: Domain-Specific Extension
 
 ```yaml
-actions:
-  - type: {consequence_type}
-    # Example usage
+# consequences/corpus-config.yaml
+schema_version: "1.0"
+
+consequences:
+  - type: read_config
+    description: Read and parse corpus config.yaml
+    category: corpus/config
+
+    parameters:
+      - name: path
+        type: string
+        required: false
+        default: "data/config.yaml"
+        description: Path to config file (defaults to corpus standard location)
+
+      - name: store_as
+        type: string
+        required: true
+        description: State path to store parsed config
+
+    payload:
+      tool: Read
+      template: "${path}"
+
+    post_process:
+      parse: yaml
+      store_as: "${store_as}"
+
+  - type: add_source
+    description: Add a source entry to corpus config
+    category: corpus/config
+
+    parameters:
+      - name: source_id
+        type: string
+        required: true
+        description: Unique identifier for the source
+
+      - name: source_type
+        type: enum
+        values: [git, local, web]
+        required: true
+        description: Type of source
+
+      - name: url
+        type: string
+        required: false
+        description: URL for git or web sources
+
+    payload:
+      tool: Edit
+      # Implementation details...
 ```
-
----
-
-## Related Documentation
-
-- **Parent:** [README.md](README.md) - Extension overview
-- **Core:** [../core/](../core/) - Core consequences
-- **Domain patterns:** `lib/{domain}/patterns/` - Domain-specific algorithms
-```
-
----
-
-## Example: Corpus Extensions
-
-The hiivmind-corpus plugin defines these domain-specific extensions:
-
-### config.md (3 types)
-
-| Type | Purpose |
-|------|---------|
-| `read_config` | Read and parse corpus config.yaml (hardcoded path) |
-| `write_config_entry` | Update specific field in config.yaml |
-| `add_source` | Add source entry with full spec to config.sources |
-| `update_source` | Update existing source by ID |
-
-**Why custom extensions?** These operations:
-- Depend on corpus-specific file structure (`data/config.yaml`)
-- Encapsulate YAML parsing and manipulation
-- Handle corpus source schema validation
-
-### discovery.md (1 type)
-
-| Type | Purpose |
-|------|---------|
-| `discover_installed_corpora` | Scan multiple locations for installed corpus plugins |
-
-**Why custom extension?** This operation:
-- Knows corpus-specific installation locations
-- Returns corpus-specific metadata structure
-- Implements complex multi-path scanning logic
 
 ---
 
 ## Integrating Custom Extensions
 
-When converting a plugin with hiivmind-blueprint:
+### Option 1: Contribute to hiivmind-blueprint-lib
 
-### 1. Identify Domain Operations
+For extensions useful across many plugins:
 
-During the analyze phase, look for operations that:
-- Reference plugin-specific files or configuration
-- Implement domain-specific algorithms
-- Would be reusable across multiple skills in your plugin
+1. Fork `hiivmind/hiivmind-blueprint-lib`
+2. Add definition file to `consequences/extensions/`
+3. Update `consequences/index.yaml` with new types
+4. Submit PR with tests and documentation
 
-### 2. Create Extension File
+### Option 2: Local Plugin Extensions
 
-Add to your converted plugin:
+For plugin-specific operations:
 
 ```
-{plugin}/
-├── lib/
-│   └── workflow/
-│       └── consequences/
-│           └── extensions/
-│               └── {your-domain}.md
+{your-plugin}/
+├── consequences/
+│   └── {domain}.yaml          # Your custom consequence definitions
+├── skills/
+│   └── my-skill/
+│       └── workflow.yaml      # References your custom types
+└── plugin.json
 ```
 
-### 3. Update Extension README
+**Workflow reference pattern:**
 
-Add your custom extensions to `extensions/README.md`:
+```yaml
+# workflow.yaml
+definitions:
+  source: hiivmind/hiivmind-blueprint-lib@v2.0.0
+  local_extensions:
+    - consequences/{domain}.yaml
 
-```markdown
-| Extension | Purpose | Consequence Count |
-|-----------|---------|-------------------|
-| [{domain}.md]({domain}.md) | {Description} | {count} |
+nodes:
+  my_action:
+    type: action
+    actions:
+      - type: my_custom_action  # Resolved from local extension
+        required_param: "${value}"
 ```
 
-### 4. Update JSON Schema (Optional)
+### Option 3: Dedicated Extension Library
 
-If using formal validation, add your custom consequence types to `lib/schema/workflow-schema.json`.
+For domain-specific extensions shared across plugins:
+
+```
+myorg/blueprint-database-extensions/
+├── consequences/
+│   ├── index.yaml
+│   └── database.yaml
+├── preconditions/
+│   └── database.yaml
+└── README.md
+```
+
+**Workflow reference:**
+
+```yaml
+definitions:
+  source: hiivmind/hiivmind-blueprint-lib@v2.0.0
+  extensions:
+    - myorg/blueprint-database-extensions@v1.0.0
+```
 
 ---
 
-## Schema Definition
+## Validation
 
-For each custom consequence type, define its JSON Schema:
+Validate your extension definitions against the JSON Schema:
 
-```json
-{
-  "consequence_{your_type}": {
-    "type": "object",
-    "required": ["type", "required_param"],
-    "properties": {
-      "type": { "const": "{your_type}" },
-      "required_param": {
-        "type": "string",
-        "description": "[EXT:{domain}] What this does"
-      },
-      "optional_param": {
-        "type": "string"
-      }
-    },
-    "additionalProperties": false
-  }
-}
+```bash
+LIB_SCHEMA="file:///path/to/hiivmind-blueprint-lib/schema/"
+SCHEMA_DIR="/path/to/hiivmind-blueprint-lib/schema"
+
+# Validate your consequence definitions
+~/.rye/shims/check-jsonschema \
+  --base-uri "$LIB_SCHEMA" \
+  --schemafile "$SCHEMA_DIR/consequence-definition.json" \
+  consequences/my-domain.yaml
 ```
-
-**Convention:** Prefix descriptions with `[EXT:{domain}]` to indicate extension consequences in validation output.
 
 ---
 
@@ -198,24 +236,31 @@ For each custom consequence type, define its JSON Schema:
 ### Keep Extensions Focused
 
 Each extension file should handle one cohesive domain:
-- **Good:** `git.md` for all git operations
-- **Bad:** `utilities.md` mixing unrelated operations
+- **Good:** `git.yaml` for all git operations
+- **Bad:** `utilities.yaml` mixing unrelated operations
 
 ### Document Failure Conditions
 
 Always specify when consequences fail:
 
-```markdown
-**Failure:** If file doesn't exist or YAML is invalid.
+```yaml
+- type: my_action
+  description: Does something useful
+  # ...
+  failure_conditions:
+    - condition: "File not found"
+      behavior: "Sets error flag, continues"
+    - condition: "Parse error"
+      behavior: "Fails node execution"
 ```
 
 ### Use Common Patterns
 
-Follow the patterns in `core/shared.md`:
+Follow the patterns in hiivmind-blueprint-lib core consequences:
 - `store_as` for storing results
 - `from` for reading from state
 - `path` for file system paths
-- Support `${}` interpolation
+- Support `${}` interpolation in all string parameters
 
 ### Consider Composability
 
@@ -238,8 +283,9 @@ Design consequences to work well together:
 
 ## Related Documentation
 
-- **Consequence taxonomy:** `lib/workflow/consequences/README.md`
-- **Core consequences:** `lib/workflow/consequences/core/`
-- **Generic extensions:** `lib/workflow/consequences/extensions/`
-- **Schema definition:** `lib/schema/workflow-schema.json`
-- **Workflow schema:** `lib/workflow/schema.md`
+- **Type Definitions (authoritative):** `hiivmind/hiivmind-blueprint-lib@v2.0.0`
+- **Consequence Schema:** `hiivmind/hiivmind-blueprint-lib@v2.0.0/schema/consequence-definition.json`
+- **Core Consequences:** `hiivmind/hiivmind-blueprint-lib@v2.0.0/consequences/core/`
+- **Extension Consequences:** `hiivmind/hiivmind-blueprint-lib@v2.0.0/consequences/extensions/`
+- **Workflow Engine:** `lib/workflow/engine.md`
+- **Type Resolution:** `lib/blueprint/patterns/type-resolution.md`

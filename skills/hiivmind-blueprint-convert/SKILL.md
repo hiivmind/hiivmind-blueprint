@@ -205,7 +205,7 @@ For each phase in analysis.phases:
 
 2. **Map actions to consequences:**
 
-   Load consequence types from `../hiivmind-blueprint-lib/consequences/core/*.yaml`.
+   Load consequence types from `hiivmind/hiivmind-blueprint-lib@v2.0.0/consequences/core/*.yaml`.
    Each definition includes `type`, `parameters`, and `payload.tool` mapping.
 
 3. **Create action nodes:**
@@ -423,7 +423,7 @@ The generated workflow follows the schema at:
 - **Node Mapping:** `${CLAUDE_PLUGIN_ROOT}/lib/blueprint/patterns/node-mapping.md`
 - **Workflow Generation:** `${CLAUDE_PLUGIN_ROOT}/lib/blueprint/patterns/workflow-generation.md`
 - **Workflow Schema:** `${CLAUDE_PLUGIN_ROOT}/lib/workflow/engine.md`
-- **Type Definitions:** `${CLAUDE_PLUGIN_ROOT}/../hiivmind-blueprint-lib/`
+- **Type Definitions:** `hiivmind/hiivmind-blueprint-lib@v2.0.0`
 
 ---
 

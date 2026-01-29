@@ -16,11 +16,10 @@ Blueprint-enabled plugins use a consistent directory structure that aligns with 
 {target_plugin}/
 ├── .hiivmind/
 │   └── blueprint/
-│       ├── engine.md              # Workflow execution engine (copied)
 │       └── logging.yaml           # Plugin-wide logging defaults (optional)
 ├── skills/
 │   └── my-skill/
-│       ├── SKILL.md               # Thin loader referencing engine
+│       ├── SKILL.md               # Thin loader with remote execution references
 │       └── workflow.yaml          # Deterministic workflow definition
 ├── commands/
 │   └── my-command/
@@ -29,30 +28,45 @@ Blueprint-enabled plugins use a consistent directory structure that aligns with 
 └── plugin.json                    # Plugin manifest
 ```
 
+**Note:** `engine.md` is no longer copied to plugins. Execution semantics are fetched from
+hiivmind-blueprint-lib at runtime via raw GitHub URLs.
+
 ---
 
 ## .hiivmind/blueprint/ Directory
 
-The `.hiivmind/blueprint/` directory contains shared Blueprint infrastructure for the plugin.
+The `.hiivmind/blueprint/` directory contains optional shared Blueprint infrastructure for the plugin.
 
 ### Files
 
 | File | Purpose |
 |------|---------|
-| `engine.md` | Workflow execution engine (copied from hiivmind-blueprint) |
 | `logging.yaml` | Plugin-wide logging defaults (optional, see below) |
+| `display.yaml` | Plugin-wide display defaults (optional, see below) |
 
-### engine.md
+**Note:** `engine.md` is no longer used. Execution semantics are fetched directly from hiivmind-blueprint-lib.
 
-The workflow execution engine is copied to the plugin during generation. This ensures:
+### Remote Execution References
 
-1. **Stability**: The engine version is pinned at generation time
-2. **Version Control**: Changes to engine.md are tracked with the plugin
+Skills reference execution semantics via raw GitHub URLs to hiivmind-blueprint-lib:
 
-Skills reference the engine via:
 ```markdown
-**Engine:** `${CLAUDE_PLUGIN_ROOT}/.hiivmind/blueprint/engine.md`
+## Execution Reference
+
+Execution semantics from [hiivmind-blueprint-lib](https://github.com/hiivmind/hiivmind-blueprint-lib) (version: v2.0.0):
+
+| Semantic | Source |
+|----------|--------|
+| Core loop | [traversal.yaml](https://raw.githubusercontent.com/hiivmind/hiivmind-blueprint-lib/v2.0.0/execution/traversal.yaml) |
+| State | [state.yaml](https://raw.githubusercontent.com/hiivmind/hiivmind-blueprint-lib/v2.0.0/execution/state.yaml) |
+| Consequences | [consequence-dispatch.yaml](https://raw.githubusercontent.com/hiivmind/hiivmind-blueprint-lib/v2.0.0/execution/consequence-dispatch.yaml) |
+| Preconditions | [precondition-dispatch.yaml](https://raw.githubusercontent.com/hiivmind/hiivmind-blueprint-lib/v2.0.0/execution/precondition-dispatch.yaml) |
 ```
+
+This ensures:
+1. **Standalone operation**: Plugins work without local lib dependencies
+2. **Version alignment**: Execution version matches `definitions.source` in workflow.yaml
+3. **Zero maintenance**: No local engine.md to update
 
 ### logging.yaml
 
@@ -83,6 +97,37 @@ logging:
 
 **When NOT to use:**
 - Each skill has unique logging needs (use `initial_state.logging` instead)
+- Framework defaults are sufficient
+
+### display.yaml
+
+Optional plugin-wide display defaults. See `lib/workflow/display-config-loader.md` for the 4-tier configuration hierarchy.
+
+```yaml
+# .hiivmind/blueprint/display.yaml
+#
+# Plugin-wide display defaults (priority 3 in the 4-tier hierarchy)
+# Overrides framework defaults, overridden by skill config and runtime flags
+
+display:
+  verbosity: "terse"             # Less verbose by default for this plugin
+  batch:
+    enabled: true
+    threshold: 3
+  show:
+    node_transitions: true
+    condition_eval: false
+  format:
+    use_icons: true
+```
+
+**When to use:**
+- Plugin has multiple skills that should share display settings
+- Plugin prefers terse output by default
+- Plugin runs in environments where minimal output is preferred
+
+**When NOT to use:**
+- Each skill has unique display needs (use `initial_state.display` instead)
 - Framework defaults are sufficient
 
 ---
@@ -122,7 +167,7 @@ Use exact versions for reproducible builds.
 
 ## Skill Reference Pattern
 
-Thin loader SKILL.md files reference the engine:
+Thin loader SKILL.md files include an Execution Reference table with remote URLs:
 
 ```markdown
 ## Resources
@@ -130,8 +175,19 @@ Thin loader SKILL.md files reference the engine:
 | Resource | Path |
 |----------|------|
 | **Workflow** | `${CLAUDE_PLUGIN_ROOT}/skills/my-skill/workflow.yaml` |
-| **Engine** | `${CLAUDE_PLUGIN_ROOT}/.hiivmind/blueprint/engine.md` |
+
+## Execution Reference
+
+Execution semantics from [hiivmind-blueprint-lib](https://github.com/hiivmind/hiivmind-blueprint-lib) (version: v2.0.0):
+
+| Semantic | Source |
+|----------|--------|
+| Core loop | [traversal.yaml](https://raw.githubusercontent.com/hiivmind/hiivmind-blueprint-lib/v2.0.0/execution/traversal.yaml) |
+| State | [state.yaml](https://raw.githubusercontent.com/hiivmind/hiivmind-blueprint-lib/v2.0.0/execution/state.yaml) |
+| ... | ... |
 ```
+
+The version in the URLs should match the `definitions.source` in workflow.yaml.
 
 ---
 
@@ -151,16 +207,21 @@ This consistency helps users understand where plugin-specific configuration live
 
 ## Migration from Legacy Structure
 
-Older plugins may have workflow files in `lib/workflow/`:
+Older plugins may have workflow files in `lib/workflow/` or `.hiivmind/blueprint/engine.md`:
 
 ```
-# Legacy structure
+# Legacy structure (pre-2.2.0)
 lib/
 └── workflow/
     ├── schema.md
     ├── execution.md
     ├── preconditions.md
     └── consequences.md
+
+# OR
+.hiivmind/
+└── blueprint/
+    └── engine.md          # Obsolete - now fetched from lib
 ```
 
 The upgrade skill migrates to the new structure:
@@ -170,9 +231,9 @@ The upgrade skill migrates to the new structure:
 ```
 
 Changes:
-1. Creates `.hiivmind/blueprint/` directory
-2. Copies engine.md to `.hiivmind/blueprint/engine.md`
-3. Updates SKILL.md references
+1. Updates SKILL.md files to use remote execution URLs
+2. Removes obsolete `.hiivmind/blueprint/engine.md`
+3. Preserves `logging.yaml` if present
 
 ---
 

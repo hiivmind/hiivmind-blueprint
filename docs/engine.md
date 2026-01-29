@@ -1,9 +1,5 @@
 # Workflow Execution Engine
 
-> ⚠️ **DEVELOPMENT ONLY** - This file is for local development reference. Do NOT copy to
-> standalone plugins. Plugins should reference execution semantics via raw GitHub URLs
-> to hiivmind-blueprint-lib. See `lib/blueprint/patterns/plugin-structure.md`.
-
 This document provides a user-facing reference for workflow execution. The authoritative execution semantics are defined in YAML files within `hiivmind-blueprint-lib`.
 
 ---
@@ -96,31 +92,9 @@ endings:
   success:
     type: success
     message: "Completed successfully"
-
-  # Safety ending - route here when Claude detects harmful intent
-  error_safety:
-    type: error
-    category: safety           # Categorizes as safety-related error
-    message: "I can't help with that request."
-    recovery:
-      suggestion: "Please rephrase your request to focus on legitimate use cases."
 ```
 
 For complete schema details, see the `workflow.json` schema in `hiivmind-blueprint-lib/schema/`.
-
-### Ending Categories
-
-The optional `category` field on error endings allows classification:
-
-| Category | Purpose |
-|----------|---------|
-| `safety` | Request blocked due to harmful intent (Claude's built-in detection) |
-| `validation` | Input validation failed |
-| `configuration` | Missing or invalid configuration |
-| `permission` | Insufficient permissions |
-| `external` | External service failure |
-
-**Note:** Safety endings leverage Claude's built-in 95.3% jailbreak block rate rather than custom detection logic. See `lib/blueprint/patterns/safety-endings.md` for rationale.
 
 ---
 
@@ -300,40 +274,6 @@ initial_state:
 Tabular mode supports multi-turn conversation via `awaiting_input` state field.
 
 See `lib/workflow/prompts-config-loader.md` for full documentation.
-
----
-
-## Display Configuration (Summary)
-
-> **Source:** `hiivmind-blueprint-lib/execution/display.yaml`
-
-Configure real-time terminal output during workflow execution (distinct from `logging:` which writes to files):
-
-```yaml
-initial_state:
-  display:
-    enabled: true
-    verbosity: "normal"          # silent | terse | normal | verbose | debug
-    batch:
-      enabled: true              # Collapse non-interactive segments
-      threshold: 3               # Min nodes to trigger batching
-```
-
-| Verbosity | Output |
-|-----------|--------|
-| `silent` | Only user prompts + final result |
-| `terse` | Batch summaries + user prompts + result |
-| `normal` | Node transitions + batch internal nodes (default) |
-| `verbose` | All node details, condition evaluations |
-| `debug` | Full state dumps, all internal details |
-
-4-tier priority hierarchy:
-1. Runtime flags (`--verbose`, `--quiet`, `--terse`)
-2. Skill config (`workflow.initial_state.display`)
-3. Plugin config (`.hiivmind/blueprint/display.yaml`)
-4. Framework defaults (from lib)
-
-See `lib/workflow/display-config-loader.md` for full documentation.
 
 ---
 

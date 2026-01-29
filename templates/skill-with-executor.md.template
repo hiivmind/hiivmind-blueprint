@@ -1,12 +1,11 @@
 # Skill with Abstract Executor Template
 #
 # This template generates a minimal SKILL.md that references the abstract
-# workflow engine for execution. The engine pattern (engine.md) handles
-# all execution logic, making this loader extremely thin.
+# workflow engine for execution. Execution semantics are fetched from
+# hiivmind-blueprint-lib via raw GitHub URLs at runtime.
 #
 # Placeholders use {{placeholder}} syntax and are replaced at generation time.
-#
-# See: .hiivmind/blueprint/engine.md for execution semantics (includes type loading, schema, state)
+# {{lib_version}} comes from workflow.yaml definitions.source
 
 ---
 name: {{skill_name}}
@@ -26,51 +25,20 @@ Execute this workflow using the abstract engine pattern.
 | Resource | Path |
 |----------|------|
 | **Workflow** | `${CLAUDE_PLUGIN_ROOT}/skills/{{skill_directory}}/workflow.yaml` |
-| **Engine** | `${CLAUDE_PLUGIN_ROOT}/.hiivmind/blueprint/engine.md` |
 
 ---
 
-## Execution
+## Execution Reference
 
-Follow the abstract workflow engine pattern to execute this workflow.
+Execution semantics from [hiivmind-blueprint-lib](https://github.com/hiivmind/hiivmind-blueprint-lib) (version: {{lib_version}}):
 
-### Quick Reference
-
-**Phase 1: Initialize**
-1. Load workflow.yaml from this skill directory
-2. Load type definitions per `workflow.definitions` block (see engine.md)
-3. Validate schema, types, and graph connectivity
-4. Check entry preconditions - stop if any fail
-5. Initialize runtime state with `interface` detection
-
-**Phase 2: Execute**
-Execute nodes in a loop until an ending is reached:
-- **action**: Execute consequences sequentially, route on success/failure
-- **conditional**: Evaluate precondition, route to true/false branch
-- **user_prompt**: Present options (interface-aware), handle response
-- **validation_gate**: Check all validations, collect errors
-- **reference**: Load document section, execute with shared state
-
-**Phase 3: Complete**
-Display ending message with interpolated values.
-
----
-
-## Full Engine Reference
-
-For complete execution semantics, see:
-
-```
-${CLAUDE_PLUGIN_ROOT}/.hiivmind/blueprint/engine.md
-```
-
-This document specifies:
-- Workflow YAML schema structure
-- Type loading protocol (external definitions)
-- Node execution patterns (all 5 node types)
-- Consequence dispatch (state_mutation, tool_call, etc.)
-- State management structure and interpolation
-- Error recovery and checkpoints
+| Semantic | Source |
+|----------|--------|
+| Core loop | [traversal.yaml](https://raw.githubusercontent.com/hiivmind/hiivmind-blueprint-lib/{{lib_version}}/execution/traversal.yaml) |
+| State | [state.yaml](https://raw.githubusercontent.com/hiivmind/hiivmind-blueprint-lib/{{lib_version}}/execution/state.yaml) |
+| Consequences | [consequence-dispatch.yaml](https://raw.githubusercontent.com/hiivmind/hiivmind-blueprint-lib/{{lib_version}}/execution/consequence-dispatch.yaml) |
+| Preconditions | [precondition-dispatch.yaml](https://raw.githubusercontent.com/hiivmind/hiivmind-blueprint-lib/{{lib_version}}/execution/precondition-dispatch.yaml) |
+| Logging | [logging.yaml](https://raw.githubusercontent.com/hiivmind/hiivmind-blueprint-lib/{{lib_version}}/execution/logging.yaml) |
 
 ---
 
@@ -108,7 +76,7 @@ definitions:
   source: {{definitions_source}}
 ```
 
-Types are fetched from raw GitHub URLs at workflow start per `${CLAUDE_PLUGIN_ROOT}/.hiivmind/blueprint/engine.md`.
+Types are fetched from raw GitHub URLs at workflow start per the [type-loader.yaml](https://raw.githubusercontent.com/hiivmind/hiivmind-blueprint-lib/{{lib_version}}/resolution/type-loader.yaml) protocol.
 
 ---
 
@@ -157,4 +125,5 @@ checkpoints: {}
 
 ## Reference Documentation
 
-- **Engine:** `${CLAUDE_PLUGIN_ROOT}/.hiivmind/blueprint/engine.md` (comprehensive reference: execution, schema, state, types)
+- **Execution Semantics:** [hiivmind-blueprint-lib/execution/](https://github.com/hiivmind/hiivmind-blueprint-lib/tree/{{lib_version}}/execution) (traversal, state, dispatch)
+- **Type Definitions:** [hiivmind-blueprint-lib](https://github.com/hiivmind/hiivmind-blueprint-lib/tree/{{lib_version}}) (consequences, preconditions, nodes)

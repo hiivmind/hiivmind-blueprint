@@ -48,7 +48,7 @@ The `dynamic_route` consequence sets `computed.dynamic_target` from the action, 
 ```yaml
 detect_intent:
   type: reference
-  workflow: hiivmind/hiivmind-blueprint-lib@v1.0.0:intent-detection
+  workflow: hiivmind/hiivmind-blueprint-lib@v2.0.0:intent-detection
   context:
     arguments: "${arguments}"
     intent_flags: "${intent_flags}"

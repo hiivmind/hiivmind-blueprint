@@ -16,7 +16,7 @@ Analyze workflow YAML files for consistency, completeness, and referential integ
 > **Pattern Documentation:**
 > - Validation queries: `${CLAUDE_PLUGIN_ROOT}/lib/workflow/legacy/validation-queries.md`
 > - Report format: `${CLAUDE_PLUGIN_ROOT}/lib/workflow/legacy/validation-report-format.md`
-> - JSON Schemas: `${CLAUDE_PLUGIN_ROOT}/../hiivmind-blueprint-lib/schema/workflow.json`, `${CLAUDE_PLUGIN_ROOT}/../hiivmind-blueprint-lib/schema/intent-mapping.json`
+> - JSON Schemas: `${CLAUDE_PLUGIN_ROOT}/../hiivmind-blueprint-lib/schema/workflow.json`, `${CLAUDE_PLUGIN_ROOT}/../hiivmind-blueprint-lib/schema/intent-mapping.json`, `${CLAUDE_PLUGIN_ROOT}/../hiivmind-blueprint-lib/schema/prompts-config.json`
 
 ---
 
@@ -29,7 +29,8 @@ This skill validates workflow.yaml files against:
 - **Graph** - Reachability, dead ends, cycles
 - **Types** - Precondition/consequence type validity
 - **State** - Variable references, unused state
-- **User prompts** - Option handlers, header length, counts
+- **User prompts** - Option handlers, header length, counts, mode configuration
+- **Prompts configuration** - Mode, match strategy, other handler consistency
 - **Endings** - Success/error types, message variables
 - **Intent mapping** - Flag/rule validation (if intent-mapping.yaml present)
 
@@ -286,8 +287,10 @@ Type validation uses an **extensible** approach:
 
 Load known types dynamically from hiivmind-blueprint-lib. Each YAML file is self-documenting with `type`, `description`, `parameters`, and evaluation/payload fields.
 
+**Type Definitions Source:** `hiivmind/hiivmind-blueprint-lib@v2.0.0`
+
 ```bash
-# Set schema directory
+# Set schema directory (local development path - adjust as needed)
 SCHEMA_DIR="${CLAUDE_PLUGIN_ROOT}/../hiivmind-blueprint-lib"
 
 # Build precondition type lookup (type -> required params)
@@ -556,6 +559,85 @@ This approach:
 | 34 | No duplicate option IDs | Unique within each prompt | Error |
 | 35 | Header max 12 chars | `prompt.header` length | Warning |
 | 36 | 2-4 options per prompt | Option count in valid range | Warning |
+
+### 3.6.1: Prompts Configuration Validation
+
+| # | Check | Description | Severity |
+|---|-------|-------------|----------|
+| 36a | Valid prompt mode | Mode is "interactive" or "tabular" | Error |
+| 36b | Valid match strategy | Strategy is "exact", "prefix", or "fuzzy" | Error |
+| 36c | Valid other handler | Handler is "prompt", "route", or "fail" | Error |
+| 36d | Other handler route requires on_response.other | If other_handler: "route", all user_prompt nodes must have on_response.other | Error |
+| 36e | Fuzzy threshold in range | fuzzy_threshold between 0.0 and 1.0 | Error |
+| 36f | Tabular config without tabular mode | tabular block present but mode != "tabular" | Warning |
+
+**Check 36a-c: Valid Enum Values**
+
+```bash
+# Check prompts mode
+yq '
+  if .initial_state.prompts.mode then
+    .initial_state.prompts.mode | select(. != "interactive" and . != "tabular")
+  else empty end
+' workflow.yaml
+
+# Check match strategy
+yq '
+  if .initial_state.prompts.tabular.match_strategy then
+    .initial_state.prompts.tabular.match_strategy |
+    select(. != "exact" and . != "prefix" and . != "fuzzy")
+  else empty end
+' workflow.yaml
+
+# Check other handler
+yq '
+  if .initial_state.prompts.tabular.other_handler then
+    .initial_state.prompts.tabular.other_handler |
+    select(. != "prompt" and . != "route" and . != "fail")
+  else empty end
+' workflow.yaml
+```
+
+**Check 36d: Other Handler Route Requires on_response.other**
+
+```bash
+# If other_handler is "route", check all user_prompt nodes have on_response.other
+yq '
+  if (.initial_state.prompts.tabular.other_handler == "route") then
+    .nodes | to_entries | .[] |
+    select(.value.type == "user_prompt") |
+    select(.value.on_response.other == null) |
+    .key
+  else empty end
+' workflow.yaml
+```
+
+If this returns any node names, emit error:
+```
+ERROR: other_handler is "route" but node "{node_name}" missing on_response.other
+```
+
+**Check 36e: Fuzzy Threshold Range**
+
+```bash
+yq '
+  if .initial_state.prompts.tabular.fuzzy_threshold then
+    .initial_state.prompts.tabular.fuzzy_threshold |
+    select(. < 0 or . > 1)
+  else empty end
+' workflow.yaml
+```
+
+**Check 36f: Unused Tabular Config**
+
+```bash
+yq '
+  if (.initial_state.prompts.tabular != null) and
+     (.initial_state.prompts.mode != "tabular") then
+    "tabular config present but mode is not tabular"
+  else empty end
+' workflow.yaml
+```
 
 ### 3.7: Ending Validation
 

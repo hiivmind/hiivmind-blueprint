@@ -153,8 +153,91 @@ clone_repository:
 
 ---
 
+## User Prompt Mode Configuration
+
+When converting prose that involves user interaction, consider which prompt mode to use:
+
+### When to Use Interactive Mode (Default)
+
+- Running in Claude Code with tool access
+- Want structured chip-style option selection
+- Need multi-select capability
+- Prefer automatic response parsing
+
+### When to Use Tabular Mode
+
+- Running in environments without AskUserQuestion tool
+- Want text-based interaction
+- Need flexible input matching (typo tolerance)
+- Want to support custom "other" responses via text
+
+### Mode Configuration
+
+Configure mode at the workflow level in `initial_state.prompts`:
+
+```yaml
+initial_state:
+  prompts:
+    mode: "tabular"              # "interactive" (default) or "tabular"
+    tabular:
+      match_strategy: "prefix"   # "exact" | "prefix" | "fuzzy"
+      other_handler: "prompt"    # "prompt" | "route" | "fail"
+```
+
+### Prose Analysis Indicators
+
+| Prose Pattern | Suggested Mode | Match Strategy |
+|---------------|----------------|----------------|
+| "Ask user to select..." | interactive | N/A |
+| "Present options and wait for text..." | tabular | prefix |
+| "Allow user to type choice or custom value" | tabular | prefix + route |
+| "Exact match required" | tabular | exact |
+| "Tolerate typos in selection" | tabular | fuzzy |
+
+### Converting Prose to User Prompt
+
+**Prose:**
+```
+Ask the user which format they prefer:
+- Markdown (portable, human-readable)
+- JSON (machine-parseable)
+Allow them to type a prefix like "mark" to select.
+```
+
+**Workflow:**
+```yaml
+initial_state:
+  prompts:
+    mode: "tabular"
+    tabular:
+      match_strategy: "prefix"
+      other_handler: "prompt"
+
+nodes:
+  select_format:
+    type: user_prompt
+    prompt:
+      question: "Which format do you prefer?"
+      header: "Format"
+      options:
+        - id: markdown
+          label: "Markdown"
+          description: "Portable, human-readable"
+        - id: json
+          label: "JSON"
+          description: "Machine-parseable"
+    on_response:
+      markdown:
+        next_node: generate_markdown
+      json:
+        next_node: generate_json
+```
+
+---
+
 ## Related Documentation
 
 - **Skill Analysis:** `lib/blueprint/patterns/skill-analysis.md`
 - **Workflow Generation:** `lib/blueprint/patterns/workflow-generation.md`
-- **Node Type Definitions:** `hiivmind-blueprint-lib/nodes/*/index.yaml`
+- **Node Type Definitions:** `hiivmind/hiivmind-blueprint-lib@v2.0.0/nodes/core/*.yaml`
+- **Prompts Config:** `lib/workflow/prompts-config-loader.md`

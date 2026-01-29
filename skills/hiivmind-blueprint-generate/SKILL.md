@@ -132,17 +132,11 @@ If files exist, **ask user**:
 Verify the target plugin has the `.hiivmind/blueprint/` directory structure:
 
 ```
-required_files = [
-  ".hiivmind/blueprint/engine.md"
-]
-
-missing_files = []
-for file in required_files:
-  if not file_exists("{plugin_root}/{file}"):
-    missing_files.append(file)
+# The .hiivmind/blueprint/ directory is optional - only needed for logging.yaml
+# Execution semantics are fetched from hiivmind-blueprint-lib at runtime
 ```
 
-If missing files, they will be created in Phase 3.
+If plugin uses custom logging configuration, `.hiivmind/blueprint/logging.yaml` should exist.
 
 ### Step 2.3: Determine Type Definitions Source
 
@@ -153,24 +147,33 @@ if computed.workflow.definitions:
   definitions_source = computed.workflow.definitions.source
 else:
   # Default to hiivmind-blueprint-lib
-  definitions_source = "hiivmind/hiivmind-blueprint-lib@v1"
+  definitions_source = "hiivmind/hiivmind-blueprint-lib@v2.0.0"
+
+# Extract lib_version for templates (e.g., "v2.0.0" from "hiivmind/hiivmind-blueprint-lib@v2.0.0")
+lib_version = definitions_source.split("@")[1]  # e.g., "v2.0.0"
 ```
+
+The `lib_version` is passed to templates for constructing raw GitHub URLs to execution semantics.
 
 ---
 
 ## Phase 3: Generate Files
 
-### Step 3.1: Create Blueprint Infrastructure
+### Step 3.1: Create Blueprint Infrastructure (Optional)
 
-Create the `.hiivmind/blueprint/` directory structure and populate it:
+The `.hiivmind/blueprint/` directory is only needed for plugin-wide logging configuration:
 
 ```bash
-# Create .hiivmind/blueprint/ directory
-mkdir -p "{plugin_root}/.hiivmind/blueprint"
-
-# Copy engine.md from hiivmind-blueprint source
-cp "${HIIVMIND_BLUEPRINT_ROOT}/lib/workflow/engine.md" "{plugin_root}/.hiivmind/blueprint/engine.md"
+# Only create if logging.yaml is needed
+if [ needs_custom_logging ]; then
+  mkdir -p "{plugin_root}/.hiivmind/blueprint"
+  # Create logging.yaml with plugin defaults
+fi
 ```
+
+**Note:** `engine.md` is no longer copied to target plugins. Execution semantics are fetched
+from hiivmind-blueprint-lib via raw GitHub URLs at runtime. This ensures standalone plugins
+work correctly without requiring a local copy of the engine.
 
 ### Step 3.2: Create Backup (if requested)
 
@@ -219,87 +222,18 @@ Write to: `{target}/workflow.yaml`
 
 ### Step 3.5: Generate Thin Loader SKILL.md
 
-Generate the minimal SKILL.md that loads and executes the workflow:
+Generate the minimal SKILL.md that loads and executes the workflow.
+Use the template at `${CLAUDE_PLUGIN_ROOT}/templates/skill-with-executor.md.template` with:
 
-```markdown
----
-name: {workflow.name}
-description: >
-  {workflow.description}
-allowed-tools: Read, Glob, Grep, Write, Edit, AskUserQuestion, Bash, WebFetch
----
+- `{{lib_version}}` = version extracted from definitions.source (e.g., "v2.0.0")
+- `{{skill_directory}}` = target skill directory name
+- `{{definitions_source}}` = full definitions source string
+- Other placeholders from workflow metadata
 
-# {Title from workflow name}
-
-Execute this workflow deterministically. State persists in conversation context.
-
-> **Workflow:** `${CLAUDE_PLUGIN_ROOT}/skills/{skill_dir}/workflow.yaml`
-
----
-
-## Execution Instructions
-
-### Phase 1: Initialize
-
-1. **Load workflow.yaml** from this skill directory:
-   Read: `${CLAUDE_PLUGIN_ROOT}/skills/{skill_dir}/workflow.yaml`
-
-2. **Check entry preconditions** (see `${CLAUDE_PLUGIN_ROOT}/lib/workflow/preconditions.md`):
-   - Evaluate each precondition in `entry_preconditions`
-   - If ANY fails: display error, STOP
-
-3. **Initialize runtime state** from `workflow.initial_state`
-
----
-
-### Phase 2: Execution Loop
-
-Execute nodes until an ending is reached:
-
-```
-LOOP:
-  1. Get current node from workflow.nodes[current_node]
-
-  2. Check for ending:
-     - IF current_node is in workflow.endings:
-       - Display ending.message
-       - If error with recovery: suggest recovery skill
-       - STOP
-
-  3. Execute by node.type:
-
-     ACTION:
-     - Execute each action in node.actions
-     - Route via on_success or on_failure
-
-     CONDITIONAL:
-     - Evaluate node.condition
-     - Route via branches.true or branches.false
-
-     USER_PROMPT:
-     - Present AskUserQuestion from node.prompt
-     - Store response, apply consequences
-     - Route via on_response handler
-
-     VALIDATION_GATE:
-     - Evaluate all node.validations
-     - Route via on_valid or on_invalid
-
-     REFERENCE:
-     - Load and execute node.doc section
-     - Route via next_node
-
-  4. Record in history and continue
-
-UNTIL ending reached
-```
-
----
-
-## Reference
-
-- **Engine:** `${CLAUDE_PLUGIN_ROOT}/.hiivmind/blueprint/engine.md`
-```
+The template includes:
+- Execution Reference table with raw GitHub URLs to hiivmind-blueprint-lib
+- Phase 1/2/3 quick reference
+- Type definitions reference
 
 Write to: `{target}/SKILL.md`
 
@@ -332,14 +266,17 @@ Display generation summary:
 
 ### Files Created
 - `workflow.yaml` ({node_count} nodes, {ending_count} endings)
-- `SKILL.md` (thin loader)
-- `.hiivmind/blueprint/engine.md` (workflow execution engine)
+- `SKILL.md` (thin loader with remote execution references)
 
 {if backup_created}
 ### Backups Created
 - `SKILL.md.backup`
 - `workflow.yaml.backup`
 {/if}
+
+### Execution Semantics
+The SKILL.md references execution semantics from hiivmind-blueprint-lib via raw GitHub URLs.
+This ensures the skill works correctly in standalone plugins without local dependencies.
 
 ### Next Steps
 1. Test the skill by invoking it
@@ -383,10 +320,11 @@ Files generated by this skill:
 | File | Description |
 |------|-------------|
 | `workflow.yaml` | Deterministic workflow definition |
-| `SKILL.md` | Thin loader that executes workflow |
-| `.hiivmind/blueprint/engine.md` | Workflow execution engine |
+| `SKILL.md` | Thin loader with remote execution references |
 | `SKILL.md.backup` | Original skill (if backup requested) |
 | `workflow.yaml.backup` | Previous workflow (if backup requested) |
+
+**Note:** `engine.md` is no longer copied. Execution semantics are fetched from hiivmind-blueprint-lib at runtime.
 
 ---
 

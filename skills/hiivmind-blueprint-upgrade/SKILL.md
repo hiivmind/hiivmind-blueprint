@@ -19,10 +19,10 @@ Migrate existing workflow.yaml files to the latest schema version with deprecati
 
 This skill upgrades workflows by:
 1. Detecting the current schema version
-2. Checking for engine updates
-3. Identifying deprecated patterns
-4. Applying migrations to latest schema
-5. Updating `.hiivmind/blueprint/engine.md` file
+2. Identifying deprecated patterns (including local engine.md references)
+3. Applying migrations to latest schema
+4. Migrating SKILL.md files to use remote execution references
+5. Removing obsolete `.hiivmind/blueprint/engine.md` files
 
 ---
 
@@ -35,41 +35,45 @@ This skill upgrades workflows by:
 | 1.2.0 | Added `reference` node type | None |
 | 2.0.0 | New consequence format | `set_state` syntax changed |
 | 2.1.0 | External definitions, `.hiivmind/blueprint/` structure | Lock file location changed |
+| 2.2.0 | Remote execution references | Local engine.md removed, SKILL.md uses raw GitHub URLs |
 
 ---
 
 ## Upgrade Modes
 
-This skill supports two upgrade modes:
+This skill supports three upgrade modes:
 
 ### Mode 1: Workflow Schema Upgrade
 Migrate workflow.yaml files to latest schema version (2.0.0+).
 
-### Mode 2: Infrastructure Upgrade
-Update `.hiivmind/blueprint/engine.md` to latest version.
+### Mode 2: Execution Reference Migration
+Migrate SKILL.md files from local engine.md references to remote execution URLs.
+
+### Mode 3: Infrastructure Cleanup
+Remove obsolete `.hiivmind/blueprint/engine.md` files (no longer needed).
 
 **Invocation:**
-- `/hiivmind-blueprint upgrade` - Full upgrade (schema + infrastructure)
+- `/hiivmind-blueprint upgrade` - Full upgrade (schema + execution refs + cleanup)
 - `/hiivmind-blueprint upgrade --check` - Check for updates without applying
 - `/hiivmind-blueprint upgrade --schema-only` - Only upgrade workflow schema
-- `/hiivmind-blueprint upgrade --infra-only` - Only upgrade engine
+- `/hiivmind-blueprint upgrade --refs-only` - Only migrate execution references
 
 ---
 
 ## Phase 1: Discover Workflows and Infrastructure
 
-### Step 1.1: Check Infrastructure Version
+### Step 1.1: Check for Legacy Engine Files
 
-Read current engine version from `.hiivmind/blueprint/engine.md`:
+Check if plugin has obsolete local engine.md:
 
 ```
-IF file_exists(".hiivmind/blueprint/engine.md"):
-  engine_content = Read(".hiivmind/blueprint/engine.md")
-  # Extract version from document header or metadata
-  current_engine_version = extract_version(engine_content)
+has_legacy_engine = file_exists(".hiivmind/blueprint/engine.md")
+
+IF has_legacy_engine:
+  # This plugin needs migration to remote execution references
+  needs_execution_migration = true
 ELSE:
-  # Legacy plugin without engine.md
-  current_engine_version = null
+  needs_execution_migration = false
 ```
 
 ### Step 1.2: Find Workflow Files
@@ -337,74 +341,135 @@ Write(workflow_path, updated_workflow_yaml)
 
 ---
 
-## Phase 5: Update Infrastructure
+## Phase 5: Migrate Execution References
 
-### Step 5.1: Check for Engine Updates
+### Step 5.1: Check for Legacy Engine References
 
-Fetch latest engine version from GitHub:
-
-```
-latest_engine = fetch_github_release("hiivmind/hiivmind-blueprint", "latest")
-
-IF latest_engine.version > current_engine_version:
-  engine_update_available = true
-  engine_update = {
-    from: current_engine_version,
-    to: latest_engine.version
-  }
-```
-
-### Step 5.2: Present Infrastructure Update Plan
-
-If updates available:
+Scan SKILL.md files for local engine.md references:
 
 ```
-## Infrastructure Updates Available
+# Patterns that indicate legacy references:
+legacy_patterns = [
+  ".hiivmind/blueprint/engine.md",
+  "lib/workflow/engine.md",
+  "${CLAUDE_PLUGIN_ROOT}/.hiivmind/blueprint/engine.md"
+]
 
-**Engine:**
-- Current: {current_engine_version}
-- Latest: {latest_engine_version}
-- Changelog: {changelog_url}
+for skill_md in Glob("**/SKILL.md"):
+  content = Read(skill_md)
+  for pattern in legacy_patterns:
+    if pattern in content:
+      needs_migration.append(skill_md)
 ```
 
-### Step 5.3: Apply Infrastructure Updates
+### Step 5.2: Extract Library Version
+
+Read workflow.yaml to get definitions.source version:
+
+```
+workflow = Read("{skill_dir}/workflow.yaml")
+definitions_source = workflow.definitions.source
+# e.g., "hiivmind/hiivmind-blueprint-lib@v2.0.0"
+
+lib_version = definitions_source.split("@")[1]  # e.g., "v2.0.0"
+```
+
+### Step 5.3: Present Migration Plan
+
+If legacy references found:
+
+```
+## Execution Reference Migration
+
+**Found {count} SKILL.md files with local engine.md references.**
+
+These will be updated to use remote execution semantics from:
+- hiivmind-blueprint-lib@{lib_version}
+
+### Changes
+- Replace local engine.md reference with Execution Reference table
+- Add raw GitHub URLs for traversal.yaml, state.yaml, etc.
+- Remove dependency on local .hiivmind/blueprint/engine.md
+```
+
+### Step 5.4: Apply Execution Reference Migration
 
 **Ask user:**
 ```json
 {
   "questions": [{
-    "question": "Apply engine update?",
-    "header": "Update",
+    "question": "Migrate SKILL.md files to remote execution references?",
+    "header": "Migrate",
     "multiSelect": false,
     "options": [
-      {"label": "Apply", "description": "Update engine.md to latest version"},
-      {"label": "Skip", "description": "Keep current version"}
+      {"label": "Apply", "description": "Update SKILL.md files with remote URLs"},
+      {"label": "Skip", "description": "Keep local references"}
     ]
   }]
 }
 ```
 
-If update requested:
+If migration requested, for each SKILL.md:
+
+```
+# Replace local engine reference section with remote URLs table
+old_section = """
+## Reference
+
+- **Engine:** `${CLAUDE_PLUGIN_ROOT}/.hiivmind/blueprint/engine.md`
+"""
+
+new_section = """
+## Execution Reference
+
+Execution semantics from [hiivmind-blueprint-lib](https://github.com/hiivmind/hiivmind-blueprint-lib) (version: {lib_version}):
+
+| Semantic | Source |
+|----------|--------|
+| Core loop | [traversal.yaml](https://raw.githubusercontent.com/hiivmind/hiivmind-blueprint-lib/{lib_version}/execution/traversal.yaml) |
+| State | [state.yaml](https://raw.githubusercontent.com/hiivmind/hiivmind-blueprint-lib/{lib_version}/execution/state.yaml) |
+| Consequences | [consequence-dispatch.yaml](https://raw.githubusercontent.com/hiivmind/hiivmind-blueprint-lib/{lib_version}/execution/consequence-dispatch.yaml) |
+| Preconditions | [precondition-dispatch.yaml](https://raw.githubusercontent.com/hiivmind/hiivmind-blueprint-lib/{lib_version}/execution/precondition-dispatch.yaml) |
+"""
+
+Edit(skill_md, old_section, new_section)
+```
+
+### Step 5.5: Remove Obsolete Engine File
+
+If `.hiivmind/blueprint/engine.md` exists and all SKILL.md files have been migrated:
+
+**Ask user:**
+```json
+{
+  "questions": [{
+    "question": "Remove obsolete .hiivmind/blueprint/engine.md?",
+    "header": "Cleanup",
+    "multiSelect": false,
+    "options": [
+      {"label": "Remove", "description": "Delete the obsolete engine.md file"},
+      {"label": "Keep", "description": "Keep engine.md for reference (will be ignored)"}
+    ]
+  }]
+}
+```
+
+If removal requested:
 
 ```bash
-# Update engine.md by copying from hiivmind-blueprint source
-cp "${HIIVMIND_BLUEPRINT_ROOT}/lib/workflow/engine.md" ".hiivmind/blueprint/engine.md"
+rm ".hiivmind/blueprint/engine.md"
+
+# Remove directory if empty (only had engine.md)
+rmdir ".hiivmind/blueprint" 2>/dev/null || true
 ```
 
-### Step 5.5: Update SKILL.md (if needed)
+### Step 5.6: Preserve Plugin-Specific Context
 
-If the skill's SKILL.md is a thin loader, check if it needs updates:
+If the removed engine.md had plugin-specific sections (customizations, notes):
 
-- References to old library paths (e.g., `lib/workflow/` → `.hiivmind/blueprint/`)
-- Missing new node type documentation
-- Outdated execution instructions
-
-If updates needed:
-
-```
-# Update paths to use new .hiivmind/blueprint/ structure
-sed -i 's|lib/workflow/engine.md|.hiivmind/blueprint/engine.md|g' SKILL.md
-```
+1. Extract custom sections
+2. Add them to the top of SKILL.md as a "Plugin Context" section
+3. Or create a CONTEXT.md file in the skill directory
 
 ---
 
@@ -418,10 +483,11 @@ Read back and verify:
 3. All transitions valid
 4. No orphaned endings
 
-### Step 6.2: Validate Infrastructure
+### Step 6.2: Validate Execution References
 
-Check infrastructure files:
-1. `.hiivmind/blueprint/engine.md` exists and is readable
+Check that all SKILL.md files now use remote URLs:
+1. No remaining references to local engine.md
+2. Execution Reference table present with valid URLs
 
 ### Step 6.3: Report Results
 
@@ -437,26 +503,29 @@ Check infrastructure files:
 - {migration_name}: {changes_made} changes
 {/for}
 
-### Infrastructure Updates
-{if engine_updated}
-- Engine: {old_engine_version} → {new_engine_version}
+### Execution Reference Migration
+{if refs_migrated}
+- {count} SKILL.md files updated to use remote execution URLs
+- Library version: {lib_version}
 {/if}
 
 ### Files Modified
 - `{workflow_path}` (upgraded)
 - `{workflow_path}.backup` (backup created)
-{if infra_updated}
-- `.hiivmind/blueprint/engine.md` (updated)
-{/if}
 {if skill_updated}
-- `{skill_path}` (thin loader updated)
+- `{skill_path}` (execution references migrated)
+{/if}
+
+### Files Removed
+{if engine_removed}
+- `.hiivmind/blueprint/engine.md` (obsolete, no longer needed)
 {/if}
 
 ### Verification
 - YAML syntax: Valid
 - Node reachability: All nodes reachable
 - Transition validity: All transitions valid
-- Infrastructure: Valid
+- Remote URLs: All resolve correctly
 
 ### Next Steps
 1. Test the skill to verify behavior unchanged
@@ -566,6 +635,44 @@ if has_logging and not has_config:
 # Update schema version for logging changes
 version: "2.0.0"  # Reflects logging core promotion
 ```
+
+### Version 2.1.0 → 2.2.0
+
+**Breaking changes:**
+
+1. **Local engine.md removed**
+
+   SKILL.md files no longer reference a local `.hiivmind/blueprint/engine.md`.
+   Instead, they include an "Execution Reference" table with raw GitHub URLs
+   to hiivmind-blueprint-lib.
+
+2. **Execution Reference Migration**
+   ```markdown
+   # OLD (2.1.0)
+   ## Reference
+
+   - **Engine:** `${CLAUDE_PLUGIN_ROOT}/.hiivmind/blueprint/engine.md`
+
+   # NEW (2.2.0)
+   ## Execution Reference
+
+   Execution semantics from [hiivmind-blueprint-lib](https://github.com/hiivmind/hiivmind-blueprint-lib) (version: v2.0.0):
+
+   | Semantic | Source |
+   |----------|--------|
+   | Core loop | [traversal.yaml](https://raw.githubusercontent.com/hiivmind/hiivmind-blueprint-lib/v2.0.0/execution/traversal.yaml) |
+   | State | [state.yaml](https://raw.githubusercontent.com/hiivmind/hiivmind-blueprint-lib/v2.0.0/execution/state.yaml) |
+   | ... | ... |
+   ```
+
+3. **Obsolete files to remove**
+   - `.hiivmind/blueprint/engine.md` - No longer needed
+   - The `.hiivmind/blueprint/` directory can be removed if only engine.md was in it
+
+**Benefits of 2.2.0:**
+- Standalone plugins work correctly without local lib dependencies
+- Version pinning via `definitions.source` controls execution semantics
+- Simpler plugin distribution (no engine.md to copy/maintain)
 
 ---
 

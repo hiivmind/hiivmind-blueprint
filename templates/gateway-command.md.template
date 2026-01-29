@@ -2,9 +2,9 @@
 #
 # This template generates the gateway command markdown file.
 # Placeholders use {{placeholder}} syntax and are replaced at generation time.
+# {{lib_version}} comes from workflow.yaml definitions.source
 #
-# See: lib/workflow/engine.md for workflow structure and dynamic routing
-# See: lib/workflow/workflow-loader.md for remote workflow references (v1.2+)
+# Execution semantics: https://github.com/hiivmind/hiivmind-blueprint-lib
 
 ---
 name: {{plugin_name}}
@@ -31,6 +31,8 @@ Execute this workflow for intelligent routing to the appropriate skill.
 ```
 /{{plugin_name}}                    # Show interactive menu
 /{{plugin_name}} [request]          # Route by natural language intent
+/{{plugin_name}} --help             # Show full help
+/{{plugin_name}} [flags] [request]  # With runtime flags
 ```
 
 ## Quick Examples
@@ -38,6 +40,53 @@ Execute this workflow for intelligent routing to the appropriate skill.
 {{#examples}}
 - `{{command}}` → Routes to {{skill_name}}
 {{/examples}}
+
+---
+
+## Runtime Flags
+
+Flags modify workflow execution behavior. They are **per-invocation only** and reset for each command.
+
+### Display Flags
+
+| Flag | Effect |
+|------|--------|
+| `--verbose`, `-v` | Show all node details and condition evaluations |
+| `--quiet`, `-q` | Only user prompts and final result |
+| `--terse` | Batch summaries only (non-interactive nodes) |
+| `--debug` | Full state dumps after each node |
+| `--no-display` | Silent mode (no terminal output) |
+
+### Logging Flags
+
+| Flag | Effect |
+|------|--------|
+| `--log-level=X` | Set logging level: `error`, `warn`, `info`, `debug`, `trace` |
+| `--log-format=X` | Output format: `json`, `yaml`, `pretty` |
+| `--log-dir=X` | Override log directory |
+| `--trace` | Shorthand for `--log-level=trace` |
+| `--no-log` | Disable all file logging |
+| `--ci` | CI mode: structured output, no progress indicators |
+
+---
+
+## Help Commands
+
+| Command | Description |
+|---------|-------------|
+| `/{{plugin_name}} --help` | Show full command reference |
+| `/{{plugin_name}} -h` | Short form of --help |
+| `/{{plugin_name}} help` | Same as --help |
+| `/{{plugin_name}} help [skill]` | Help for specific skill |
+
+### Configuration Help
+
+| Command | Description |
+|---------|-------------|
+| `/{{plugin_name}} help logging` | Logging levels, flags, and priority hierarchy |
+| `/{{plugin_name}} help display` | Display verbosity and batch mode options |
+| `/{{plugin_name}} help prompts` | Prompt modes and match strategies |
+| `/{{plugin_name}} help flags` | Quick reference for all runtime flags |
 
 ---
 
@@ -75,128 +124,31 @@ This gateway uses O(1) dynamic routing instead of N conditional nodes.
 
 If no clear winner, disambiguation is offered.
 
----
+### Safety Handling
 
-## Execution Instructions
+This gateway includes a standard `error_safety` ending for requests that Claude's built-in safety detects as harmful. The workflow will:
 
-### Phase 1: Initialize
+1. Exit cleanly via the `error_safety` ending
+2. Display a brief, non-judgmental message
+3. Offer recovery guidance
 
-1. **Load workflow.yaml** from this command directory:
-   Read: `${CLAUDE_PLUGIN_ROOT}/commands/{{plugin_name}}/workflow.yaml`
-
-2. **Load intent-mapping.yaml**:
-   Read: `${CLAUDE_PLUGIN_ROOT}/commands/{{plugin_name}}/intent-mapping.yaml`
-
-3. **Initialize runtime state**:
-   ```yaml
-   workflow_name: {{plugin_name}}-gateway
-   current_node: check_arguments
-   arguments: "${request}"
-   intent_flags: <from intent-mapping.yaml>
-   intent_rules: <from intent-mapping.yaml>
-   fallback_action: "show_main_menu"
-   flags:
-     has_arguments: ${request != null}
-   computed:
-     matched_action: null
-   ```
+No custom jailbreak detection is implemented—Claude's native safety (95.3% block rate) handles this automatically.
 
 ---
 
-### Phase 2: Execution Loop
+## Execution Reference
 
-Execute nodes until an ending is reached:
+Execution semantics from [hiivmind-blueprint-lib](https://github.com/hiivmind/hiivmind-blueprint-lib) (version: {{lib_version}}):
 
-```
-LOOP:
-  1. Get current node from workflow.nodes[current_node]
-
-  2. Check for ending:
-     - IF current_node is in workflow.endings:
-       - Display ending.message
-       - STOP
-
-  3. Execute by node.type:
-
-     CONDITIONAL (check_has_arguments):
-     - Evaluate condition
-     - Route via branches.true or branches.false
-
-     ACTION (parse_and_match):
-     - Parse user input against intent_flags
-     - Match against intent_rules
-     - Store matches in computed.intent_matches
-     - Route via on_success or on_failure
-
-     CONDITIONAL (check_clear_winner):
-     - If clear_winner: route to set_matched_action
-     - Else: route to show_disambiguation
-
-     ACTION (set_matched_action):
-     - Set computed.matched_action from winner.action
-     - Route to execute_dynamic_route
-
-     ACTION (execute_dynamic_route):
-     - Use dynamic_route consequence
-     - on_success: "${computed.matched_action}"  # DYNAMIC!
-     - Routes directly to delegate_* node
-
-     USER_PROMPT (show_main_menu, show_disambiguation):
-     - Present AskUserQuestion
-     - Store response, route via handler
-
-  4. Record in history and continue
-
-UNTIL ending reached
-```
-
-### Key Pattern: Dynamic Routing
-
-The gateway workflow uses a single dynamic route node instead of N conditionals:
-
-```yaml
-execute_dynamic_route:
-  type: action
-  actions:
-    - type: dynamic_route
-      action: "${computed.matched_action}"
-  on_success: "${computed.dynamic_target}"  # Interpolated at runtime!
-  on_failure: show_main_menu
-```
-
-This means adding a new action only requires:
-1. Adding a rule in `intent-mapping.yaml` with `action: delegate_new_skill`
-2. Adding a `delegate_new_skill` node
-
-No cascade of conditional nodes needed.
-
----
-
-## Alternative: Remote Intent Detection Workflow (v1.2+)
-
-For maximum composability, you can reference the intent-detection workflow from the distributed bundle:
-
-```yaml
-detect_intent:
-  type: reference
-  workflow: hiivmind/hiivmind-blueprint-lib@v1.0.0:intent-detection
-  context:
-    arguments: "${arguments}"
-    intent_flags: "${intent_flags}"
-    intent_rules: "${intent_rules}"
-    fallback_action: "show_main_menu"
-  next_node: execute_dynamic_route
-```
-
-This eliminates the need to maintain local intent detection nodes in your workflow.yaml.
-
----
+| Semantic | Source |
+|----------|--------|
+| Core loop | [traversal.yaml](https://raw.githubusercontent.com/hiivmind/hiivmind-blueprint-lib/{{lib_version}}/execution/traversal.yaml) |
+| State | [state.yaml](https://raw.githubusercontent.com/hiivmind/hiivmind-blueprint-lib/{{lib_version}}/execution/state.yaml) |
+| Workflow loading | [workflow-loader.yaml](https://raw.githubusercontent.com/hiivmind/hiivmind-blueprint-lib/{{lib_version}}/resolution/workflow-loader.yaml) |
 
 ## Reference Documentation
 
-- **Workflow Engine:** `${CLAUDE_PLUGIN_ROOT}/lib/workflow/engine.md`
-- **Workflow Loader:** `${CLAUDE_PLUGIN_ROOT}/lib/workflow/workflow-loader.md`
-- **Intent Composition:** `${CLAUDE_PLUGIN_ROOT}/lib/blueprint/patterns/intent-composition.md`
+- **Type Definitions:** [hiivmind-blueprint-lib](https://github.com/hiivmind/hiivmind-blueprint-lib/tree/{{lib_version}})
 
 ---
 

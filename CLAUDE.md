@@ -39,6 +39,8 @@ The core value: Transform imperative prose instructions into declarative YAML wo
 │   │   ├── type-loader.md            # External type definitions loader
 │   │   ├── workflow-loader.md        # Remote workflow resolution protocol (v1.2+)
 │   │   ├── logging-config-loader.md  # Logging configuration resolution protocol (v1.3+)
+│   │   ├── prompts-config-loader.md  # User prompt mode configuration (v2.0+)
+│   │   ├── display-config-loader.md  # Display verbosity configuration (v2.3+)
 │   │   └── legacy/                   # Archived redundant documentation
 │   │
 │   ├── workflows/                    # Reusable sub-workflows (local fallback)
@@ -83,7 +85,9 @@ The core value: Transform imperative prose instructions into declarative YAML wo
 ├── references/                       # Reference documentation
 │   ├── node-type-examples.md         # Examples of each node type
 │   ├── precondition-examples.md      # Precondition usage examples
-│   └── consequence-examples.md       # Consequence usage examples
+│   ├── consequence-examples.md       # Consequence usage examples
+│   ├── prompts-config-examples.md    # User prompt mode examples
+│   └── display-config-examples.md    # Display verbosity examples
 │
 ├── CLAUDE.md                         # This file
 └── README.md
@@ -265,8 +269,8 @@ These features span multiple skills and must stay synchronized:
 |---------|-----------------|---------------|
 | Workflow schema version | all skills | Schema compatibility |
 | Node type catalog | analyze, convert, validate, templates | All node types documented |
-| Precondition types | convert, generate, validate | Match lib/preconditions/definitions/ (33 types) |
-| Consequence types | convert, generate, validate | Match lib/consequences/definitions/ (49 types) |
+| Precondition types | convert, generate, validate | Match hiivmind-blueprint-lib/preconditions/ (32 types) |
+| Consequence types | convert, generate, validate | Match hiivmind-blueprint-lib/consequences/ (44 types) |
 | 3VL intent rules | gateway, discover, validate | Rule syntax consistency |
 | Dynamic routing | gateway, engine.md, intent-composition.md | `on_success: "${...}"` interpolation |
 | Complexity classification | analyze, discover | Thresholds aligned |
@@ -275,6 +279,12 @@ These features span multiple skills and must stay synchronized:
 | JSON Schema definitions | validate, upgrade | Match YAML schema docs, all types included |
 | Logging configuration | analyze, convert, generate, validate | Config/usage alignment |
 | Logging config loader | engine.md, logging-config-loader.md | 4-tier hierarchy, auto-injection |
+| Prompts configuration | convert, generate, validate | Mode/strategy consistency |
+| Prompts config loader | engine.md, prompts-config-loader.md | Mode selection, tabular execution |
+| Display configuration | convert, generate, validate | Verbosity/batch config alignment |
+| Display config loader | engine.md, display-config-loader.md | 4-tier hierarchy, batch mode |
+| Awaiting input state | traversal.yaml, state.yaml, user-prompt.yaml | Multi-turn conversation handling |
+| Safety endings | gateway, templates, engine.md, safety-endings.md | Standard error_safety ending pattern |
 
 ## Schema Validation
 
@@ -295,6 +305,8 @@ All schemas are consolidated in **hiivmind-blueprint-lib/schema/**.
 | `intent-mapping.json` | intent-mapping.yaml files | `hiivmind-blueprint-lib/schema/` |
 | `logging.json` | Workflow execution logs | `hiivmind-blueprint-lib/schema/` |
 | `logging-config.json` | Plugin logging.yaml | `hiivmind-blueprint-lib/schema/` |
+| `prompts-config.json` | User prompt mode config | `hiivmind-blueprint-lib/schema/` |
+| `display-config.json` | Display verbosity config | `hiivmind-blueprint-lib/schema/` |
 
 ### Validation Commands
 
@@ -318,6 +330,9 @@ check-jsonschema --base-uri "$LIB_SCHEMA" \
 check-jsonschema --base-uri "$LIB_SCHEMA" \
   --schemafile "$SCHEMA_DIR/logging-config.json" \
   .hiivmind/blueprint/logging.yaml
+
+# Validate prompts config (in workflow initial_state)
+# Note: prompts config is embedded in workflow.yaml, validated as part of workflow schema
 
 # Validate consequence definitions
 check-jsonschema --base-uri "$LIB_SCHEMA" \
@@ -403,8 +418,8 @@ hiivmind/hiivmind-blueprint-lib@v2.0.0
 
 | Category | Count | Examples |
 |----------|-------|----------|
-| Consequences | 43 | set_state, clone_repo, web_fetch, parse_intent_flags |
-| Preconditions | 27 | file_exists, flag_set, all_of, evaluate_expression |
+| Consequences | 44 | set_state, clone_repo, web_fetch, parse_intent_flags |
+| Preconditions | 32 | file_exists, flag_set, all_of, evaluate_expression |
 | Workflows | 1 | intent-detection |
 | Node Types | 5 | action, conditional, user_prompt, validation_gate, reference |
 
@@ -427,6 +442,25 @@ Key features:
 - **Override support**: Pass `context.logging` in reference nodes to override for specific sub-workflows
 
 See `lib/workflow/logging-config-loader.md` for the loading protocol.
+
+### Display Configuration (v2.3+)
+
+Display configuration controls real-time terminal output during workflow execution (distinct from `logging:` which writes to files):
+
+```
+1. Runtime flags (--verbose, --quiet, --terse)   ← Highest priority
+2. Workflow initial_state.display                ← Skill-specific
+3. Plugin .hiivmind/blueprint/display.yaml       ← Plugin-wide
+4. Remote defaults from lib (always fetched)     ← Framework defaults
+```
+
+Key features:
+- **Verbosity levels**: silent, terse, normal, verbose, debug
+- **Batch mode**: Collapse non-interactive nodes into summary lines
+- **Fine-grained show controls**: Toggle node transitions, condition eval, etc.
+- **Sub-workflow inheritance**: Sub-workflows inherit parent's display config by default
+
+See `lib/workflow/display-config-loader.md` for the loading protocol.
 
 ### Referencing Remote Workflows (v1.2+)
 
@@ -453,13 +487,16 @@ When generating workflows for a target plugin, Blueprint creates this structure:
 {target_plugin}/
 ├── .hiivmind/
 │   └── blueprint/
-│       ├── engine.md              # Workflow execution semantics (copied)
-│       └── logging.yaml           # Plugin-wide logging defaults (optional, v1.3+)
+│       └── logging.yaml           # Plugin-wide logging defaults (optional)
 ├── skills/
 │   └── my-skill/
-│       ├── SKILL.md               # Thin loader referencing engine
+│       ├── SKILL.md               # Thin loader with remote execution references
 │       └── workflow.yaml
 ```
+
+**Note:** `engine.md` is no longer copied. Execution semantics are fetched from
+hiivmind-blueprint-lib via raw GitHub URLs at runtime. This ensures standalone
+plugins work correctly without local dependencies.
 
 See `lib/blueprint/patterns/plugin-structure.md` for full documentation.
 
