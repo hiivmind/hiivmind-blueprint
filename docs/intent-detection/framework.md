@@ -213,6 +213,7 @@ Scores can be equal when rules have different focus areas. Priority allows defin
 
 ## Related Documentation
 
-- **Execution Algorithms:** `lib/intent_detection/execution.md`
-- **Variable Interpolation:** `lib/intent_detection/variables.md`
-- **Workflow Consequences:** `lib/workflow/consequences.md` (parse_intent_flags, match_3vl_rules)
+- **Execution Algorithms:** `docs/intent-detection/execution.md`
+- **Variable Interpolation:** `docs/intent-detection/variables.md`
+- **Intent Detection Guide:** `docs/intent-detection-guide.md`
+- **Workflow Engine:** `lib/workflow/engine.md`

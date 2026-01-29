@@ -205,16 +205,8 @@ For each phase in analysis.phases:
 
 2. **Map actions to consequences:**
 
-   | Tool | Consequence Type | Parameters |
-   |------|------------------|------------|
-   | Read file | `read_file` | path, store_as |
-   | Read config | `read_config` | store_as |
-   | Write file | `write_file` | path, content |
-   | Bash command | `run_command` | command, store_as |
-   | Git clone | `clone_repo` | url, dest, branch |
-   | Fetch URL | `web_fetch` | url, store_as |
-   | Set variable | `set_state` | field, value |
-   | Set flag | `set_flag` | flag, value |
+   Load consequence types from `hiivmind/hiivmind-blueprint-lib@v2.0.0/consequences/core/*.yaml`.
+   Each definition includes `type`, `parameters`, and `payload.tool` mapping.
 
 3. **Create action nodes:**
 
@@ -422,7 +414,7 @@ The workflow will create:
 ## Output Format
 
 The generated workflow follows the schema at:
-`${CLAUDE_PLUGIN_ROOT}/lib/workflow/schema.md`
+`${CLAUDE_PLUGIN_ROOT}/lib/workflow/engine.md`
 
 ---
 
@@ -430,9 +422,8 @@ The generated workflow follows the schema at:
 
 - **Node Mapping:** `${CLAUDE_PLUGIN_ROOT}/lib/blueprint/patterns/node-mapping.md`
 - **Workflow Generation:** `${CLAUDE_PLUGIN_ROOT}/lib/blueprint/patterns/workflow-generation.md`
-- **Workflow Schema:** `${CLAUDE_PLUGIN_ROOT}/lib/workflow/schema.md`
-- **Preconditions:** `${CLAUDE_PLUGIN_ROOT}/lib/workflow/preconditions.md`
-- **Consequences:** `${CLAUDE_PLUGIN_ROOT}/lib/workflow/consequences.md`
+- **Workflow Schema:** `${CLAUDE_PLUGIN_ROOT}/lib/workflow/engine.md`
+- **Type Definitions:** `hiivmind/hiivmind-blueprint-lib@v2.0.0`
 
 ---
 

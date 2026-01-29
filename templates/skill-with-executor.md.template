@@ -1,0 +1,129 @@
+# Skill with Abstract Executor Template
+#
+# This template generates a minimal SKILL.md that references the abstract
+# workflow engine for execution. Execution semantics are fetched from
+# hiivmind-blueprint-lib via raw GitHub URLs at runtime.
+#
+# Placeholders use {{placeholder}} syntax and are replaced at generation time.
+# {{lib_version}} comes from workflow.yaml definitions.source
+
+---
+name: {{skill_name}}
+description: >
+  {{description}}
+allowed-tools: {{allowed_tools}}
+---
+
+# {{title}}
+
+Execute this workflow using the abstract engine pattern.
+
+---
+
+## Resources
+
+| Resource | Path |
+|----------|------|
+| **Workflow** | `${CLAUDE_PLUGIN_ROOT}/skills/{{skill_directory}}/workflow.yaml` |
+
+---
+
+## Execution Reference
+
+Execution semantics from [hiivmind-blueprint-lib](https://github.com/hiivmind/hiivmind-blueprint-lib) (version: {{lib_version}}):
+
+| Semantic | Source |
+|----------|--------|
+| Core loop | [traversal.yaml](https://raw.githubusercontent.com/hiivmind/hiivmind-blueprint-lib/{{lib_version}}/execution/traversal.yaml) |
+| State | [state.yaml](https://raw.githubusercontent.com/hiivmind/hiivmind-blueprint-lib/{{lib_version}}/execution/state.yaml) |
+| Consequences | [consequence-dispatch.yaml](https://raw.githubusercontent.com/hiivmind/hiivmind-blueprint-lib/{{lib_version}}/execution/consequence-dispatch.yaml) |
+| Preconditions | [precondition-dispatch.yaml](https://raw.githubusercontent.com/hiivmind/hiivmind-blueprint-lib/{{lib_version}}/execution/precondition-dispatch.yaml) |
+| Logging | [logging.yaml](https://raw.githubusercontent.com/hiivmind/hiivmind-blueprint-lib/{{lib_version}}/execution/logging.yaml) |
+
+---
+
+## Workflow Overview
+
+{{#workflow_summary}}
+**Start:** `{{start_node}}`
+
+**Entry Preconditions:**
+{{#entry_preconditions}}
+- {{type}}: {{description}}
+{{/entry_preconditions}}
+{{^entry_preconditions}}
+- None
+{{/entry_preconditions}}
+
+**Endings:**
+{{#endings}}
+- `{{id}}` ({{type}}): {{message_preview}}
+{{/endings}}
+{{/workflow_summary}}
+
+{{^workflow_summary}}
+See workflow.yaml for graph structure.
+{{/workflow_summary}}
+
+---
+
+## Type Definitions
+
+This workflow uses type definitions from:
+
+```yaml
+definitions:
+  source: {{definitions_source}}
+```
+
+Types are fetched from raw GitHub URLs at workflow start per the [type-loader.yaml](https://raw.githubusercontent.com/hiivmind/hiivmind-blueprint-lib/{{lib_version}}/resolution/type-loader.yaml) protocol.
+
+---
+
+## State Structure
+
+Initial state structure:
+
+```yaml
+workflow_name: {{skill_name}}
+workflow_version: "{{version}}"
+current_node: {{start_node}}
+previous_node: null
+interface: null  # Detected: "claude_code" or "claude_ai"
+history: []
+user_responses: {}
+computed: {}
+flags:
+  {{#initial_flags}}
+  {{name}}: {{default}}
+  {{/initial_flags}}
+checkpoints: {}
+{{#custom_state_fields}}
+{{name}}: {{default}}
+{{/custom_state_fields}}
+```
+
+{{#variable_examples}}
+### Key Variables
+
+| Variable | Description |
+|----------|-------------|
+{{#items}}
+| `${{{path}}}` | {{description}} |
+{{/items}}
+{{/variable_examples}}
+
+---
+
+{{#related_skills}}
+## Related Skills
+
+{{#skills}}
+- **{{name}}**: {{description}}
+{{/skills}}
+{{/related_skills}}
+
+## Reference Documentation
+
+- **Execution Semantics:** [hiivmind-blueprint-lib/execution/](https://github.com/hiivmind/hiivmind-blueprint-lib/tree/{{lib_version}}/execution) (traversal, state, dispatch)
+- **Type Definitions:** [hiivmind-blueprint-lib](https://github.com/hiivmind/hiivmind-blueprint-lib/tree/{{lib_version}}) (consequences, preconditions, nodes)

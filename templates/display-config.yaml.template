@@ -1,0 +1,66 @@
+# Display Configuration Template
+#
+# Copy this file to your skill's workflow.yaml (inside initial_state)
+# or to .hiivmind/blueprint/display.yaml (for plugin-wide defaults).
+#
+# Schema: https://raw.githubusercontent.com/hiivmind/hiivmind-blueprint-lib/main/schema/display-config.json
+# Documentation: lib/workflow/display-config-loader.md
+
+display:
+  # --------------------------------------------------------------------------
+  # Master Switch
+  # --------------------------------------------------------------------------
+  enabled: true                  # Set to false to disable all display output
+
+  # --------------------------------------------------------------------------
+  # Verbosity Level
+  # --------------------------------------------------------------------------
+  # Controls how much output is shown during workflow execution.
+  #
+  # Levels:
+  #   - silent:  Only user prompts + final result
+  #   - terse:   Batch summaries + user prompts + result
+  #   - normal:  Node transitions + batch internal nodes (default)
+  #   - verbose: All node details, condition evaluations
+  #   - debug:   Full state dumps, all internal details
+  #
+  verbosity: "{{verbosity:-normal}}"
+
+  # --------------------------------------------------------------------------
+  # Batch Mode
+  # --------------------------------------------------------------------------
+  # Collapse consecutive non-interactive nodes into summary lines.
+  # Example: "Routing... [3 nodes] → show_main_menu"
+  #
+  batch:
+    enabled: true                # Master switch for batching
+    threshold: 3                 # Min consecutive nodes to trigger batching
+    show_summary: true           # Show "N nodes executed" text
+    show_node_list: false        # Include node IDs in summary: "[a, b, c]"
+    expand_on_error: true        # Expand batch details if any node fails
+
+  # --------------------------------------------------------------------------
+  # Show Controls
+  # --------------------------------------------------------------------------
+  # Fine-grained control over what content is displayed.
+  # These apply at the current verbosity level.
+  #
+  show:
+    workflow_state: true         # Show state at verbose+
+    node_transitions: true       # Show "→ node_name" arrows
+    condition_eval: false        # Show condition expressions
+    branch_result: true          # Show branch decisions
+    user_prompts: true           # User prompts (cannot be disabled)
+    tool_output: true            # Show tool execution output
+    final_result: true           # Final result (cannot be disabled)
+    phase_markers: false         # Show phase boundaries (Initialize/Execute/Complete)
+    spinner_text: true           # Show activeForm text in spinner
+
+  # --------------------------------------------------------------------------
+  # Format Options
+  # --------------------------------------------------------------------------
+  format:
+    style: "structured"          # structured | minimal | inline
+    indent: 2                    # Indentation for nested output
+    use_icons: true              # Use icons: ✓ → ? ✗
+    timestamp: false             # Show timestamps in output

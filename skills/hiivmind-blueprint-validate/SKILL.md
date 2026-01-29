@@ -14,22 +14,23 @@ allowed-tools: Read, Glob, Grep, Bash, AskUserQuestion
 Analyze workflow YAML files for consistency, completeness, and referential integrity.
 
 > **Pattern Documentation:**
-> - Validation queries: `${CLAUDE_PLUGIN_ROOT}/lib/workflow/validation-queries.md`
-> - Report format: `${CLAUDE_PLUGIN_ROOT}/lib/workflow/validation-report-format.md`
-> - JSON Schemas: `${CLAUDE_PLUGIN_ROOT}/lib/schema/workflow-schema.json`, `${CLAUDE_PLUGIN_ROOT}/lib/schema/intent-mapping-schema.json`
+> - Validation queries: `${CLAUDE_PLUGIN_ROOT}/lib/workflow/legacy/validation-queries.md`
+> - Report format: `${CLAUDE_PLUGIN_ROOT}/lib/workflow/legacy/validation-report-format.md`
+> - JSON Schemas: `${CLAUDE_PLUGIN_ROOT}/../hiivmind-blueprint-lib/schema/workflow.json`, `${CLAUDE_PLUGIN_ROOT}/../hiivmind-blueprint-lib/schema/intent-mapping.json`, `${CLAUDE_PLUGIN_ROOT}/../hiivmind-blueprint-lib/schema/prompts-config.json`
 
 ---
 
 ## Overview
 
 This skill validates workflow.yaml files against:
-- **JSON Schema** - Validate against formal JSON Schema definitions
+- **JSON Schema** - Validate against formal JSON Schema definitions (via check-jsonschema CLI)
 - **Schema** - Required fields, node types, structure (yq-based)
 - **Referential integrity** - Node references, transitions, endings
 - **Graph** - Reachability, dead ends, cycles
 - **Types** - Precondition/consequence type validity
 - **State** - Variable references, unused state
-- **User prompts** - Option handlers, header length, counts
+- **User prompts** - Option handlers, header length, counts, mode configuration
+- **Prompts configuration** - Mode, match strategy, other handler consistency
 - **Endings** - Success/error types, message variables
 - **Intent mapping** - Flag/rule validation (if intent-mapping.yaml present)
 
@@ -40,7 +41,7 @@ This skill validates workflow.yaml files against:
 | Requirement | Check | Error Message |
 |-------------|-------|---------------|
 | yq installed | `which yq` | "yq is required. Install: https://github.com/mikefarah/yq" |
-| python3 + jsonschema (optional) | `python3 -c "import jsonschema"` | "jsonschema not installed - JSON Schema validation will be skipped" |
+| check-jsonschema installed | `~/.rye/shims/check-jsonschema --version` | "check-jsonschema not found - JSON Schema validation will be skipped" |
 
 ---
 
@@ -138,66 +139,41 @@ Detect validation type from user input keywords:
 
 ## Phase 3: Run Validation
 
-Execute validation checks based on selected mode. See `lib/workflow/validation-queries.md` for yq query patterns.
+Execute validation checks based on selected mode. See `lib/workflow/legacy/validation-queries.md` for yq query patterns.
 
-### 3.0: JSON Schema Validation (Optional)
+### 3.0: JSON Schema Validation (check-jsonschema CLI)
 
-If `python3` with `jsonschema` module is available, validate against formal JSON Schema definitions first.
+Validate against formal JSON Schema definitions using check-jsonschema CLI.
 
-**Schema Files:**
-- `${CLAUDE_PLUGIN_ROOT}/lib/schema/workflow-schema.json` - Workflow YAML structure
-- `${CLAUDE_PLUGIN_ROOT}/lib/schema/intent-mapping-schema.json` - Intent mapping structure
+**Schema Files (from hiivmind-blueprint-lib):**
+- `workflow.json` - Workflow YAML structure
+- `intent-mapping.json` - Intent mapping structure
+- `logging-config.json` - Logging configuration structure
 
-**Validation Command:**
-
-```python
-#!/usr/bin/env python3
-import json
-import yaml
-import jsonschema
-import sys
-
-# Load schema
-with open('lib/schema/workflow-schema.json') as f:
-    schema = json.load(f)
-
-# Load workflow (YAML to dict)
-with open(sys.argv[1]) as f:
-    workflow = yaml.safe_load(f)
-
-# Validate
-try:
-    jsonschema.validate(workflow, schema)
-    print("Schema validation passed")
-except jsonschema.ValidationError as e:
-    print(f"Schema validation failed: {e.message}")
-    print(f"Path: {'.'.join(str(p) for p in e.absolute_path)}")
-    sys.exit(1)
-```
-
-**Inline validation via bash:**
+**Validation Commands:**
 
 ```bash
-python3 -c "
-import json, yaml, sys
-try:
-    import jsonschema
-except ImportError:
-    print('jsonschema not installed - skipping')
-    sys.exit(0)
+# Set up schema paths
+SCHEMA_DIR="${CLAUDE_PLUGIN_ROOT}/../hiivmind-blueprint-lib/schema"
+LIB_SCHEMA="file://${SCHEMA_DIR}/"
 
-with open('${CLAUDE_PLUGIN_ROOT}/lib/schema/workflow-schema.json') as f:
-    schema = json.load(f)
-with open('$WORKFLOW_PATH') as f:
-    workflow = yaml.safe_load(f)
-try:
-    jsonschema.validate(workflow, schema)
-    print('JSON Schema: PASS')
-except jsonschema.ValidationError as e:
-    print(f'JSON Schema: FAIL - {e.message}')
-    print(f'  Path: {\".\".join(str(p) for p in e.absolute_path)}')
-    sys.exit(1)
-"
+# Validate workflow.yaml
+~/.rye/shims/check-jsonschema \
+  --base-uri "$LIB_SCHEMA" \
+  --schemafile "$SCHEMA_DIR/workflow.json" \
+  "$WORKFLOW_PATH"
+
+# Validate intent-mapping.yaml (if present)
+~/.rye/shims/check-jsonschema \
+  --base-uri "$LIB_SCHEMA" \
+  --schemafile "$SCHEMA_DIR/intent-mapping.json" \
+  "$INTENT_MAPPING_PATH"
+
+# Validate logging.yaml (if present)
+~/.rye/shims/check-jsonschema \
+  --base-uri "$LIB_SCHEMA" \
+  --schemafile "$SCHEMA_DIR/logging-config.json" \
+  "$LOGGING_CONFIG_PATH"
 ```
 
 **JSON Schema Check Results:**
@@ -207,14 +183,14 @@ except jsonschema.ValidationError as e:
 | All required top-level fields present | Error |
 | Node types match enum | Error |
 | Node type-specific required fields present | Error |
-| Precondition types match oneOf | Error |
-| Consequence types match oneOf | Error |
+| Precondition structure valid | Error |
+| Consequence structure valid | Error |
 | User prompt option count (2-4) | Error |
 | Header max length (12 chars) | Error |
 | Ending types match enum | Error |
 | 3VL values match enum (T/F/U) | Error |
 
-If jsonschema is not available, skip this phase and rely on yq-based validation below.
+If check-jsonschema is not available, skip this phase and rely on yq-based validation below.
 
 ---
 
@@ -227,7 +203,7 @@ If jsonschema is not available, skip this phase and rely on yq-based validation 
 | 3 | `description` field present | `has("description")` | Warning |
 | 4 | `start_node` field present | `has("start_node")` | Error |
 | 5 | `nodes` object present | `has("nodes")` | Error |
-| 6 | `nodes` is non-empty | `.nodes \| length > 0` | Error |
+| 6 | `nodes` is non-empty | `.nodes | length > 0` | Error |
 | 7 | `endings` object present | `has("endings")` | Error |
 | 8 | `initial_state` object present | `has("initial_state")` | Warning |
 | 9 | `entry_preconditions` array present | `has("entry_preconditions")` | Warning |
@@ -238,7 +214,7 @@ If jsonschema is not available, skip this phase and rely on yq-based validation 
 | Node Type | Required Fields |
 |-----------|----------------|
 | action | `actions`, `on_success`, `on_failure` |
-| conditional | `condition`, `branches.true`, `branches.false` |
+| conditional | `condition`, `branches.on_true`, `branches.on_false` |
 | user_prompt | `prompt.question`, `prompt.header`, `prompt.options`, `on_response` |
 | validation_gate | `validations`, `on_valid`, `on_invalid` |
 | reference | `doc`, `next_node` |
@@ -250,8 +226,8 @@ If jsonschema is not available, skip this phase and rely on yq-based validation 
 | 11 | `start_node` exists | Must exist in `nodes` | Error |
 | 12 | `on_success` targets exist | All must be nodes or endings | Error |
 | 13 | `on_failure` targets exist | All must be nodes or endings | Error |
-| 14 | `branches.true` targets exist | All must be nodes or endings | Error |
-| 15 | `branches.false` targets exist | All must be nodes or endings | Error |
+| 14 | `branches.on_true` targets exist | All must be nodes or endings | Error |
+| 15 | `branches.on_false` targets exist | All must be nodes or endings | Error |
 | 16 | `next_node` targets exist | All must be nodes or endings | Error |
 | 17 | `on_response.*.next_node` targets exist | All must be nodes or endings | Error |
 | 18 | Reference `doc` paths exist | File must exist | Warning |
@@ -281,40 +257,289 @@ If jsonschema is not available, skip this phase and rely on yq-based validation 
 
 ### 3.4: Type Validation
 
+Type validation uses an **extensible** approach:
+- **Known types**: Validates required parameters ARE present (error if missing)
+- **Unknown types**: Allows them through with warnings (preserves extensibility)
+
 | # | Check | Description | Severity |
 |---|-------|-------------|----------|
-| 23 | Entry precondition types known | Compare against preconditions.md | Error |
-| 24 | Conditional condition types known | Compare against preconditions.md | Error |
-| 25 | Validation gate types known | Compare against preconditions.md | Error |
-| 26 | Action consequence types known | Compare against consequences.md | Error |
-| 27 | Required parameters present | Type-specific parameter validation | Error |
+| 23 | Entry precondition types valid | Compare against type definitions | See below |
+| 24 | Conditional condition types valid | Compare against type definitions | See below |
+| 25 | Validation gate types valid | Compare against type definitions | See below |
+| 26 | Action consequence types valid | Compare against type definitions | See below |
+| 27a | Unknown precondition type | Type not in definitions | **Warning** |
+| 27b | Unknown consequence type | Type not in definitions | **Warning** |
+| 27c | Missing required precondition param | Known type, param missing | **Error** |
+| 27d | Missing required consequence param | Known type, param missing | **Error** |
+| 27e | Nested precondition params | Check params in all_of/any_of/xor_of/none_of | **Error** |
+| 27f | Typo suggestions | Unknown type similar to known type | **Info** |
 
-**Known Precondition Types:**
-```
-config_exists, index_exists, index_is_placeholder, file_exists, directory_exists,
-source_exists, source_cloned, source_has_updates, tool_available, python_module_available,
-flag_set, flag_not_set, state_equals, state_not_null, state_is_null,
-count_equals, count_above, count_below, fetch_succeeded, fetch_returned_content,
-all_of, any_of, none_of, evaluate_expression
+**Design Philosophy:**
+
+| Type Status | Behavior |
+|-------------|----------|
+| Known type, all params present | ✅ Pass |
+| Known type, missing required param | ❌ Error |
+| Unknown type | ⚠️ Warning (allows extension) |
+| Known type, extra params | ✅ Pass (forward-compatible) |
+
+#### Step 3.4.1: Load Type Definitions
+
+Load known types dynamically from hiivmind-blueprint-lib. Each YAML file is self-documenting with `type`, `description`, `parameters`, and evaluation/payload fields.
+
+**Type Definitions Source:** `hiivmind/hiivmind-blueprint-lib@v2.0.0`
+
+```bash
+# Set schema directory (local development path - adjust as needed)
+SCHEMA_DIR="${CLAUDE_PLUGIN_ROOT}/../hiivmind-blueprint-lib"
+
+# Build precondition type lookup (type -> required params)
+# Output: JSON object { "type_name": ["required_param1", "required_param2"], ... }
+yq eval-all '
+  [.preconditions[] | {
+    "key": .type,
+    "value": [.parameters[]? | select(.required == true) | .name]
+  }] | from_entries
+' "$SCHEMA_DIR"/preconditions/core/*.yaml "$SCHEMA_DIR"/preconditions/extensions/*.yaml \
+  > /tmp/precondition_types.json
+
+# Build consequence type lookup (type -> required params)
+yq eval-all '
+  [.consequences[] | {
+    "key": .type,
+    "value": [.parameters[]? | select(.required == true) | .name]
+  }] | from_entries
+' "$SCHEMA_DIR"/consequences/core/*.yaml "$SCHEMA_DIR"/consequences/extensions/*.yaml \
+  > /tmp/consequence_types.json
+
+# Get list of all known precondition type names
+yq 'keys | .[]' /tmp/precondition_types.json > /tmp/known_preconditions.txt
+
+# Get list of all known consequence type names
+yq 'keys | .[]' /tmp/consequence_types.json > /tmp/known_consequences.txt
 ```
 
-**Known Consequence Types:**
+#### Step 3.4.2: Extract All Precondition Usages (Including Nested)
+
+Preconditions can be nested in composites (`all_of`, `any_of`, `xor_of`, `none_of`). Extract from all locations:
+
+```bash
+# Extract precondition usages from workflow
+# Returns: { "location": "...", "type": "file_exists", "params": ["path"] }
+
+# 1. Entry preconditions (top-level)
+yq '
+  .entry_preconditions | to_entries | .[] |
+  {
+    "location": ("entry_preconditions[" + (.key | tostring) + "]"),
+    "type": .value.type,
+    "params": (.value | keys | map(select(. | test("^(type|conditions)$") | not)))
+  }
+' workflow.yaml > /tmp/used_preconditions.json
+
+# 2. Conditional node conditions
+yq '
+  .nodes | to_entries | .[] |
+  select(.value.type == "conditional") |
+  {
+    "location": ("nodes." + .key + ".condition"),
+    "type": .value.condition.type,
+    "params": (.value.condition | keys | map(select(. | test("^(type|conditions)$") | not)))
+  }
+' workflow.yaml >> /tmp/used_preconditions.json
+
+# 3. Validation gate validations
+yq '
+  .nodes | to_entries | .[] |
+  select(.value.type == "validation_gate") |
+  .key as $node |
+  .value.validations | to_entries | .[] |
+  {
+    "location": ("nodes." + $node + ".validations[" + (.key | tostring) + "]"),
+    "type": .value.type,
+    "params": (.value | keys | map(select(. | test("^(type|conditions)$") | not)))
+  }
+' workflow.yaml >> /tmp/used_preconditions.json
+
+# 4. Extract nested preconditions in composites (recursively via .. operator)
+yq '
+  .. | select(type == "!!map" and has("conditions")) |
+  .conditions[] | select(has("type")) |
+  {
+    "location": "nested_in_composite",
+    "type": .type,
+    "params": (keys | map(select(. | test("^(type|conditions)$") | not)))
+  }
+' workflow.yaml >> /tmp/used_preconditions.json
 ```
-# Core: workflow.md
-set_flag, set_state, append_state, clear_state, merge_state,
-evaluate, compute, display_message, display_table,
-invoke_pattern, create_checkpoint, rollback_checkpoint, spawn_agent,
-set_timestamp, compute_hash, invoke_skill,
-# Core: intent-detection.md
-evaluate_keywords, parse_intent_flags, match_3vl_rules, dynamic_route,
-# Core: logging.md
-init_log, log_node, log_event, log_warning, log_error,
-log_session_snapshot, finalize_log, write_log, apply_log_retention, output_ci_summary,
-# Extensions
-read_config, read_file, write_file, create_directory, delete_file,
-write_config_entry, add_source, update_source, clone_repo, get_sha, git_pull, git_fetch,
-web_fetch, cache_web_content, discover_installed_corpora
+
+#### Step 3.4.3: Extract All Consequence Usages
+
+```bash
+# Extract all consequence usages from action nodes
+# Returns: { "location": "nodes.action_id.actions[0]", "type": "clone_repo", "params": ["url", "dest"] }
+
+# 1. From action node actions arrays
+yq '
+  .nodes | to_entries | .[] |
+  select(.value.type == "action") |
+  .key as $node_id |
+  .value.actions | to_entries | .[] |
+  {
+    "location": ("nodes." + $node_id + ".actions[" + (.key | tostring) + "]"),
+    "type": .value.type,
+    "params": (.value | keys | map(select(. | test("^type$") | not)))
+  }
+' workflow.yaml > /tmp/used_consequences.json
+
+# 2. From user_prompt on_response consequences
+yq '
+  .nodes | to_entries | .[] |
+  select(.value.type == "user_prompt") |
+  .key as $node_id |
+  .value.on_response | to_entries | .[] |
+  .key as $option_id |
+  .value.consequence | to_entries | .[] |
+  {
+    "location": ("nodes." + $node_id + ".on_response." + $option_id + ".consequence[" + (.key | tostring) + "]"),
+    "type": .value.type,
+    "params": (.value | keys | map(select(. | test("^type$") | not)))
+  }
+' workflow.yaml >> /tmp/used_consequences.json
 ```
+
+#### Step 3.4.4: Validate Precondition Types and Parameters
+
+```bash
+# For each used precondition, validate:
+# 1. Type is known (warn if not)
+# 2. Required params are present (error if missing)
+
+while IFS= read -r usage; do
+  TYPE=$(echo "$usage" | yq '.type')
+  LOCATION=$(echo "$usage" | yq '.location')
+  PARAMS=$(echo "$usage" | yq '.params | .[]' 2>/dev/null)
+
+  # Check if type is known
+  if ! grep -qx "$TYPE" /tmp/known_preconditions.txt; then
+    # Check for typo (Levenshtein-like suggestion)
+    SIMILAR=$(grep -i "^${TYPE:0:3}" /tmp/known_preconditions.txt | head -1)
+    if [ -n "$SIMILAR" ]; then
+      echo "INFO: Unknown precondition type '$TYPE' at $LOCATION. Did you mean: $SIMILAR?"
+    else
+      echo "WARNING: Unknown precondition type '$TYPE' at $LOCATION (may be custom extension)"
+    fi
+    continue  # Can't validate params for unknown type
+  fi
+
+  # Get required params for this type
+  REQUIRED=$(yq ".\"$TYPE\" | .[]" /tmp/precondition_types.json 2>/dev/null)
+
+  # Check each required param is present
+  for param in $REQUIRED; do
+    if ! echo "$PARAMS" | grep -qx "$param"; then
+      echo "ERROR: Precondition '$TYPE' at $LOCATION missing required param: $param"
+    fi
+  done
+done < <(yq -c '.[]?' /tmp/used_preconditions.json 2>/dev/null)
+```
+
+#### Step 3.4.5: Validate Consequence Types and Parameters
+
+```bash
+# For each used consequence, validate:
+# 1. Type is known (warn if not)
+# 2. Required params are present (error if missing)
+
+while IFS= read -r usage; do
+  TYPE=$(echo "$usage" | yq '.type')
+  LOCATION=$(echo "$usage" | yq '.location')
+  PARAMS=$(echo "$usage" | yq '.params | .[]' 2>/dev/null)
+
+  # Check if type is known
+  if ! grep -qx "$TYPE" /tmp/known_consequences.txt; then
+    # Check for typo (Levenshtein-like suggestion)
+    SIMILAR=$(grep -i "^${TYPE:0:3}" /tmp/known_consequences.txt | head -1)
+    if [ -n "$SIMILAR" ]; then
+      echo "INFO: Unknown consequence type '$TYPE' at $LOCATION. Did you mean: $SIMILAR?"
+    else
+      echo "WARNING: Unknown consequence type '$TYPE' at $LOCATION (may be custom extension)"
+    fi
+    continue  # Can't validate params for unknown type
+  fi
+
+  # Get required params for this type
+  REQUIRED=$(yq ".\"$TYPE\" | .[]" /tmp/consequence_types.json 2>/dev/null)
+
+  # Check each required param is present
+  for param in $REQUIRED; do
+    if ! echo "$PARAMS" | grep -qx "$param"; then
+      echo "ERROR: Consequence '$TYPE' at $LOCATION missing required param: $param"
+    fi
+  done
+done < <(yq -c '.[]?' /tmp/used_consequences.json 2>/dev/null)
+```
+
+#### Step 3.4.6: Composite Precondition Special Handling
+
+Composite types (`all_of`, `any_of`, `xor_of`, `none_of`) require special validation:
+- They must have a `conditions` array
+- Each condition in the array is validated recursively (already handled in Step 3.4.2)
+
+```bash
+# Check composite types have conditions array using recursive descent (..)
+# This finds ALL composite types anywhere in the document
+yq '
+  .. | select(type == "!!map" and has("type")) |
+  select(.type | test("^(all_of|any_of|xor_of|none_of)$")) |
+  {
+    "type": .type,
+    "has_conditions": has("conditions"),
+    "conditions_is_array": (if has("conditions") then (.conditions | type) == "!!seq" else false end),
+    "conditions_count": (if has("conditions") and ((.conditions | type) == "!!seq") then (.conditions | length) else 0 end)
+  } |
+  if .has_conditions | not then
+    {"severity": "error", "message": ("Composite type " + .type + " missing conditions array")}
+  elif .conditions_is_array | not then
+    {"severity": "error", "message": ("Composite type " + .type + ": conditions must be an array")}
+  elif .conditions_count == 0 then
+    {"severity": "warning", "message": ("Composite type " + .type + " has empty conditions array")}
+  else empty end
+' workflow.yaml
+```
+
+#### Example Validation Output
+
+```
+══════════════════════════════════════
+  Blueprint Workflow Validation Report
+══════════════════════════════════════
+
+Errors (2)
+──────────
+✗ [Type] clone_repo at nodes.clone_source.actions[0] missing required param: url
+  Required params: url, dest
+  Found: dest, depth
+
+✗ [Type] flag_set at entry_preconditions[1] missing required param: flag
+  Required params: flag
+  Found: (none)
+
+Warnings (1)
+────────────
+⚠ [Type] Unknown precondition type 'my_custom_check' at nodes.verify.condition
+  May be a custom extension - cannot validate parameters
+
+Info (1)
+────────
+ℹ [Type] Unknown precondition type 'filexists' at entry_preconditions[0]
+  Did you mean: file_exists?
+```
+
+This approach:
+- **Errors** on known types with missing params (blocks if found)
+- **Warns** on unknown types (allows extensibility)
+- **Suggests** typo fixes for close matches
 
 ### 3.5: State/Variable Validation
 
@@ -335,12 +560,91 @@ web_fetch, cache_web_content, discover_installed_corpora
 | 35 | Header max 12 chars | `prompt.header` length | Warning |
 | 36 | 2-4 options per prompt | Option count in valid range | Warning |
 
+### 3.6.1: Prompts Configuration Validation
+
+| # | Check | Description | Severity |
+|---|-------|-------------|----------|
+| 36a | Valid prompt mode | Mode is "interactive" or "tabular" | Error |
+| 36b | Valid match strategy | Strategy is "exact", "prefix", or "fuzzy" | Error |
+| 36c | Valid other handler | Handler is "prompt", "route", or "fail" | Error |
+| 36d | Other handler route requires on_response.other | If other_handler: "route", all user_prompt nodes must have on_response.other | Error |
+| 36e | Fuzzy threshold in range | fuzzy_threshold between 0.0 and 1.0 | Error |
+| 36f | Tabular config without tabular mode | tabular block present but mode != "tabular" | Warning |
+
+**Check 36a-c: Valid Enum Values**
+
+```bash
+# Check prompts mode
+yq '
+  if .initial_state.prompts.mode then
+    .initial_state.prompts.mode | select(. != "interactive" and . != "tabular")
+  else empty end
+' workflow.yaml
+
+# Check match strategy
+yq '
+  if .initial_state.prompts.tabular.match_strategy then
+    .initial_state.prompts.tabular.match_strategy |
+    select(. != "exact" and . != "prefix" and . != "fuzzy")
+  else empty end
+' workflow.yaml
+
+# Check other handler
+yq '
+  if .initial_state.prompts.tabular.other_handler then
+    .initial_state.prompts.tabular.other_handler |
+    select(. != "prompt" and . != "route" and . != "fail")
+  else empty end
+' workflow.yaml
+```
+
+**Check 36d: Other Handler Route Requires on_response.other**
+
+```bash
+# If other_handler is "route", check all user_prompt nodes have on_response.other
+yq '
+  if (.initial_state.prompts.tabular.other_handler == "route") then
+    .nodes | to_entries | .[] |
+    select(.value.type == "user_prompt") |
+    select(.value.on_response.other == null) |
+    .key
+  else empty end
+' workflow.yaml
+```
+
+If this returns any node names, emit error:
+```
+ERROR: other_handler is "route" but node "{node_name}" missing on_response.other
+```
+
+**Check 36e: Fuzzy Threshold Range**
+
+```bash
+yq '
+  if .initial_state.prompts.tabular.fuzzy_threshold then
+    .initial_state.prompts.tabular.fuzzy_threshold |
+    select(. < 0 or . > 1)
+  else empty end
+' workflow.yaml
+```
+
+**Check 36f: Unused Tabular Config**
+
+```bash
+yq '
+  if (.initial_state.prompts.tabular != null) and
+     (.initial_state.prompts.mode != "tabular") then
+    "tabular config present but mode is not tabular"
+  else empty end
+' workflow.yaml
+```
+
 ### 3.7: Ending Validation
 
 | # | Check | Description | Severity |
 |---|-------|-------------|----------|
 | 37 | At least one success ending | Must have success type | Error |
-| 38 | Valid ending types | success or error only | Error |
+| 38 | Valid ending types | success, failure, error, or cancelled only | Error |
 | 39 | Message variable references | Variables in message resolvable | Warning |
 | 40 | Recovery skill exists | If specified, skill should exist | Info |
 
@@ -357,7 +661,7 @@ Only run if `intent-mapping.yaml` exists alongside workflow.yaml.
 
 ### 3.9: Logging Validation
 
-Validate logging configuration and usage consistency. See `lib/workflow/validation-queries.md` for yq patterns.
+Validate logging configuration and usage consistency. See `lib/workflow/legacy/validation-queries.md` for yq patterns.
 
 | # | Check | Description | Severity |
 |---|-------|-------------|----------|
@@ -455,7 +759,7 @@ computed:
 
 ### Step 4.2: Format Report
 
-See `lib/workflow/validation-report-format.md` for complete format specification.
+See `lib/workflow/legacy/validation-report-format.md` for complete format specification.
 
 **Report Structure:**
 
@@ -537,7 +841,7 @@ check_result:
 
 ## yq Query Examples
 
-Quick reference for common validation queries. Full patterns in `lib/workflow/validation-queries.md`.
+Quick reference for common validation queries. Full patterns in `lib/workflow/legacy/validation-queries.md`.
 
 ### Check required fields
 
@@ -561,7 +865,7 @@ yq '[.nodes | to_entries | .[] | .value.type] | unique | .[] | select(. != "acti
 
 ```bash
 # Get start_node and all destinations
-yq '[.start_node, (.nodes | to_entries | .[] | [.value.on_success, .value.on_failure, .value.branches.true, .value.branches.false, .value.next_node, (.value.on_response | .[]? | .next_node)] | .[] | select(. != null))] | unique | .[]' workflow.yaml
+yq '[.start_node, (.nodes | to_entries | .[] | [.value.on_success, .value.on_failure, .value.branches.on_true, .value.branches.on_false, .value.next_node, (.value.on_response | .[]? | .next_node)] | .[] | select(. != null))] | unique | .[]' workflow.yaml
 ```
 
 ### Check user prompt headers
@@ -580,7 +884,7 @@ yq '.nodes | to_entries | .[] | select(.value.type == "user_prompt" and (.value.
 |-------|---------------|
 | `start_node not found in nodes` | Add the node to `nodes:` or correct `start_node` |
 | `Invalid transition target: X` | Add X to nodes/endings or fix the reference |
-| `Unknown precondition type: X` | Use a known type from preconditions.md |
+| `Unknown precondition type: X` | Use a known type from type definitions |
 | `Orphan node: X` | Add transition to reach X or remove it |
 | `Dead end: X` | Add on_success/on_failure or next_node |
 | `Missing on_response handler for: X` | Add handler in on_response for option ID |
@@ -590,19 +894,17 @@ yq '.nodes | to_entries | .[] | select(.value.type == "user_prompt" and (.value.
 
 ## Reference Documentation
 
-- **Validation Queries:** `${CLAUDE_PLUGIN_ROOT}/lib/workflow/validation-queries.md`
-- **Report Format:** `${CLAUDE_PLUGIN_ROOT}/lib/workflow/validation-report-format.md`
-- **Workflow JSON Schema:** `${CLAUDE_PLUGIN_ROOT}/lib/schema/workflow-schema.json`
-- **Intent Mapping JSON Schema:** `${CLAUDE_PLUGIN_ROOT}/lib/schema/intent-mapping-schema.json`
-- **Workflow Schema (docs):** `${CLAUDE_PLUGIN_ROOT}/lib/workflow/schema.md`
-- **Preconditions:** `${CLAUDE_PLUGIN_ROOT}/lib/workflow/preconditions.md`
-- **Consequences:** `${CLAUDE_PLUGIN_ROOT}/lib/workflow/consequences.md`
+- **Validation Queries:** `${CLAUDE_PLUGIN_ROOT}/lib/workflow/legacy/validation-queries.md`
+- **Report Format:** `${CLAUDE_PLUGIN_ROOT}/lib/workflow/legacy/validation-report-format.md`
+- **Workflow JSON Schema:** `${CLAUDE_PLUGIN_ROOT}/../hiivmind-blueprint-lib/schema/workflow.json`
+- **Intent Mapping JSON Schema:** `${CLAUDE_PLUGIN_ROOT}/../hiivmind-blueprint-lib/schema/intent-mapping.json`
+- **Workflow Schema (docs):** `${CLAUDE_PLUGIN_ROOT}/lib/workflow/engine.md`
 
 ---
 
 ## Related Skills
 
 - Analyze skills: `${CLAUDE_PLUGIN_ROOT}/skills/hiivmind-blueprint-analyze/SKILL.md`
-- Visualize workflow: `${CLAUDE_PLUGIN_ROOT}/skills/hiivmind-blueprint-visualize/SKILL.md`
 - Upgrade workflow: `${CLAUDE_PLUGIN_ROOT}/skills/hiivmind-blueprint-upgrade/SKILL.md`
 - Discover workflows: `${CLAUDE_PLUGIN_ROOT}/skills/hiivmind-blueprint-discover/SKILL.md`
+- Validate lib types: `${CLAUDE_PLUGIN_ROOT}/skills/hiivmind-blueprint-lib-validation/SKILL.md`

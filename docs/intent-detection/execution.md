@@ -266,8 +266,197 @@ computed:
 
 ---
 
+---
+
+## Dynamic Routing Pattern
+
+The intent detection pipeline typically ends with dynamic routing to the matched action. This eliminates the need for N conditional nodes to handle N possible actions.
+
+### Traditional Approach (O(N))
+
+```yaml
+# This grows with each action added
+route_to_init:
+  type: conditional
+  condition: { type: state_equals, field: computed.matched_action, value: "delegate_init" }
+  branches:
+    true: delegate_init
+    false: route_to_build
+
+route_to_build:
+  type: conditional
+  condition: { type: state_equals, field: computed.matched_action, value: "delegate_build" }
+  branches:
+    true: delegate_build
+    false: route_to_refresh
+# ... and so on
+```
+
+### Dynamic Approach (O(1))
+
+```yaml
+# Single node handles all routing
+execute_dynamic_route:
+  type: action
+  actions:
+    - type: dynamic_route
+      action: "${computed.matched_action}"
+  on_success: "${computed.dynamic_target}"  # Interpolated at runtime
+  on_failure: show_main_menu
+```
+
+### How It Works
+
+1. **Intent matching** sets `computed.matched_action` to a node name (e.g., `"delegate_init"`)
+2. **`dynamic_route` consequence** copies this to `computed.dynamic_target`
+3. **Engine interpolates** `on_success: "${computed.dynamic_target}"` at runtime
+4. **Routing occurs** directly to the delegate node
+
+### Engine Support
+
+The workflow engine supports variable interpolation in routing targets:
+
+```
+FUNCTION resolve_routing_target(target, state):
+    IF target.includes("${"):
+        resolved = interpolate(target, state)
+        IF resolved == null OR resolved == "":
+            THROW "Dynamic routing target resolved to null/empty"
+        RETURN resolved
+    ELSE:
+        RETURN target
+```
+
+See `lib/workflow/engine.md` for the full specification.
+
+### Adding New Actions
+
+With dynamic routing, adding a new action requires only:
+
+1. **Add flag definition** (if new keywords needed)
+2. **Add rule** with `action: delegate_new_action`
+3. **Add delegate node** in workflow
+
+No conditional cascade updates needed.
+
+### Complete Pipeline Example
+
+```yaml
+nodes:
+  # Step 1: Parse input to flags
+  parse_flags:
+    type: action
+    actions:
+      - type: parse_intent_flags
+        input: "${arguments}"
+        flag_definitions: "${intent_flags}"
+        store_as: computed.intent_flags
+    on_success: match_rules
+    on_failure: show_menu
+
+  # Step 2: Match flags to rules
+  match_rules:
+    type: action
+    actions:
+      - type: match_3vl_rules
+        flags: "${computed.intent_flags}"
+        rules: "${intent_rules}"
+        store_as: computed.intent_matches
+    on_success: check_winner
+    on_failure: show_menu
+
+  # Step 3: Check for clear winner
+  check_winner:
+    type: conditional
+    condition:
+      type: evaluate_expression
+      expression: "computed.intent_matches.clear_winner == true"
+    branches:
+      true: set_action
+      false: show_disambiguation
+
+  # Step 4: Set the matched action
+  set_action:
+    type: action
+    actions:
+      - type: set_state
+        field: computed.matched_action
+        value: "${computed.intent_matches.winner.action}"
+    on_success: dynamic_route
+    on_failure: show_menu
+
+  # Step 5: Route dynamically
+  dynamic_route:
+    type: action
+    actions:
+      - type: dynamic_route
+        action: "${computed.matched_action}"
+    on_success: "${computed.dynamic_target}"  # THE KEY!
+    on_failure: show_menu
+
+  # Delegate nodes (targets of dynamic routing)
+  delegate_init:
+    type: action
+    actions:
+      - type: invoke_skill
+        skill: "my-plugin-init"
+    on_success: success
+    on_failure: error
+
+  delegate_build:
+    type: action
+    actions:
+      - type: invoke_skill
+        skill: "my-plugin-build"
+    on_success: success
+    on_failure: error
+```
+
+---
+
+## Distributed Workflow Support (v1.2+)
+
+As of bundle schema version 1.2, the intent-detection workflow is available as a remote workflow reference from `hiivmind-blueprint-lib`:
+
+```yaml
+# Remote workflow reference (recommended for new gateways)
+detect_intent:
+  type: reference
+  workflow: hiivmind/hiivmind-blueprint-lib@v1.0.0:intent-detection
+  context:
+    arguments: "${arguments}"
+    intent_flags: "${intent_flags}"
+    intent_rules: "${intent_rules}"
+    fallback_action: "show_main_menu"
+  next_node: execute_dynamic_route
+```
+
+**Migration Path:**
+
+| Current | Target |
+|---------|--------|
+| `doc: "lib/workflows/intent-detection.yaml"` | `workflow: hiivmind/hiivmind-blueprint-lib@v1.0.0:intent-detection` |
+| Local file maintenance | Automatic updates via version pinning |
+| Manual sync | Cache-based freshness |
+
+**Benefits:**
+- Single source of truth across all gateways
+- Version pinning for reproducibility
+- Automatic caching
+- Dependency validation (types exist in loaded registry)
+
+The local file at `lib/workflows/intent-detection.yaml` remains available as an embedded fallback for offline scenarios.
+
+See `lib/workflow/workflow-loader.md` for the complete loading protocol.
+
+---
+
 ## Related Documentation
 
-- **3VL Framework:** `lib/intent_detection/framework.md`
-- **Variable Interpolation:** `lib/intent_detection/variables.md`
-- **Workflow Consequences:** `lib/workflow/consequences.md`
+- **3VL Framework:** `docs/intent-detection/framework.md`
+- **Variable Interpolation:** `docs/intent-detection/variables.md`
+- **Intent Detection Guide:** `docs/intent-detection-guide.md`
+- **Workflow Engine:** `lib/workflow/engine.md`
+- **Workflow Loader:** `lib/workflow/workflow-loader.md`
+- **Intent Composition Pattern:** `lib/blueprint/patterns/intent-composition.md`
+- **Reusable Sub-workflow (remote):** `hiivmind/hiivmind-blueprint-lib@v1.x:intent-detection`

@@ -127,54 +127,55 @@ If files exist, **ask user**:
 }
 ```
 
-### Step 2.2: Check Library Files
+### Step 2.2: Check Blueprint Infrastructure
 
-Verify the target plugin has the required libraries:
+Verify the target plugin has the `.hiivmind/blueprint/` directory structure:
 
 ```
-required_libs = [
-  "lib/workflow/schema.md",
-  "lib/workflow/execution.md",
-  "lib/workflow/preconditions.md",
-  "lib/workflow/consequences.md",
-  "lib/workflow/state.md"
-]
-
-# Additional libs if logging is enabled
-if computed.workflow.initial_state.logging?.enabled:
-  required_libs.extend([
-    "lib/workflow/consequences/core/logging.md",
-    "lib/workflow/logging-schema.md",
-    "lib/blueprint/patterns/logging-configuration.md"
-  ])
-
-missing_libs = []
-for lib in required_libs:
-  if not file_exists("{plugin_root}/{lib}"):
-    missing_libs.append(lib)
+# The .hiivmind/blueprint/ directory is optional - only needed for logging.yaml
+# Execution semantics are fetched from hiivmind-blueprint-lib at runtime
 ```
 
-If missing libraries, **ask user**:
-```json
-{
-  "questions": [{
-    "question": "Required workflow libraries are missing. Copy from hiivmind-blueprint?",
-    "header": "Libraries",
-    "multiSelect": false,
-    "options": [
-      {"label": "Copy libraries", "description": "Copy workflow lib files to this plugin"},
-      {"label": "Skip", "description": "Assume libraries will be added manually"},
-      {"label": "Cancel", "description": "Exit - libraries required for workflow execution"}
-    ]
-  }]
-}
+If plugin uses custom logging configuration, `.hiivmind/blueprint/logging.yaml` should exist.
+
+### Step 2.3: Determine Type Definitions Source
+
+Check if workflow specifies external definitions:
+
 ```
+if computed.workflow.definitions:
+  definitions_source = computed.workflow.definitions.source
+else:
+  # Default to hiivmind-blueprint-lib
+  definitions_source = "hiivmind/hiivmind-blueprint-lib@v2.0.0"
+
+# Extract lib_version for templates (e.g., "v2.0.0" from "hiivmind/hiivmind-blueprint-lib@v2.0.0")
+lib_version = definitions_source.split("@")[1]  # e.g., "v2.0.0"
+```
+
+The `lib_version` is passed to templates for constructing raw GitHub URLs to execution semantics.
 
 ---
 
 ## Phase 3: Generate Files
 
-### Step 3.1: Create Backup (if requested)
+### Step 3.1: Create Blueprint Infrastructure (Optional)
+
+The `.hiivmind/blueprint/` directory is only needed for plugin-wide logging configuration:
+
+```bash
+# Only create if logging.yaml is needed
+if [ needs_custom_logging ]; then
+  mkdir -p "{plugin_root}/.hiivmind/blueprint"
+  # Create logging.yaml with plugin defaults
+fi
+```
+
+**Note:** `engine.md` is no longer copied to target plugins. Execution semantics are fetched
+from hiivmind-blueprint-lib via raw GitHub URLs at runtime. This ensures standalone plugins
+work correctly without requiring a local copy of the engine.
+
+### Step 3.2: Create Backup (if requested)
 
 If backup was requested:
 
@@ -188,7 +189,7 @@ if [ -f "{target}/workflow.yaml" ]; then
 fi
 ```
 
-### Step 3.2: Generate workflow.yaml
+### Step 3.4: Generate workflow.yaml
 
 Convert the workflow object to YAML and write:
 
@@ -219,107 +220,23 @@ endings:
 
 Write to: `{target}/workflow.yaml`
 
-### Step 3.3: Generate Thin Loader SKILL.md
+### Step 3.5: Generate Thin Loader SKILL.md
 
-Generate the minimal SKILL.md that loads and executes the workflow:
+Generate the minimal SKILL.md that loads and executes the workflow.
+Use the template at `${CLAUDE_PLUGIN_ROOT}/templates/skill-with-executor.md.template` with:
 
-```markdown
----
-name: {workflow.name}
-description: >
-  {workflow.description}
-allowed-tools: Read, Glob, Grep, Write, Edit, AskUserQuestion, Bash, WebFetch
----
+- `{{lib_version}}` = version extracted from definitions.source (e.g., "v2.0.0")
+- `{{skill_directory}}` = target skill directory name
+- `{{definitions_source}}` = full definitions source string
+- Other placeholders from workflow metadata
 
-# {Title from workflow name}
-
-Execute this workflow deterministically. State persists in conversation context.
-
-> **Workflow:** `${CLAUDE_PLUGIN_ROOT}/skills/{skill_dir}/workflow.yaml`
-
----
-
-## Execution Instructions
-
-### Phase 1: Initialize
-
-1. **Load workflow.yaml** from this skill directory:
-   Read: `${CLAUDE_PLUGIN_ROOT}/skills/{skill_dir}/workflow.yaml`
-
-2. **Check entry preconditions** (see `${CLAUDE_PLUGIN_ROOT}/lib/workflow/preconditions.md`):
-   - Evaluate each precondition in `entry_preconditions`
-   - If ANY fails: display error, STOP
-
-3. **Initialize runtime state** from `workflow.initial_state`
-
----
-
-### Phase 2: Execution Loop
-
-Execute nodes until an ending is reached:
-
-```
-LOOP:
-  1. Get current node from workflow.nodes[current_node]
-
-  2. Check for ending:
-     - IF current_node is in workflow.endings:
-       - Display ending.message
-       - If error with recovery: suggest recovery skill
-       - STOP
-
-  3. Execute by node.type:
-
-     ACTION:
-     - Execute each action in node.actions
-     - Route via on_success or on_failure
-
-     CONDITIONAL:
-     - Evaluate node.condition
-     - Route via branches.true or branches.false
-
-     USER_PROMPT:
-     - Present AskUserQuestion from node.prompt
-     - Store response, apply consequences
-     - Route via on_response handler
-
-     VALIDATION_GATE:
-     - Evaluate all node.validations
-     - Route via on_valid or on_invalid
-
-     REFERENCE:
-     - Load and execute node.doc section
-     - Route via next_node
-
-  4. Record in history and continue
-
-UNTIL ending reached
-```
-
----
-
-## Reference
-
-- **Workflow Schema:** `${CLAUDE_PLUGIN_ROOT}/lib/workflow/schema.md`
-- **Preconditions:** `${CLAUDE_PLUGIN_ROOT}/lib/workflow/preconditions.md`
-- **Consequences:** `${CLAUDE_PLUGIN_ROOT}/lib/workflow/consequences.md`
-- **State Model:** `${CLAUDE_PLUGIN_ROOT}/lib/workflow/state.md`
-```
+The template includes:
+- Execution Reference table with raw GitHub URLs to hiivmind-blueprint-lib
+- Phase 1/2/3 quick reference
+- Type definitions reference
 
 Write to: `{target}/SKILL.md`
 
-### Step 3.4: Copy Library Files (if requested)
-
-If user requested library copy:
-
-```bash
-# Create lib directories
-mkdir -p "{plugin_root}/lib/workflow"
-
-# Copy each library file
-for lib in missing_libs:
-  cp "{blueprint_root}/{lib}" "{plugin_root}/{lib}"
-```
 
 ---
 
@@ -349,7 +266,7 @@ Display generation summary:
 
 ### Files Created
 - `workflow.yaml` ({node_count} nodes, {ending_count} endings)
-- `SKILL.md` (thin loader)
+- `SKILL.md` (thin loader with remote execution references)
 
 {if backup_created}
 ### Backups Created
@@ -357,12 +274,9 @@ Display generation summary:
 - `workflow.yaml.backup`
 {/if}
 
-{if libs_copied}
-### Libraries Copied
-{for each lib}
-- `{lib}`
-{/for}
-{/if}
+### Execution Semantics
+The SKILL.md references execution semantics from hiivmind-blueprint-lib via raw GitHub URLs.
+This ensures the skill works correctly in standalone plugins without local dependencies.
 
 ### Next Steps
 1. Test the skill by invoking it
@@ -406,17 +320,20 @@ Files generated by this skill:
 | File | Description |
 |------|-------------|
 | `workflow.yaml` | Deterministic workflow definition |
-| `SKILL.md` | Thin loader that executes workflow |
+| `SKILL.md` | Thin loader with remote execution references |
 | `SKILL.md.backup` | Original skill (if backup requested) |
 | `workflow.yaml.backup` | Previous workflow (if backup requested) |
+
+**Note:** `engine.md` is no longer copied. Execution semantics are fetched from hiivmind-blueprint-lib at runtime.
 
 ---
 
 ## Reference Documentation
 
 - **Workflow Generation:** `${CLAUDE_PLUGIN_ROOT}/lib/blueprint/patterns/workflow-generation.md`
-- **Thin Loader Template:** `${CLAUDE_PLUGIN_ROOT}/templates/thin-loader.md.template`
-- **Workflow Schema:** `${CLAUDE_PLUGIN_ROOT}/lib/workflow/schema.md`
+- **Plugin Structure:** `${CLAUDE_PLUGIN_ROOT}/lib/blueprint/patterns/plugin-structure.md`
+- **Thin Loader Template:** `${CLAUDE_PLUGIN_ROOT}/templates/skill-with-executor.md.template`
+- **Workflow Engine:** `${CLAUDE_PLUGIN_ROOT}/lib/workflow/engine.md`
 
 ---
 

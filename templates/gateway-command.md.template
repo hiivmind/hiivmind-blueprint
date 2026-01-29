@@ -2,9 +2,9 @@
 #
 # This template generates the gateway command markdown file.
 # Placeholders use {{placeholder}} syntax and are replaced at generation time.
+# {{lib_version}} comes from workflow.yaml definitions.source
 #
-# See: lib/intent_detection/framework.md for 3VL semantics
-# See: lib/workflow/schema.md for workflow structure
+# Execution semantics: https://github.com/hiivmind/hiivmind-blueprint-lib
 
 ---
 name: {{plugin_name}}
@@ -31,6 +31,8 @@ Execute this workflow for intelligent routing to the appropriate skill.
 ```
 /{{plugin_name}}                    # Show interactive menu
 /{{plugin_name}} [request]          # Route by natural language intent
+/{{plugin_name}} --help             # Show full help
+/{{plugin_name}} [flags] [request]  # With runtime flags
 ```
 
 ## Quick Examples
@@ -38,6 +40,53 @@ Execute this workflow for intelligent routing to the appropriate skill.
 {{#examples}}
 - `{{command}}` → Routes to {{skill_name}}
 {{/examples}}
+
+---
+
+## Runtime Flags
+
+Flags modify workflow execution behavior. They are **per-invocation only** and reset for each command.
+
+### Display Flags
+
+| Flag | Effect |
+|------|--------|
+| `--verbose`, `-v` | Show all node details and condition evaluations |
+| `--quiet`, `-q` | Only user prompts and final result |
+| `--terse` | Batch summaries only (non-interactive nodes) |
+| `--debug` | Full state dumps after each node |
+| `--no-display` | Silent mode (no terminal output) |
+
+### Logging Flags
+
+| Flag | Effect |
+|------|--------|
+| `--log-level=X` | Set logging level: `error`, `warn`, `info`, `debug`, `trace` |
+| `--log-format=X` | Output format: `json`, `yaml`, `pretty` |
+| `--log-dir=X` | Override log directory |
+| `--trace` | Shorthand for `--log-level=trace` |
+| `--no-log` | Disable all file logging |
+| `--ci` | CI mode: structured output, no progress indicators |
+
+---
+
+## Help Commands
+
+| Command | Description |
+|---------|-------------|
+| `/{{plugin_name}} --help` | Show full command reference |
+| `/{{plugin_name}} -h` | Short form of --help |
+| `/{{plugin_name}} help` | Same as --help |
+| `/{{plugin_name}} help [skill]` | Help for specific skill |
+
+### Configuration Help
+
+| Command | Description |
+|---------|-------------|
+| `/{{plugin_name}} help logging` | Logging levels, flags, and priority hierarchy |
+| `/{{plugin_name}} help display` | Display verbosity and batch mode options |
+| `/{{plugin_name}} help prompts` | Prompt modes and match strategies |
+| `/{{plugin_name}} help flags` | Quick reference for all runtime flags |
 
 ---
 
@@ -56,7 +105,7 @@ Execute this workflow for intelligent routing to the appropriate skill.
 
 ## Intent Detection
 
-This gateway uses 3VL (3-valued logic) intent detection:
+This gateway uses 3VL (3-valued logic) intent detection with **dynamic routing**:
 
 | Value | Meaning | Example |
 |-------|---------|---------|
@@ -66,85 +115,40 @@ This gateway uses 3VL (3-valued logic) intent detection:
 
 ### How Intent Resolution Works
 
-1. **Parse input** against flag keywords
-2. **Evaluate rules** in priority order
-3. **Find matching rule** where all conditions match
-4. **Execute action** (delegate to skill or show menu)
+1. **Parse input** against flag keywords → `computed.intent_flags`
+2. **Match rules** in priority order → `computed.intent_matches`
+3. **Check for clear winner** (2+ point lead)
+4. **Dynamic route** to `${computed.matched_action}` → skill execution
 
-If multiple rules match, the highest priority rule wins.
+This gateway uses O(1) dynamic routing instead of N conditional nodes.
+
 If no clear winner, disambiguation is offered.
 
----
+### Safety Handling
 
-## Execution Instructions
+This gateway includes a standard `error_safety` ending for requests that Claude's built-in safety detects as harmful. The workflow will:
 
-### Phase 1: Initialize
+1. Exit cleanly via the `error_safety` ending
+2. Display a brief, non-judgmental message
+3. Offer recovery guidance
 
-1. **Load workflow.yaml** from this command directory:
-   Read: `${CLAUDE_PLUGIN_ROOT}/commands/{{plugin_name}}/workflow.yaml`
-
-2. **Load intent-mapping.yaml**:
-   Read: `${CLAUDE_PLUGIN_ROOT}/commands/{{plugin_name}}/intent-mapping.yaml`
-
-3. **Initialize runtime state**:
-   ```yaml
-   workflow_name: {{plugin_name}}-gateway
-   current_node: check_arguments
-   arguments: "${request}"
-   intent: null
-   flags:
-     has_arguments: ${request != null}
-   computed: {}
-   ```
+No custom jailbreak detection is implemented—Claude's native safety (95.3% block rate) handles this automatically.
 
 ---
 
-### Phase 2: Execution Loop
+## Execution Reference
 
-Execute nodes until an ending is reached:
+Execution semantics from [hiivmind-blueprint-lib](https://github.com/hiivmind/hiivmind-blueprint-lib) (version: {{lib_version}}):
 
-```
-LOOP:
-  1. Get current node from workflow.nodes[current_node]
-
-  2. Check for ending:
-     - IF current_node is in workflow.endings:
-       - Display ending.message
-       - STOP
-
-  3. Execute by node.type:
-
-     ACTION (parse_intent):
-     - Parse user input against intent_flags
-     - Evaluate intent_rules in priority order
-     - Store matches in computed.intent_matches
-     - Route via on_success or on_failure
-
-     CONDITIONAL (check_arguments, check_clear_winner):
-     - Evaluate condition
-     - Route via branches.true or branches.false
-
-     USER_PROMPT (show_main_menu, show_disambiguation):
-     - Present AskUserQuestion
-     - Store response, route via handler
-
-     DYNAMIC_ROUTE (execute_matched_intent):
-     - Get action from computed.intent_matches.winner
-     - Invoke corresponding skill
-
-  4. Record in history and continue
-
-UNTIL ending reached
-```
-
----
+| Semantic | Source |
+|----------|--------|
+| Core loop | [traversal.yaml](https://raw.githubusercontent.com/hiivmind/hiivmind-blueprint-lib/{{lib_version}}/execution/traversal.yaml) |
+| State | [state.yaml](https://raw.githubusercontent.com/hiivmind/hiivmind-blueprint-lib/{{lib_version}}/execution/state.yaml) |
+| Workflow loading | [workflow-loader.yaml](https://raw.githubusercontent.com/hiivmind/hiivmind-blueprint-lib/{{lib_version}}/resolution/workflow-loader.yaml) |
 
 ## Reference Documentation
 
-- **3VL Framework:** `${CLAUDE_PLUGIN_ROOT}/lib/intent_detection/framework.md`
-- **Intent Execution:** `${CLAUDE_PLUGIN_ROOT}/lib/intent_detection/execution.md`
-- **Variables:** `${CLAUDE_PLUGIN_ROOT}/lib/intent_detection/variables.md`
-- **Workflow Schema:** `${CLAUDE_PLUGIN_ROOT}/lib/workflow/schema.md`
+- **Type Definitions:** [hiivmind-blueprint-lib](https://github.com/hiivmind/hiivmind-blueprint-lib/tree/{{lib_version}})
 
 ---
 

@@ -228,6 +228,7 @@ ${computed.intent_matches.top_candidates[0].score}  # → 4
 
 ## Related Documentation
 
-- **3VL Framework:** `lib/intent_detection/framework.md`
-- **Execution Algorithms:** `lib/intent_detection/execution.md`
-- **Workflow State:** `lib/workflow/state.md`
+- **3VL Framework:** `docs/intent-detection/framework.md`
+- **Execution Algorithms:** `docs/intent-detection/execution.md`
+- **Intent Detection Guide:** `docs/intent-detection-guide.md`
+- **Workflow Engine:** `lib/workflow/engine.md`
