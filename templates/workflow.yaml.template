@@ -19,10 +19,15 @@ description: >
 # EXTERNAL TYPE DEFINITIONS
 # ============================================================================
 # Reference type definitions (consequences, preconditions) from hiivmind-blueprint-lib.
+# Supports remote (owner/repo@version) or local (./ or /absolute/path) sources.
+# Use local for development; remote for production.
 # Omit to use embedded definitions (not recommended for new workflows).
 
 definitions:
+  # Remote (production): owner/repo@version
   source: hiivmind/hiivmind-blueprint-lib@v2.0.0
+  # Local (development): ./ or /absolute/path
+  # source: ./
 
 # ============================================================================
 # ENTRY PRECONDITIONS
@@ -46,80 +51,46 @@ entry_preconditions:
 
 initial_state:
   phase: "start"
-  # {{#state_fields}}
-  # {{name}}: {{default}}
-  # {{/state_fields}}
   flags:
-    # {{#flags}}
-    # {{name}}: false
-    # {{/flags}}
     initialized: false
   computed: {}
-  # --------------------------------------------------------------------------
-  # Logging Configuration (optional)
-  # --------------------------------------------------------------------------
-  # Skill-specific logging (priority 2 in 4-tier hierarchy).
-  # See: lib/workflow/logging-config-loader.md
-  # {{#if_logging}}
-  logging:
-    enabled: true
-    level: "info"                # trace | debug | info | warn | error
-    auto:
-      init: true                 # Auto init_log at workflow start
-      node_tracking: true        # Auto log_node for each node
-      finalize: true             # Auto finalize_log at endings
-      write: true                # Auto write_log after finalize
-    output:
-      format: "yaml"             # yaml | json | markdown
-      location: ".logs/"         # Relative to skill/plugin root
-    retention:
-      strategy: "count"          # none | days | count
-      count: 10                  # Max files to keep
-  # {{/if_logging}}
-  # --------------------------------------------------------------------------
-  # Prompts Configuration (optional)
-  # --------------------------------------------------------------------------
-  # User prompt execution mode. Defaults to interactive (AskUserQuestion tool).
-  # Use tabular mode for CLI-style input when AskUserQuestion is unavailable.
-  # See: lib/workflow/prompts-config-loader.md
+
+  # ──────────────────────────────────────────────────────────────────────────
+  # Output Configuration (unified logging + display) v2.4+
+  # ──────────────────────────────────────────────────────────────────────────
+  # Schema: schema/config/output-config.json
+  # {{#if_output}}
+  output:
+    level: "normal"           # silent | quiet | normal | verbose | debug
+    display_enabled: true
+    batch_enabled: true
+    batch_threshold: 3
+    use_icons: true
+    log_enabled: true
+    log_format: "yaml"
+    log_location: ".logs/"
+    ci_mode: false
+  # {{/if_output}}
+
+  # ──────────────────────────────────────────────────────────────────────────
+  # Prompts Configuration (multi-modal) v2.4+
+  # ──────────────────────────────────────────────────────────────────────────
+  # Schema: schema/config/prompts-config.json
   # {{#if_prompts}}
   prompts:
-    mode: "interactive"          # interactive | tabular
-    # tabular:                   # Only used when mode: tabular
-    #   match_strategy: "prefix" # exact | prefix | fuzzy
-    #   other_handler: "prompt"  # prompt | route | fail
-    #   case_sensitive: false
-    #   show_option_ids: true
+    interface: "auto"         # auto | claude_code | web | api | agent
+    modes:
+      claude_code: "interactive"
+      web: "forms"
+      api: "structured"
+      agent: "autonomous"
+    tabular:
+      match_strategy: "prefix"
+      other_handler: "prompt"
+    autonomous:
+      strategy: "best_match"
+      confidence_threshold: 0.7
   # {{/if_prompts}}
-  # --------------------------------------------------------------------------
-  # Display Configuration (optional)
-  # --------------------------------------------------------------------------
-  # Real-time terminal output (distinct from logging which writes to files).
-  # See: lib/workflow/display-config-loader.md
-  # {{#if_display}}
-  display:
-    enabled: true
-    verbosity: "normal"          # silent | terse | normal | verbose | debug
-    batch:
-      enabled: true              # Collapse non-interactive node segments
-      threshold: 3               # Min nodes to trigger batching
-      show_summary: true         # Show "N nodes executed"
-      show_node_list: false      # Include node IDs in summary
-      expand_on_error: true      # Expand batch on failure
-    show:
-      workflow_state: true       # Show state at verbose+
-      node_transitions: true     # Show → arrows
-      condition_eval: false      # Show condition expressions
-      branch_result: true        # Show branch decisions
-      tool_output: true          # Show tool output
-      phase_markers: false       # Show phase boundaries
-      spinner_text: true         # Show activeForm in spinner
-    format:
-      style: "structured"        # structured | minimal | inline
-      indent: 2
-      use_icons: true            # Use ✓ → ? icons
-      timestamp: false
-  # {{/if_display}}
 
 # ============================================================================
 # START NODE

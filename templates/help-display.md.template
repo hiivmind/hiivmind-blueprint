@@ -18,12 +18,12 @@
 
 {{/skill_sections}}
 RUNTIME FLAGS
-  --verbose, -v    Show all node details and condition evaluations
-  --quiet, -q      Only user prompts and final result
-  --terse          Batch summaries only
-  --debug          Full state dumps
-  --log-level=X    Set logging (error/warn/info/debug/trace)
-  --no-log         Disable logging
+  --verbose, -v    Verbose output (all details)
+  --quiet, -q      Quiet output (prompts + result only)
+  --debug          Debug output (full state dumps)
+  --no-log         Disable file logging
+  --no-display     Silent mode
+  --ci             CI mode (GitHub annotations)
 
 HELP
   /{{plugin_name}} --help            This help screen
@@ -83,36 +83,25 @@ For the `show_flag_help` action, use this extended template:
 {{PLUGIN_TITLE}} - Runtime Flags
 ═══════════════════════════════════════════════════════════
 
-DISPLAY FLAGS (control terminal output)
-  --verbose, -v    Show all node details and condition evaluations
-  --quiet, -q      Only user prompts and final result
-  --terse          Batch summaries only (non-interactive nodes)
-  --debug          Full state dumps after each node
-  --no-display     Silent mode (no terminal output)
+OUTPUT FLAGS (unified control)
+  --verbose, -v    Verbose level: all details, no batching
+  --quiet, -q      Quiet level: prompts + result only
+  --debug          Debug level: full state dumps
+  --no-log         Disable file logging
+  --no-display     Disable terminal output
+  --ci             CI mode: GitHub annotations
 
-LOGGING FLAGS (control file logging)
-  --log-level=X    Set logging level:
-                     error  - Errors only
-                     warn   - Warnings and errors
-                     info   - Info, warnings, errors (default)
-                     debug  - Debug level detail
-                     trace  - Full execution trace
-  --log-format=X   Output format: json, yaml, pretty
-  --log-dir=X      Override log directory
-  --trace          Shorthand for --log-level=trace
-  --no-log         Disable all file logging
-  --ci             CI mode: structured output, no progress
-
-FLAG SCOPE
-  Flags are per-invocation only. Example:
-    /{{plugin_name}} --verbose analyze   <- verbose
-    /{{plugin_name}} convert             <- normal (reset)
+LEVEL BEHAVIOR
+  silent   Prompts + final result only, log errors only
+  quiet    + Batch summaries, + warnings
+  normal   + Node transitions, + info (default)
+  verbose  + All details no batching, + debug
+  debug    + Full state dumps, + trace
 
 CONFIGURATION HIERARCHY
   1. Runtime flags (highest priority)
-  2. Workflow initial_state
-  3. Plugin .hiivmind/blueprint/display.yaml
-  4. Framework defaults (lowest priority)
+  2. Workflow initial_state.output
+  3. Hardcoded defaults (lowest priority)
 
 ═══════════════════════════════════════════════════════════
 ```
