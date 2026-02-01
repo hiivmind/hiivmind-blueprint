@@ -84,66 +84,24 @@ Flags modify workflow execution behavior. They are **per-invocation only** and r
 | `/hiivmind-blueprint --help` | Show full command reference |
 | `/hiivmind-blueprint -h` | Short form of --help |
 | `/hiivmind-blueprint help` | Same as --help |
-| `/hiivmind-blueprint help init` | Help for init skill |
-| `/hiivmind-blueprint help flags` | Explain runtime flags |
+| `/hiivmind-blueprint help [skill]` | Help for specific skill |
 
----
+### Configuration Help
 
-## Available Operations
+| Command | Description |
+|---------|-------------|
+| `/hiivmind-blueprint help logging` | Logging levels, flags, and priority hierarchy |
+| `/hiivmind-blueprint help display` | Display verbosity and batch mode options |
+| `/hiivmind-blueprint help prompts` | Prompt modes and match strategies |
+| `/hiivmind-blueprint help flags` | Quick reference for all runtime flags |
 
-### Initialize (`init`)
 
-Set up a plugin for deterministic workflow conversion by copying required libraries and creating the directory structure.
-
-**Trigger phrases:** "initialize", "init", "setup", "prepare", "copy libs"
-
-### Discover (`discover`)
-
-Scan a plugin for skills and report their conversion status (prose, workflow, or complex).
-
-**Trigger phrases:** "discover", "find skills", "list skills", "show status", "what needs conversion"
-
-### Analyze (`analyze`)
-
-Perform deep analysis of a prose SKILL.md to extract phases, actions, conditionals, and state variables.
-
-**Trigger phrases:** "analyze", "examine", "inspect", "understand", "breakdown"
-
-### Convert (`convert`)
-
-Transform an analyzed skill into a deterministic workflow.yaml structure.
-
-**Trigger phrases:** "convert", "transform", "translate", "make workflow"
-
-### Generate (`generate`)
-
-Write the workflow.yaml and thin loader SKILL.md to the skill directory.
-
-**Trigger phrases:** "generate", "write", "output", "save", "create files"
-
-### Gateway (`gateway`)
-
-Create a gateway command with 3VL intent detection for routing user requests.
-
-**Trigger phrases:** "gateway", "create command", "intent detection", "routing"
-
-### Upgrade (`upgrade`)
-
-Migrate existing workflow.yaml files to the latest schema version.
-
-**Trigger phrases:** "upgrade", "migrate", "update schema", "fix deprecated"
-
-### Visualize (`visualize`)
-
-Generate Mermaid diagrams from workflow.yaml files for documentation and understanding.
-
-**Trigger phrases:** "visualize", "diagram", "mermaid", "show flow", "graph", "flowchart"
 
 ---
 
 ## Intent Detection
 
-This gateway uses 3VL (3-valued logic) intent detection:
+This gateway uses 3VL (3-valued logic) intent detection with **dynamic routing**:
 
 | Value | Meaning | Example |
 |-------|---------|---------|
@@ -151,75 +109,69 @@ This gateway uses 3VL (3-valued logic) intent detection:
 | **F** (False) | Negative keyword matched | "don't init" → has_init: F |
 | **U** (Unknown) | No match either way | (default state) |
 
+### How Intent Resolution Works
+
+1. **Parse input** against flag keywords → `computed.intent_flags`
+2. **Match rules** in priority order → `computed.intent_matches`
+3. **Check for clear winner** (2+ point lead)
+4. **Dynamic route** to `${computed.matched_action}` → skill execution
+
+This gateway uses O(1) dynamic routing instead of N conditional nodes.
+
+If no clear winner, disambiguation is offered.
+
+### Safety Handling
+
+This gateway includes a standard `error_safety` ending for requests that Claude's built-in safety detects as harmful. The workflow will:
+
+1. Exit cleanly via the `error_safety` ending
+2. Display a brief, non-judgmental message
+3. Offer recovery guidance
+
+No custom jailbreak detection is implemented—Claude's native safety handles this automatically.
+
 ---
 
-## Execution Instructions
+## Execution Protocol
+
+**MANDATORY:** This gateway requires loading and following remote execution semantics.
 
 ### Phase 1: Initialize
 
-1. **Load workflow.yaml** from this command directory:
-   Read: `${CLAUDE_PLUGIN_ROOT}/commands/hiivmind-blueprint/workflow.yaml`
+1. Parse command-line arguments and flags
+2. Read `workflow.yaml` from `${CLAUDE_PLUGIN_ROOT}/commands/hiivmind-blueprint/`
+3. Read `intent-mapping.yaml` from same directory
 
-2. **Load intent-mapping.yaml**:
-   Read: `${CLAUDE_PLUGIN_ROOT}/commands/hiivmind-blueprint/intent-mapping.yaml`
+### Phase 2: Load Remote Semantics
 
-3. **Initialize runtime state**:
-   ```yaml
-   workflow_name: hiivmind-blueprint-gateway
-   current_node: check_arguments
-   arguments: "${request}"
-   intent: null
-   flags:
-     has_arguments: ${request != null}
-   computed: {}
-   ```
+**Fetching Protocol (try in order):**
+1. gh api (primary): `gh api repos/{owner}/{repo}/contents/{path}?ref={version} --jq '.content' | base64 -d`
+2. raw URL (fallback): `https://raw.githubusercontent.com/{owner}/{repo}/{version}/{path}`
 
----
+**Fetch these files from hiivmind-blueprint-lib@v2.0.0:**
 
-### Phase 2: Execution Loop
+| File | Path | Purpose |
+|------|------|---------|
+| traversal.yaml | execution/traversal.yaml | Core loop |
+| state.yaml | execution/state.yaml | State management |
+| workflow-loader.yaml | resolution/workflow-loader.yaml | Reference node loading |
 
-Execute nodes until an ending is reached:
+### Phase 3: Execute Gateway Workflow
 
-```
-LOOP:
-  1. Get current node from workflow.nodes[current_node]
+Follow `traversal.yaml` EXACTLY:
+1. Initialize state per `state.yaml`
+2. Start at `start_node` from workflow.yaml
+3. Execute each node per `execute_node()` pseudocode
+4. For `reference` nodes, load sub-workflows per `workflow-loader.yaml`
+5. Dispatch to matched skill via `invoke_skill` consequence
 
-  2. Check for ending:
-     - IF current_node is in workflow.endings:
-       - Display ending.message
-       - STOP
-
-  3. Execute by node.type:
-
-     ACTION (parse_intent):
-     - Parse user input against intent_flags
-     - Evaluate intent_rules in priority order
-     - Store matches in computed.intent_matches
-     - Route via on_success or on_failure
-
-     CONDITIONAL (check_arguments, check_clear_winner):
-     - Evaluate condition
-     - Route via branches.true or branches.false
-
-     USER_PROMPT (show_main_menu, show_disambiguation):
-     - Present AskUserQuestion
-     - Store response, route via handler
-
-     DYNAMIC_ROUTE (execute_matched_intent):
-     - Get action from computed.intent_matches.winner
-     - Invoke corresponding skill
-
-  4. Record in history and continue
-
-UNTIL ending reached
-```
+**The fetched YAML files define execution behavior. Follow them precisely.**
 
 ---
 
 ## Reference Documentation
 
-- **Workflow Engine:** `${CLAUDE_PLUGIN_ROOT}/lib/workflow/engine.md`
-- **Intent Composition:** `${CLAUDE_PLUGIN_ROOT}/lib/blueprint/patterns/intent-composition.md`
+- **Type Definitions:** [hiivmind-blueprint-lib](https://github.com/hiivmind/hiivmind-blueprint-lib/tree/v2.0.0)
 
 ---
 

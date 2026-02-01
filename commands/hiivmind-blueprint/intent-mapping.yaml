@@ -76,7 +76,22 @@ intent_flags:
       - "update schema"
       - "fix deprecated"
       - "modernize"
-    description: "User wants to upgrade workflows"
+      - "upgrade skill"
+      - "upgrade workflow"
+    negative_keywords:
+      - "upgrade gateway"
+      - "upgrade command"
+    description: "User wants to upgrade skill workflows"
+
+  has_upgrade_gateway:
+    keywords:
+      - "upgrade gateway"
+      - "upgrade command"
+      - "migrate gateway"
+      - "modernize gateway"
+      - "normalize gateway"
+      - "thin gateway"
+    description: "User wants to upgrade gateway commands"
 
   has_visualize:
     keywords:
@@ -222,7 +237,15 @@ intent_rules:
       has_upgrade: T
     action: show_skill_help_upgrade
     priority: 85
-    description: "Help with upgrade"
+    description: "Help with skill upgrade"
+
+  - name: "help_with_skill_upgrade_gateway"
+    conditions:
+      has_help: T
+      has_upgrade_gateway: T
+    action: show_skill_help_upgrade_gateway
+    priority: 85
+    description: "Help with gateway upgrade"
 
   - name: "help_with_skill_gateway"
     conditions:
@@ -287,7 +310,14 @@ intent_rules:
       has_upgrade: T
     action: delegate_upgrade
     priority: 90
-    description: "Upgrade workflows"
+    description: "Upgrade skill workflows"
+
+  - name: "upgrade_gateway_only"
+    conditions:
+      has_upgrade_gateway: T
+    action: delegate_upgrade_gateway
+    priority: 90
+    description: "Upgrade gateway commands"
 
   - name: "visualize_only"
     conditions:
@@ -372,6 +402,11 @@ actions:
     skill: "hiivmind-blueprint-upgrade"
     pass_arguments: true
 
+  delegate_upgrade_gateway:
+    type: invoke_skill
+    skill: "hiivmind-blueprint-upgrade-gateway"
+    pass_arguments: true
+
   delegate_visualize:
     type: invoke_skill
     skill: "hiivmind-blueprint-visualize"
@@ -428,7 +463,8 @@ actions:
 
       PLUGIN OPERATIONS
         /hiivmind-blueprint gateway           Create gateway command
-        /hiivmind-blueprint upgrade           Update to latest schema
+        /hiivmind-blueprint upgrade           Update skill workflows to latest schema
+        /hiivmind-blueprint upgrade-gateway   Update gateway commands to latest schema
 
       RUNTIME FLAGS
         --verbose, -v    Show all node details and condition evaluations
@@ -647,7 +683,9 @@ actions:
     content: |
       ## hiivmind-blueprint-upgrade
 
-      **Purpose:** Migrate workflows to latest schema version.
+      **Purpose:** Migrate skill workflows to latest schema version.
+
+      **Scope:** Skills in `skills/` directory only. For gateways, use `upgrade-gateway`.
 
       **Usage:**
       ```
@@ -662,6 +700,31 @@ actions:
       - Schema version updates
       - Deprecated field migration
       - New required fields
+      - Fat skill loader normalization
+
+  show_skill_help_upgrade_gateway:
+    type: display
+    content: |
+      ## hiivmind-blueprint-upgrade-gateway
+
+      **Purpose:** Migrate gateway command workflows to latest schema version.
+
+      **Scope:** Gateway commands in `commands/` directory only. For skills, use `upgrade`.
+
+      **Usage:**
+      ```
+      /hiivmind-blueprint upgrade-gateway [gateway_path]
+      /hiivmind-blueprint upgrade-gateway --check
+      ```
+
+      **Options:**
+      - `--check` - Show what would change without modifying
+
+      **Handles:**
+      - Schema version updates
+      - Deprecated field migration
+      - New required fields
+      - Fat gateway loader normalization
 
   show_skill_help_gateway:
     type: display
