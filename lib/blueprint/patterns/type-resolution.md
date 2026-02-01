@@ -6,7 +6,7 @@ This document describes how workflow type definitions (consequences and precondi
 
 ## Overview
 
-Workflows reference type definitions from hiivmind-blueprint-lib via raw GitHub URLs:
+Workflows reference type definitions from hiivmind-blueprint-lib via GitHub:
 
 ```yaml
 # workflow.yaml
@@ -21,6 +21,28 @@ nodes:
         url: "${source.url}"
 ```
 
+## Fetching Protocol
+
+Content is fetched using `gh api` as primary method (supports private repos),
+with raw URL fallback for public repos.
+
+**Primary (authenticated):**
+```bash
+gh api repos/{owner}/{repo}/contents/{path}?ref={version} --jq '.content' | base64 -d
+```
+
+**Fallback (public only):**
+```
+https://raw.githubusercontent.com/{owner}/{repo}/{version}/{path}
+```
+
+**Why gh api first:**
+- Works with private repositories
+- Authenticated rate limits (5000/hr vs 60/hr)
+- Can retrieve file metadata (sha, size) if needed
+
+---
+
 ## Resolution Protocol
 
 ### 1. Parse the Definitions Block
@@ -33,18 +55,20 @@ definitions:
   extensions: [<additional sources>]
 ```
 
-### 2. Construct Raw GitHub URL
+### 2. Parse Source Components
 
-The source is resolved to raw GitHub URLs:
+The source is parsed into components for API calls:
 
 ```
-owner/repo@version  →  https://raw.githubusercontent.com/{owner}/{repo}/{version}/
+owner/repo@version  →  {owner, repo, version}
 ```
 
 **Example:**
 ```
 hiivmind/hiivmind-blueprint-lib@v2.0.0
-  → https://raw.githubusercontent.com/hiivmind/hiivmind-blueprint-lib/v2.0.0/
+  → owner: hiivmind
+  → repo: hiivmind-blueprint-lib
+  → version: v2.0.0
 ```
 
 ### 3. Fetch Type Definitions
@@ -150,13 +174,13 @@ workflow.yaml:
 
 Resolution:
 1. Parse: owner=hiivmind, repo=hiivmind-blueprint-lib, version=v2.0.0
-2. Construct base URL:
-   https://raw.githubusercontent.com/hiivmind/hiivmind-blueprint-lib/v2.0.0/
-3. Fetch consequences/index.yaml
-4. Fetch preconditions/index.yaml
-5. For each type used in workflow, fetch individual definition file
-6. Build type registry
-7. Validate all workflow types exist
+2. Fetch consequences/index.yaml:
+   - Try: gh api repos/hiivmind/hiivmind-blueprint-lib/contents/consequences/index.yaml?ref=v2.0.0
+   - Fallback: https://raw.githubusercontent.com/hiivmind/hiivmind-blueprint-lib/v2.0.0/consequences/index.yaml
+3. Fetch preconditions/index.yaml (same protocol)
+4. For each type used in workflow, fetch individual definition file
+5. Build type registry
+6. Validate all workflow types exist
 ```
 
 ---
@@ -169,10 +193,13 @@ Provide clear, actionable error messages:
 Error: Failed to resolve type definitions
 
 Source: hiivmind/hiivmind-blueprint-lib@v2.0.0
-URL: https://raw.githubusercontent.com/hiivmind/hiivmind-blueprint-lib/v2.0.0/consequences/index.yaml
-Error: 404 Not Found
+
+Tried:
+1. gh api repos/hiivmind/hiivmind-blueprint-lib/contents/consequences/index.yaml?ref=v2.0.0 → (error)
+2. https://raw.githubusercontent.com/hiivmind/hiivmind-blueprint-lib/v2.0.0/consequences/index.yaml → (error)
 
 Suggestions:
+- For private repos: Verify gh auth status (gh auth status)
 - Check the version exists: https://github.com/hiivmind/hiivmind-blueprint-lib/tags
 - Verify network connectivity
 ```

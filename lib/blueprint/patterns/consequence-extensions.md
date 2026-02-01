@@ -51,7 +51,14 @@ Custom consequences can live in three locations:
 
 All consequence definitions use YAML format matching the hiivmind-blueprint-lib schema.
 
-**Schema Reference:** `hiivmind/hiivmind-blueprint-lib@v2.0.0/schema/consequence-definition.json`
+**Schema Reference:** Fetch via gh api or raw URL:
+```bash
+# Primary (authenticated)
+gh api repos/hiivmind/hiivmind-blueprint-lib/contents/schema/consequence-definition.json?ref=v2.0.0 --jq '.content' | base64 -d
+
+# Fallback (public)
+# https://raw.githubusercontent.com/hiivmind/hiivmind-blueprint-lib/v2.0.0/schema/consequence-definition.json
+```
 
 ### Structure
 
@@ -284,8 +291,8 @@ Design consequences to work well together:
 ## Related Documentation
 
 - **Type Definitions (authoritative):** `hiivmind/hiivmind-blueprint-lib@v2.0.0`
-- **Consequence Schema:** `hiivmind/hiivmind-blueprint-lib@v2.0.0/schema/consequence-definition.json`
-- **Core Consequences:** `hiivmind/hiivmind-blueprint-lib@v2.0.0/consequences/core/`
-- **Extension Consequences:** `hiivmind/hiivmind-blueprint-lib@v2.0.0/consequences/extensions/`
+- **Consequence Schema:** Fetch via `gh api repos/hiivmind/hiivmind-blueprint-lib/contents/schema/consequence-definition.json?ref=v2.0.0`
+- **Core Consequences:** Fetch via `gh api repos/hiivmind/hiivmind-blueprint-lib/contents/consequences/core/?ref=v2.0.0`
+- **Extension Consequences:** Fetch via `gh api repos/hiivmind/hiivmind-blueprint-lib/contents/consequences/extensions/?ref=v2.0.0`
 - **Workflow Engine:** `lib/workflow/engine.md`
 - **Type Resolution:** `lib/blueprint/patterns/type-resolution.md`
