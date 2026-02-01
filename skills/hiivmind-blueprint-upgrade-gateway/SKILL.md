@@ -1,34 +1,34 @@
 ---
-name: hiivmind-blueprint-upgrade
+name: hiivmind-blueprint-upgrade-gateway
 description: >
-  This skill should be used when the user asks to "upgrade workflow", "migrate workflow schema",
-  "update workflow to latest", "fix deprecated workflow", "modernize workflow.yaml",
-  "normalize skill loader", "thin out SKILL.md", "reduce skill loader size", or needs to update
-  existing skill workflows to the latest schema version. Triggers on "upgrade workflow",
-  "blueprint upgrade", "hiivmind-blueprint upgrade", "migrate schema", "update workflow version",
-  "normalize fat skill loader", or when skill workflows use deprecated patterns or skill loaders
-  exceed template size limits. NOTE: For gateway commands in commands/, use
-  hiivmind-blueprint-upgrade-gateway instead.
+  This skill should be used when the user asks to "upgrade gateway", "upgrade command",
+  "migrate gateway command", "update gateway to latest", "fix deprecated gateway",
+  "modernize gateway", "normalize gateway loader", "thin out gateway", or needs to update
+  existing gateway command workflows to the latest schema version. Triggers on "upgrade gateway",
+  "blueprint upgrade-gateway", "hiivmind-blueprint upgrade-gateway", "migrate gateway schema",
+  "update gateway version", "normalize fat gateway", or when gateway workflows use deprecated
+  patterns or gateway loaders exceed template size limits. NOTE: For skills in skills/, use
+  hiivmind-blueprint-upgrade instead.
 allowed-tools: Read, Write, Edit, Glob, Grep, AskUserQuestion
 ---
 
-# Upgrade Skill Workflow
+# Upgrade Gateway Workflow
 
-Migrate existing skill workflow.yaml files to the latest schema version with deprecation fixes and new features.
+Migrate existing gateway command workflow.yaml files to the latest schema version with deprecation fixes and new features.
 
-**Scope:** Skills in `skills/` directory only. For gateway commands, use `/hiivmind-blueprint upgrade-gateway`.
+**Scope:** Gateway commands in `commands/` directory only. For skills, use `/hiivmind-blueprint upgrade`.
 
 ---
 
 ## Overview
 
-This skill upgrades skill workflows by:
+This skill upgrades gateway command workflows by:
 1. Detecting the current schema version
 2. Identifying deprecated patterns (including local engine.md references)
 3. Applying migrations to latest schema
-4. Migrating SKILL.md files to use remote execution references
+4. Migrating gateway .md files to use remote execution references
 5. Removing obsolete `.hiivmind/blueprint/engine.md` files
-6. Normalizing "fat" skill loaders to match thin-loader.md.template
+6. Normalizing "fat" gateway loaders to match gateway-command.md.template
 
 ---
 
@@ -41,7 +41,7 @@ This skill upgrades skill workflows by:
 | 1.2.0 | Added `reference` node type | None |
 | 2.0.0 | New consequence format | `set_state` syntax changed |
 | 2.1.0 | External definitions, `.hiivmind/blueprint/` structure | Lock file location changed |
-| 2.2.0 | Remote execution references | Local engine.md removed, SKILL.md uses raw GitHub URLs |
+| 2.2.0 | Remote execution references | Local engine.md removed, loaders use raw GitHub URLs |
 
 ---
 
@@ -53,23 +53,23 @@ This skill supports four upgrade modes:
 Migrate workflow.yaml files to latest schema version (2.0.0+).
 
 ### Mode 2: Execution Reference Migration
-Migrate SKILL.md files from local engine.md references to remote execution URLs.
+Migrate gateway .md files from local engine.md references to remote execution URLs.
 
 ### Mode 3: Infrastructure Cleanup
 Remove obsolete `.hiivmind/blueprint/engine.md` files (no longer needed).
 
 ### Mode 4: Loader Normalization
-Normalize "fat" skill loaders to match `thin-loader.md.template`. Fat loaders contain execution pseudocode and framework documentation that belongs in blueprint-lib.
+Normalize "fat" gateway loaders to match `gateway-command.md.template`. Fat loaders contain execution pseudocode and framework documentation that belongs in blueprint-lib.
 
-**Note:** This skill only handles skills in `skills/` directory. For gateway commands in `commands/`, use `/hiivmind-blueprint upgrade-gateway`.
+**Note:** This skill only handles gateways in `commands/` directory. For skills in `skills/`, use `/hiivmind-blueprint upgrade`.
 
 **Invocation:**
-- `/hiivmind-blueprint upgrade` - Full upgrade (all modes)
-- `/hiivmind-blueprint upgrade --check` - Check for updates without applying
-- `/hiivmind-blueprint upgrade --schema-only` - Only upgrade workflow schema
-- `/hiivmind-blueprint upgrade --refs-only` - Only migrate execution references
-- `/hiivmind-blueprint upgrade --normalize-only` - Only normalize fat loaders
-- `/hiivmind-blueprint upgrade --skip-normalize` - Skip loader normalization
+- `/hiivmind-blueprint upgrade-gateway` - Full upgrade (all modes)
+- `/hiivmind-blueprint upgrade-gateway --check` - Check for updates without applying
+- `/hiivmind-blueprint upgrade-gateway --schema-only` - Only upgrade workflow schema
+- `/hiivmind-blueprint upgrade-gateway --refs-only` - Only migrate execution references
+- `/hiivmind-blueprint upgrade-gateway --normalize-only` - Only normalize fat loaders
+- `/hiivmind-blueprint upgrade-gateway --skip-normalize` - Skip loader normalization
 
 ---
 
@@ -89,36 +89,40 @@ ELSE:
   needs_execution_migration = false
 ```
 
-### Step 1.2: Find Workflow Files
+### Step 1.2: Find Gateway Workflow Files
 
-Scan for existing workflows:
+Scan for existing gateway workflows:
 
 ```
-workflows = Glob("**/workflow.yaml")
+workflows = Glob("commands/**/workflow.yaml")
 ```
 
-For each workflow found:
+For each workflow found, verify it's a gateway (has intent-mapping.yaml sibling):
+
 ```yaml
-workflows:
-  - path: "skills/example-skill/workflow.yaml"
-    skill_path: "skills/example-skill/SKILL.md"
-    directory: "skills/example-skill"
+gateways:
+  - path: "commands/my-gateway/workflow.yaml"
+    loader_path: "commands/my-gateway/my-gateway.md"
+    intent_mapping_path: "commands/my-gateway/intent-mapping.yaml"
+    directory: "commands/my-gateway"
 ```
+
+**Validation:** Skip any command without `intent-mapping.yaml` sibling (not a gateway).
 
 ### Step 1.3: Select Target
 
-If multiple workflows found:
+If multiple gateways found:
 
 **Ask user:**
 ```json
 {
   "questions": [{
-    "question": "Which workflow would you like to upgrade?",
+    "question": "Which gateway would you like to upgrade?",
     "header": "Target",
     "multiSelect": false,
     "options": [
-      {"label": "All workflows", "description": "Upgrade all {count} workflows"},
-      {"label": "Select specific", "description": "Choose which workflows to upgrade"},
+      {"label": "All gateways", "description": "Upgrade all {count} gateways"},
+      {"label": "Select specific", "description": "Choose which gateways to upgrade"},
       {"label": "Cancel", "description": "Exit without changes"}
     ]
   }]
@@ -244,7 +248,7 @@ migrations:
 Show the migration plan:
 
 ```
-## Upgrade Plan: {workflow_name}
+## Upgrade Plan: {gateway_name}
 
 **Current version:** {detected_version}
 **Target version:** 2.0.0
@@ -358,7 +362,7 @@ Write(workflow_path, updated_workflow_yaml)
 
 ### Step 5.1: Check for Legacy Engine References
 
-Scan SKILL.md files for local engine.md references:
+Scan gateway .md files for local engine.md references:
 
 ```
 # Patterns that indicate legacy references:
@@ -368,11 +372,18 @@ legacy_patterns = [
   "${CLAUDE_PLUGIN_ROOT}/.hiivmind/blueprint/engine.md"
 ]
 
-for skill_md in Glob("**/SKILL.md"):
-  content = Read(skill_md)
+for gateway_md in Glob("commands/**/*.md"):
+  # Skip if no workflow.yaml sibling (not a gateway command)
+  if not file_exists(dirname(gateway_md) + "/workflow.yaml"):
+    continue
+  # Skip if no intent-mapping.yaml sibling (not a gateway)
+  if not file_exists(dirname(gateway_md) + "/intent-mapping.yaml"):
+    continue
+
+  content = Read(gateway_md)
   for pattern in legacy_patterns:
     if pattern in content:
-      needs_migration.append(skill_md)
+      needs_migration.append(gateway_md)
 ```
 
 ### Step 5.2: Extract Library Version
@@ -380,7 +391,7 @@ for skill_md in Glob("**/SKILL.md"):
 Read workflow.yaml to get definitions.source version:
 
 ```
-workflow = Read("{skill_dir}/workflow.yaml")
+workflow = Read("{gateway_dir}/workflow.yaml")
 definitions_source = workflow.definitions.source
 # e.g., "hiivmind/hiivmind-blueprint-lib@v2.0.0"
 
@@ -394,7 +405,7 @@ If legacy references found:
 ```
 ## Execution Reference Migration
 
-**Found {count} SKILL.md files with local engine.md references.**
+**Found {count} gateway .md files with local engine.md references.**
 
 These will be updated to use remote execution semantics from:
 - hiivmind-blueprint-lib@{lib_version}
@@ -411,18 +422,18 @@ These will be updated to use remote execution semantics from:
 ```json
 {
   "questions": [{
-    "question": "Migrate SKILL.md files to remote execution references?",
+    "question": "Migrate gateway .md files to remote execution references?",
     "header": "Migrate",
     "multiSelect": false,
     "options": [
-      {"label": "Apply", "description": "Update SKILL.md files with remote URLs"},
+      {"label": "Apply", "description": "Update gateway .md files with remote URLs"},
       {"label": "Skip", "description": "Keep local references"}
     ]
   }]
 }
 ```
 
-If migration requested, for each SKILL.md:
+If migration requested, for each gateway .md:
 
 ```
 # Replace local engine reference section with remote URLs table
@@ -441,16 +452,15 @@ Execution semantics from [hiivmind-blueprint-lib](https://github.com/hiivmind/hi
 |----------|--------|
 | Core loop | [traversal.yaml](https://raw.githubusercontent.com/hiivmind/hiivmind-blueprint-lib/{lib_version}/execution/traversal.yaml) |
 | State | [state.yaml](https://raw.githubusercontent.com/hiivmind/hiivmind-blueprint-lib/{lib_version}/execution/state.yaml) |
-| Consequences | [consequence-dispatch.yaml](https://raw.githubusercontent.com/hiivmind/hiivmind-blueprint-lib/{lib_version}/execution/consequence-dispatch.yaml) |
-| Preconditions | [precondition-dispatch.yaml](https://raw.githubusercontent.com/hiivmind/hiivmind-blueprint-lib/{lib_version}/execution/precondition-dispatch.yaml) |
+| ... | ... |
 """
 
-Edit(skill_md, old_section, new_section)
+Edit(gateway_md, old_section, new_section)
 ```
 
 ### Step 5.5: Remove Obsolete Engine File
 
-If `.hiivmind/blueprint/engine.md` exists and all SKILL.md files have been migrated:
+If `.hiivmind/blueprint/engine.md` exists and all gateway .md files have been migrated:
 
 **Ask user:**
 ```json
@@ -476,35 +486,27 @@ rm ".hiivmind/blueprint/engine.md"
 rmdir ".hiivmind/blueprint" 2>/dev/null || true
 ```
 
-### Step 5.6: Preserve Plugin-Specific Context
-
-If the removed engine.md had plugin-specific sections (customizations, notes):
-
-1. Extract custom sections
-2. Add them to the top of SKILL.md as a "Plugin Context" section
-3. Or create a CONTEXT.md file in the skill directory
-
 ---
 
-## Phase 6: Normalize Fat Skill Loaders
+## Phase 6: Normalize Fat Gateway Loaders
 
-Normalize skill loaders (SKILL.md files) that contain execution pseudocode and framework documentation that belongs in blueprint-lib, not in the loader.
+Normalize gateway loaders (.md files in `commands/`) that contain execution pseudocode and framework documentation that belongs in blueprint-lib, not in the loader.
 
-**Note:** This phase only handles skills in `skills/` directory. For gateway commands, use `/hiivmind-blueprint upgrade-gateway`.
+**Note:** This phase only handles gateways in `commands/` directory. For skills, use `/hiivmind-blueprint upgrade`.
 
-### Step 6.1: Detect Fat Skill Loaders
+### Step 6.1: Detect Fat Gateway Loaders
 
-For each SKILL.md in `skills/` with sibling workflow.yaml:
+For each gateway .md in `commands/` with sibling workflow.yaml AND intent-mapping.yaml:
 
 ```
 loaders = []
-THRESHOLD = 120  # Lines - fixed threshold for skills
+THRESHOLD = 200  # Lines - fixed threshold for gateways
 
-# Find all skill loaders with workflows (skills/ directory only)
-for skill_md in Glob("skills/**/SKILL.md"):
-  dir = dirname(skill_md)
-  if file_exists(dir + "/workflow.yaml"):
-    loaders.append({path: skill_md})
+# Find all gateway loaders (commands/ directory only, with intent-mapping.yaml)
+for gateway_md in Glob("commands/**/*.md"):
+  dir = dirname(gateway_md)
+  if file_exists(dir + "/workflow.yaml") AND file_exists(dir + "/intent-mapping.yaml"):
+    loaders.append({path: gateway_md})
 
 # Classify each loader
 for loader in loaders:
@@ -514,12 +516,13 @@ for loader in loaders:
   # Detection patterns for fat loaders
   has_pseudocode = matches(content, /### Phase \d:|LOOP:|FOR each|CONTINUE/)
   has_framework_docs = matches(content, /## Variable Interpolation/)
+  has_extended_3vl = matches(content, /## 3VL Intent Detection/) AND section_lines > 20
   has_algorithm = matches(content, /# Algorithm:/)
   has_execution_loop = matches(content, /## Execution Loop|### Phase.*: Execution/)
   has_context_types = matches(content, /## Context Types/)
 
   is_fat = (line_count > THRESHOLD) AND
-           (has_pseudocode OR has_framework_docs OR
+           (has_pseudocode OR has_framework_docs OR has_extended_3vl OR
             has_algorithm OR has_execution_loop)
 
   if is_fat:
@@ -536,9 +539,9 @@ for loader in loaders:
 If fat loaders found:
 
 ```
-## Skill Loader Normalization Analysis
+## Gateway Loader Normalization Analysis
 
-Found {count} fat skill loaders that exceed template size:
+Found {count} fat gateway loaders that exceed template size:
 
 | Loader | Lines | Threshold | Patterns |
 |--------|-------|-----------|----------|
@@ -548,19 +551,19 @@ Found {count} fat skill loaders that exceed template size:
 
 ### What Will Be Normalized
 
-Fat skill loaders contain execution pseudocode and framework documentation that:
+Fat gateway loaders contain execution pseudocode and framework documentation that:
 - Duplicates content from blueprint-lib
 - Makes loaders hard to maintain
-- Violates the "thin loader" pattern
+- Violates the template pattern
 
-After normalization, loaders will match `thin-loader.md.template` (~60 lines).
+After normalization, loaders will match `gateway-command.md.template` (~160 lines).
 
-**Note:** For gateway commands in `commands/`, use `/hiivmind-blueprint upgrade-gateway`.
+**Note:** For skills in `skills/`, use `/hiivmind-blueprint upgrade`.
 ```
 
 ### Step 6.3: Extract Preserved Content
 
-For each fat skill loader, extract sections to preserve:
+For each fat gateway loader, extract sections to preserve:
 
 ```
 function extract_preserved_sections(loader_path):
@@ -571,7 +574,10 @@ function extract_preserved_sections(loader_path):
     title: extract_first_h1(content),
     workflow_graph: extract_section(content, "## Workflow Graph"),
     example_usage: extract_section(content, "## Quick Examples|## Example Usage"),
-    related_skills: extract_section(content, "## Related Skills")
+    related_skills: extract_section(content, "## Related Skills"),
+    # Gateway-specific sections
+    skill_tables: extract_sections(content, "## Available Skills|## Build Skills|## Read Skills|## Shared Skills"),
+    help_commands: extract_section(content, "## Help Commands")
   }
 
   return preserved
@@ -601,7 +607,7 @@ Show before/after comparison:
 ## Normalization Plan: {loader_path}
 
 **Current:** {line_count} lines
-**Target:** ~60 lines (thin-loader.md.template)
+**Target:** ~160 lines (gateway-command.md.template)
 **Reduction:** {reduction_percent}%
 
 ### Sections to REMOVE (duplicates blueprint-lib)
@@ -619,9 +625,9 @@ Show before/after comparison:
 
 ### Template to Apply
 
-`thin-loader.md.template` with:
+`gateway-command.md.template` with:
 - lib_version: {lib_version}
-- skill_name: {skill_name}
+- plugin_name: {plugin_name}
 - description: [from frontmatter]
 ```
 
@@ -631,11 +637,11 @@ Show before/after comparison:
 ```json
 {
   "questions": [{
-    "question": "Normalize this loader to match template?",
+    "question": "Normalize this gateway loader to match template?",
     "header": "Normalize",
     "multiSelect": false,
     "options": [
-      {"label": "Apply", "description": "Normalize to template (~{target_lines} lines)"},
+      {"label": "Apply", "description": "Normalize to template (~160 lines)"},
       {"label": "Preview", "description": "Show what the normalized loader will look like"},
       {"label": "Skip", "description": "Keep current loader"}
     ]
@@ -648,15 +654,14 @@ Show before/after comparison:
 If normalization approved:
 
 ```
-# Always use thin-loader template for skills
-template = Read("${CLAUDE_PLUGIN_ROOT}/templates/thin-loader.md.template")
+# Always use gateway-command template for gateways
+template = Read("${CLAUDE_PLUGIN_ROOT}/templates/gateway-command.md.template")
 
 # Replace template placeholders with extracted/derived values
 normalized = template
-  .replace("{{skill_name}}", skill_name)
-  .replace("{{skill_directory}}", skill_directory)
+  .replace("{{plugin_name}}", preserved.frontmatter.name or plugin_name)
+  .replace("{{plugin_title}}", title_case(plugin_name))
   .replace("{{description}}", preserved.frontmatter.description)
-  .replace("{{allowed_tools}}", preserved.frontmatter["allowed-tools"])
   .replace("{{lib_version}}", lib_version)
   .replace("{{title}}", preserved.title)
 
@@ -665,7 +670,13 @@ if preserved.workflow_graph:
   normalized = insert_section(normalized, "## Workflow Graph", preserved.workflow_graph)
 
 if preserved.example_usage:
-  normalized = insert_after_section(normalized, "## Execution Reference", preserved.example_usage)
+  normalized = insert_after_section(normalized, "## Quick Examples", preserved.example_usage)
+
+if preserved.skill_tables:
+  normalized = replace_section(normalized, "## Available Operations", preserved.skill_tables)
+
+if preserved.help_commands:
+  normalized = replace_section(normalized, "## Help Commands", preserved.help_commands)
 
 if preserved.related_skills:
   normalized = replace_section(normalized, "## Related Skills", preserved.related_skills)
@@ -682,15 +693,15 @@ Write(loader_path, normalized)
 After writing:
 
 ```
-THRESHOLD = 120
+THRESHOLD = 200
 new_line_count = count_lines(loader_path)
 
 # Verify size reduction
 if new_line_count > THRESHOLD:
   warn("Normalized loader still exceeds threshold ({new_line_count} > {THRESHOLD})")
 
-# Verify required sections present for skill loaders
-required_sections = ["## Execution Reference"]
+# Verify required sections present for gateway loaders
+required_sections = ["## Usage", "## Execution Reference", "## Related Skills"]
 
 for section in required_sections:
   if not contains_section(loader_path, section):
@@ -698,6 +709,9 @@ for section in required_sections:
 
 # Verify workflow.yaml unchanged
 workflow_unchanged = file_hash(workflow_path) == original_workflow_hash
+
+# Verify intent-mapping.yaml unchanged
+intent_unchanged = file_hash(intent_mapping_path) == original_intent_hash
 ```
 
 ---
@@ -714,7 +728,7 @@ Read back and verify:
 
 ### Step 7.2: Validate Execution References
 
-Check that all SKILL.md files now use remote URLs:
+Check that all gateway .md files now use remote URLs:
 1. No remaining references to local engine.md
 2. Execution Reference table present with valid URLs
 
@@ -723,7 +737,7 @@ Check that all SKILL.md files now use remote URLs:
 ```
 ## Upgrade Complete
 
-**Workflow:** {workflow_path}
+**Gateway:** {gateway_path}
 **Previous version:** {old_version}
 **New version:** 2.0.0
 
@@ -734,11 +748,11 @@ Check that all SKILL.md files now use remote URLs:
 
 ### Execution Reference Migration
 {if refs_migrated}
-- {count} SKILL.md files updated to use remote execution URLs
+- {count} gateway .md files updated to use remote execution URLs
 - Library version: {lib_version}
 {/if}
 
-### Skill Loader Normalization
+### Gateway Loader Normalization
 {if loaders_normalized}
 | Loader | Before | After | Reduction |
 |--------|--------|-------|-----------|
@@ -746,14 +760,14 @@ Check that all SKILL.md files now use remote URLs:
 | `{path}` | {before_lines} | {after_lines} | {reduction}% |
 {/for}
 {else}
-- No fat skill loaders found (all within template size limits)
+- No fat gateway loaders found (all within template size limits)
 {/if}
 
 ### Files Modified
 - `{workflow_path}` (upgraded)
 - `{workflow_path}.backup` (backup created)
-{if skill_updated}
-- `{skill_path}` (execution references migrated)
+{if gateway_updated}
+- `{gateway_path}` (execution references migrated)
 {/if}
 {if loaders_normalized}
 {for each normalized_loader}
@@ -773,12 +787,13 @@ Check that all SKILL.md files now use remote URLs:
 - Transition validity: All transitions valid
 - Remote URLs: All resolve correctly
 {if loaders_normalized}
-- Normalized skill loaders: All within template size limits
+- Normalized gateway loaders: All within template size limits
 - workflow.yaml files: Unchanged (verified)
+- intent-mapping.yaml files: Unchanged (verified)
 {/if}
 
 ### Next Steps
-1. Test the skill to verify behavior unchanged
+1. Test the gateway to verify behavior unchanged
 2. Review the backup if issues arise
 3. Commit changes to version control
 ```
@@ -830,61 +845,10 @@ Check that all SKILL.md files now use remote URLs:
          suggestion: "..."
    ```
 
-3. **Logging moved to core**
-   ```yaml
-   # OLD reference path
-   lib/workflow/consequences/extensions/logging.md
-
-   # NEW reference path
-   lib/workflow/consequences/core/logging.md
-   ```
-
 **New features:**
 - `recovery` field on error endings
 - `store_as` now supports nested paths
 - Variable interpolation in node descriptions
-- Logging as core consequence with validation
-
-### Logging Migration
-
-Detect and migrate logging-related changes:
-
-**Step 1: Update path references**
-```bash
-# Find files referencing old path
-grep -rl "extensions/logging.md" .
-
-# Update to new path
-sed -i 's|extensions/logging\.md|core/logging.md|g' {file}
-```
-
-**Step 2: Add logging config if consequences exist**
-
-If workflow uses logging consequences but has no config:
-
-```yaml
-# Detect: has logging consequences but no config
-has_logging = any(node.actions[].type in logging_consequence_types)
-has_config = initial_state.logging exists
-
-if has_logging and not has_config:
-  # Add default config
-  initial_state:
-    logging:
-      enabled: true
-      level: "info"
-      auto:
-        init: false      # Skill manages explicitly
-        node_tracking: false
-        finalize: false
-        write: false
-```
-
-**Step 3: Version bump**
-```yaml
-# Update schema version for logging changes
-version: "2.0.0"  # Reflects logging core promotion
-```
 
 ### Version 2.1.0 → 2.2.0
 
@@ -892,30 +856,11 @@ version: "2.0.0"  # Reflects logging core promotion
 
 1. **Local engine.md removed**
 
-   SKILL.md files no longer reference a local `.hiivmind/blueprint/engine.md`.
+   Gateway .md files no longer reference a local `.hiivmind/blueprint/engine.md`.
    Instead, they include an "Execution Reference" table with raw GitHub URLs
    to hiivmind-blueprint-lib.
 
-2. **Execution Reference Migration**
-   ```markdown
-   # OLD (2.1.0)
-   ## Reference
-
-   - **Engine:** `${CLAUDE_PLUGIN_ROOT}/.hiivmind/blueprint/engine.md`
-
-   # NEW (2.2.0)
-   ## Execution Reference
-
-   Execution semantics from [hiivmind-blueprint-lib](https://github.com/hiivmind/hiivmind-blueprint-lib) (version: v2.0.0):
-
-   | Semantic | Source |
-   |----------|--------|
-   | Core loop | [traversal.yaml](https://raw.githubusercontent.com/hiivmind/hiivmind-blueprint-lib/v2.0.0/execution/traversal.yaml) |
-   | State | [state.yaml](https://raw.githubusercontent.com/hiivmind/hiivmind-blueprint-lib/v2.0.0/execution/state.yaml) |
-   | ... | ... |
-   ```
-
-3. **Obsolete files to remove**
+2. **Obsolete files to remove**
    - `.hiivmind/blueprint/engine.md` - No longer needed
    - The `.hiivmind/blueprint/` directory can be removed if only engine.md was in it
 
@@ -933,6 +878,7 @@ If issues after upgrade:
 ```bash
 # Restore from backup
 cp "{workflow_path}.backup" "{workflow_path}"
+cp "{loader_path}.backup" "{loader_path}"
 ```
 
 ---
@@ -947,7 +893,7 @@ cp "{workflow_path}.backup" "{workflow_path}"
 
 ## Related Skills
 
-- **Upgrade gateway commands:** `${CLAUDE_PLUGIN_ROOT}/skills/hiivmind-blueprint-upgrade-gateway/SKILL.md`
+- **Upgrade skills:** `${CLAUDE_PLUGIN_ROOT}/skills/hiivmind-blueprint-upgrade/SKILL.md`
 - Initialize project: `${CLAUDE_PLUGIN_ROOT}/skills/hiivmind-blueprint-init/SKILL.md`
 - Analyze skill: `${CLAUDE_PLUGIN_ROOT}/skills/hiivmind-blueprint-analyze/SKILL.md`
 - Convert skill: `${CLAUDE_PLUGIN_ROOT}/skills/hiivmind-blueprint-convert/SKILL.md`
