@@ -21,12 +21,12 @@ Validate consequence, precondition, and workflow definition files against JSON s
 
 This skill validates framework type definitions for maintainers and plugin authors:
 
-| Type | Schema | Path Pattern |
-|------|--------|--------------|
-| Consequence definitions | `consequence-definition.json` | `consequences/**/*.yaml` |
-| Precondition definitions | `precondition-definition.json` | `preconditions/**/*.yaml` |
-| Reusable workflows | `workflow.json` | `workflows/**/*.yaml` |
-| Node type definitions | `node-definition.json` | `nodes/**/*.yaml` |
+| Type | Schema | File |
+|------|--------|------|
+| Consequence definitions | `definitions/consequence-definition.json` | `consequences/consequences.yaml` |
+| Precondition definitions | `definitions/precondition-definition.json` | `preconditions/preconditions.yaml` |
+| Reusable workflows | `authoring/workflow.json` | `workflows/*.yaml` |
+| Node type definitions | `definitions/node-definition.json` | `nodes/workflow_nodes.yaml` |
 
 ---
 
@@ -34,7 +34,7 @@ This skill validates framework type definitions for maintainers and plugin autho
 
 | Requirement | Check | Error Message |
 |-------------|-------|---------------|
-| check-jsonschema installed | `~/.rye/shims/check-jsonschema --version` | "check-jsonschema required. Install: pip install check-jsonschema" |
+| check-jsonschema installed | `which check-jsonschema` | "check-jsonschema required. Install: pip install check-jsonschema" |
 
 ---
 
@@ -55,20 +55,56 @@ If no path provided:
 1. Check if current directory is `hiivmind-blueprint-lib` or contains type definition directories
 2. If not, ask user for the path to validate
 
-### Step 1.2: Locate Schema Directory
+### Step 1.2: Fetch Schema Files from Remote
 
-The schema files are in `hiivmind-blueprint-lib/schema/`:
+The schema files are fetched from `hiivmind-blueprint-lib` using the same protocol as execution semantics.
 
 ```bash
-# If running from hiivmind-blueprint
-SCHEMA_DIR="${CLAUDE_PLUGIN_ROOT}/../hiivmind-blueprint-lib/schema"
+# Extract lib version from BLUEPRINT_LIB_VERSION.yaml
+LIB_VERSION=$(yq '.lib_version' "${CLAUDE_PLUGIN_ROOT}/BLUEPRINT_LIB_VERSION.yaml")
 
-# If running from hiivmind-blueprint-lib
-SCHEMA_DIR="${PWD}/schema"
+# Create temp directory for schemas
+SCHEMA_DIR=$(mktemp -d)
 
-# Verify schema directory exists
-if [ ! -d "$SCHEMA_DIR" ]; then
-  echo "Error: Schema directory not found at $SCHEMA_DIR"
+# Fetch with gh api (primary) or curl (fallback)
+fetch_schema() {
+  local schema_file="$1"
+  local version="$2"
+  local output_path="$3"
+
+  # Try gh api first
+  if gh api "repos/hiivmind/hiivmind-blueprint-lib/contents/schema/${schema_file}?ref=${version}" \
+    --jq '.content' 2>/dev/null | base64 -d > "$output_path" 2>/dev/null; then
+    return 0
+  fi
+
+  # Fallback to raw URL
+  if curl -sL "https://raw.githubusercontent.com/hiivmind/hiivmind-blueprint-lib/${version}/schema/${schema_file}" \
+    -o "$output_path" 2>/dev/null; then
+    return 0
+  fi
+
+  echo "ERROR: Failed to fetch schema/${schema_file}@${version}" >&2
+  return 1
+}
+
+# Create subdirectories to match lib schema structure
+mkdir -p "$SCHEMA_DIR/definitions" "$SCHEMA_DIR/authoring"
+
+# Fetch definition schemas (in schema/definitions/ subdirectory)
+fetch_schema "definitions/consequence-definition.json" "$LIB_VERSION" "$SCHEMA_DIR/definitions/consequence-definition.json"
+fetch_schema "definitions/precondition-definition.json" "$LIB_VERSION" "$SCHEMA_DIR/definitions/precondition-definition.json"
+fetch_schema "definitions/node-definition.json" "$LIB_VERSION" "$SCHEMA_DIR/definitions/node-definition.json"
+
+# Fetch authoring schemas (in schema/authoring/ subdirectory)
+fetch_schema "authoring/workflow.json" "$LIB_VERSION" "$SCHEMA_DIR/authoring/workflow.json"
+
+# Fetch common schema (at schema root)
+fetch_schema "common.json" "$LIB_VERSION" "$SCHEMA_DIR/common.json"
+
+# Verify schemas were fetched
+if [ ! -f "$SCHEMA_DIR/definitions/consequence-definition.json" ]; then
+  echo "Error: Failed to fetch schemas from hiivmind-blueprint-lib@${LIB_VERSION}"
   exit 1
 fi
 ```
@@ -100,30 +136,20 @@ NODE_FILES=$(find nodes -name "*.yaml" -type f 2>/dev/null)
 The schemas use `$ref` composition, requiring `--base-uri` for relative reference resolution:
 
 ```bash
-SCHEMA_DIR="${CLAUDE_PLUGIN_ROOT}/../hiivmind-blueprint-lib/schema"
+# SCHEMA_DIR was populated by remote fetch in Step 1.2
 LIB_SCHEMA="file://${SCHEMA_DIR}/"
 ```
 
 ### Step 2.2: Validate Consequence Definitions
 
-```bash
-# Validate all consequence definition files
-for file in consequences/**/*.yaml; do
-  echo "Validating: $file"
-  ~/.rye/shims/check-jsonschema \
-    --base-uri "$LIB_SCHEMA" \
-    --schemafile "$SCHEMA_DIR/consequence-definition.json" \
-    "$file"
-done
-```
-
-**Or batch validation (faster):**
+The lib uses a single consolidated consequences.yaml file (not core/extensions subdirectories).
 
 ```bash
-~/.rye/shims/check-jsonschema \
+# Validate consolidated consequence definitions file
+check-jsonschema \
   --base-uri "$LIB_SCHEMA" \
-  --schemafile "$SCHEMA_DIR/consequence-definition.json" \
-  consequences/core/*.yaml consequences/extensions/*.yaml
+  --schemafile "$SCHEMA_DIR/definitions/consequence-definition.json" \
+  consequences/consequences.yaml
 ```
 
 **What it validates:**
@@ -135,11 +161,13 @@ done
 
 ### Step 2.3: Validate Precondition Definitions
 
+The lib uses a single consolidated preconditions.yaml file.
+
 ```bash
-~/.rye/shims/check-jsonschema \
+check-jsonschema \
   --base-uri "$LIB_SCHEMA" \
-  --schemafile "$SCHEMA_DIR/precondition-definition.json" \
-  preconditions/core/*.yaml preconditions/extensions/*.yaml
+  --schemafile "$SCHEMA_DIR/definitions/precondition-definition.json" \
+  preconditions/preconditions.yaml
 ```
 
 **What it validates:**
@@ -151,10 +179,10 @@ done
 ### Step 2.4: Validate Workflow Definitions
 
 ```bash
-~/.rye/shims/check-jsonschema \
+check-jsonschema \
   --base-uri "$LIB_SCHEMA" \
-  --schemafile "$SCHEMA_DIR/workflow.json" \
-  workflows/core/*.yaml
+  --schemafile "$SCHEMA_DIR/authoring/workflow.json" \
+  workflows/*.yaml
 ```
 
 **What it validates:**
@@ -165,11 +193,13 @@ done
 
 ### Step 2.5: Validate Node Type Definitions
 
+The lib uses a single consolidated workflow_nodes.yaml file.
+
 ```bash
-~/.rye/shims/check-jsonschema \
+check-jsonschema \
   --base-uri "$LIB_SCHEMA" \
-  --schemafile "$SCHEMA_DIR/node-definition.json" \
-  nodes/core/*.yaml nodes/extensions/*.yaml
+  --schemafile "$SCHEMA_DIR/definitions/node-definition.json" \
+  nodes/workflow_nodes.yaml
 ```
 
 **What it validates:**
@@ -243,39 +273,40 @@ Total: 13/14 files passed
 ### Validate All Types
 
 ```bash
-SCHEMA_DIR="/path/to/hiivmind-blueprint-lib/schema"
+# SCHEMA_DIR is populated by remote fetch (see Step 1.2)
+# LIB_SCHEMA is the file:// base URI for $ref resolution
 LIB_SCHEMA="file://${SCHEMA_DIR}/"
 
-# From hiivmind-blueprint-lib directory
-~/.rye/shims/check-jsonschema --base-uri "$LIB_SCHEMA" \
-  --schemafile "$SCHEMA_DIR/consequence-definition.json" \
-  consequences/**/*.yaml
+# From hiivmind-blueprint-lib directory (with fetched schemas)
+check-jsonschema --base-uri "$LIB_SCHEMA" \
+  --schemafile "$SCHEMA_DIR/definitions/consequence-definition.json" \
+  consequences/consequences.yaml
 
-~/.rye/shims/check-jsonschema --base-uri "$LIB_SCHEMA" \
-  --schemafile "$SCHEMA_DIR/precondition-definition.json" \
-  preconditions/**/*.yaml
+check-jsonschema --base-uri "$LIB_SCHEMA" \
+  --schemafile "$SCHEMA_DIR/definitions/precondition-definition.json" \
+  preconditions/preconditions.yaml
 
-~/.rye/shims/check-jsonschema --base-uri "$LIB_SCHEMA" \
-  --schemafile "$SCHEMA_DIR/workflow.json" \
-  workflows/**/*.yaml
+check-jsonschema --base-uri "$LIB_SCHEMA" \
+  --schemafile "$SCHEMA_DIR/authoring/workflow.json" \
+  workflows/*.yaml
 
-~/.rye/shims/check-jsonschema --base-uri "$LIB_SCHEMA" \
-  --schemafile "$SCHEMA_DIR/node-definition.json" \
-  nodes/**/*.yaml
+check-jsonschema --base-uri "$LIB_SCHEMA" \
+  --schemafile "$SCHEMA_DIR/definitions/node-definition.json" \
+  nodes/workflow_nodes.yaml
 ```
 
 ### Validate Single File
 
 ```bash
-~/.rye/shims/check-jsonschema --base-uri "$LIB_SCHEMA" \
-  --schemafile "$SCHEMA_DIR/consequence-definition.json" \
-  consequences/core/state.yaml
+check-jsonschema --base-uri "$LIB_SCHEMA" \
+  --schemafile "$SCHEMA_DIR/definitions/consequence-definition.json" \
+  consequences/consequences.yaml
 ```
 
 ### Check Schema is Valid
 
 ```bash
-~/.rye/shims/check-jsonschema --check-metaschema "$SCHEMA_DIR/consequence-definition.json"
+check-jsonschema --check-metaschema "$SCHEMA_DIR/definitions/consequence-definition.json"
 ```
 
 ---
@@ -294,16 +325,16 @@ LIB_SCHEMA="file://${SCHEMA_DIR}/"
 
 ## Schema Files Reference
 
-| Schema | Purpose |
-|--------|---------|
+| Schema Path | Purpose |
+|-------------|---------|
 | `common.json` | Shared definitions (semver, identifiers, parameters) |
-| `consequence-definition.json` | Consequence YAML file structure |
-| `precondition-definition.json` | Precondition YAML file structure |
-| `workflow.json` | Workflow YAML file structure |
-| `node-definition.json` | Node type definition YAML files (nodes/core/*.yaml) |
-| `node-types.json` | Node type enum/structure (used by workflow.json) |
-| `intent-mapping.json` | Intent mapping YAML file structure |
-| `logging-config.json` | Plugin logging.yaml structure |
+| `definitions/consequence-definition.json` | Consequence YAML file structure |
+| `definitions/precondition-definition.json` | Precondition YAML file structure |
+| `definitions/node-definition.json` | Node type definition YAML files |
+| `authoring/workflow.json` | Workflow YAML file structure |
+| `authoring/node-types.json` | Node type enum/structure (used by workflow.json) |
+| `authoring/intent-mapping.json` | Intent mapping YAML file structure |
+| `config/logging.json` | Plugin logging.yaml structure |
 
 ---
 

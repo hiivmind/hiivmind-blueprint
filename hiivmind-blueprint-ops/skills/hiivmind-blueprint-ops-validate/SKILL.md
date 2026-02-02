@@ -25,7 +25,7 @@ Analyze workflow YAML files for consistency, completeness, and referential integ
 > **Pattern Documentation:**
 > - Validation queries: `${CLAUDE_PLUGIN_ROOT}/lib/workflow/legacy/validation-queries.md`
 > - Report format: `${CLAUDE_PLUGIN_ROOT}/lib/workflow/legacy/validation-report-format.md`
-> - JSON Schemas: `${CLAUDE_PLUGIN_ROOT}/../hiivmind-blueprint-lib/schema/workflow.json`, `${CLAUDE_PLUGIN_ROOT}/../hiivmind-blueprint-lib/schema/intent-mapping.json`, `${CLAUDE_PLUGIN_ROOT}/../hiivmind-blueprint-lib/schema/prompts-config.json`
+> - JSON Schemas: Fetched remotely from `hiivmind/hiivmind-blueprint-lib@${LIB_VERSION}/schema/`
 
 ---
 
@@ -47,10 +47,17 @@ This skill validates workflow.yaml files against:
 
 ## Prerequisites
 
-| Requirement | Check | Error Message |
-|-------------|-------|---------------|
-| yq installed | `which yq` | "yq is required. Install: https://github.com/mikefarah/yq" |
-| check-jsonschema installed | `~/.rye/shims/check-jsonschema --version` | "check-jsonschema not found - JSON Schema validation will be skipped" |
+**Check these dependencies before execution:**
+
+| Tool | Required | Check | Purpose |
+|------|----------|-------|---------|
+| `jq` | **Mandatory** | `command -v jq` | JSON processing |
+| `yq` | **Mandatory** | `command -v yq` | YAML processing |
+| `check-jsonschema` | **Mandatory** | `which check-jsonschema` | JSON Schema validation |
+| `gh` | Recommended | `command -v gh` | GitHub API access (private repos) |
+
+
+If mandatory tools are missing, exit with error and installation guidance.
 
 ---
 
@@ -186,33 +193,84 @@ Execute validation checks based on selected mode. See `lib/workflow/legacy/valid
 Validate against formal JSON Schema definitions using check-jsonschema CLI.
 
 **Schema Files (from hiivmind-blueprint-lib):**
-- `workflow.json` - Workflow YAML structure
-- `intent-mapping.json` - Intent mapping structure
-- `logging-config.json` - Logging configuration structure
+- `authoring/workflow.json` - Workflow YAML structure
+- `authoring/intent-mapping.json` - Intent mapping structure
+- `runtime/logging.json` - Logging configuration structure
+
+#### Step 3.0.1: Fetch JSON Schemas from Remote
+
+Schemas are fetched from `hiivmind-blueprint-lib` using the same protocol as execution semantics.
+
+**Extract version:**
+```bash
+LIB_VERSION=$(yq '.definitions.version' "$WORKFLOW_PATH")
+# Or from BLUEPRINT_LIB_VERSION.yaml:
+# LIB_VERSION=$(yq '.lib_version' "${CLAUDE_PLUGIN_ROOT}/BLUEPRINT_LIB_VERSION.yaml")
+```
+
+**Fetch schema files:**
+```bash
+# Create temp directory for schemas
+SCHEMA_DIR=$(mktemp -d)
+
+# Create subdirectories to match lib schema structure
+mkdir -p "$SCHEMA_DIR/authoring" "$SCHEMA_DIR/runtime"
+
+# Fetch with gh api (primary) or curl (fallback)
+fetch_schema() {
+  local schema_file="$1"
+  local version="$2"
+  local output_path="$3"
+
+  # Try gh api first
+  if gh api "repos/hiivmind/hiivmind-blueprint-lib/contents/schema/${schema_file}?ref=${version}" \
+    --jq '.content' 2>/dev/null | base64 -d > "$output_path" 2>/dev/null; then
+    return 0
+  fi
+
+  # Fallback to raw URL
+  if curl -sL "https://raw.githubusercontent.com/hiivmind/hiivmind-blueprint-lib/${version}/schema/${schema_file}" \
+    -o "$output_path" 2>/dev/null; then
+    return 0
+  fi
+
+  echo "ERROR: Failed to fetch schema/${schema_file}@${version}" >&2
+  return 1
+}
+
+# Fetch authoring schemas (in schema/authoring/ subdirectory)
+fetch_schema "authoring/workflow.json" "$LIB_VERSION" "$SCHEMA_DIR/authoring/workflow.json"
+fetch_schema "authoring/intent-mapping.json" "$LIB_VERSION" "$SCHEMA_DIR/authoring/intent-mapping.json"
+# Fetch runtime schema
+fetch_schema "runtime/logging.json" "$LIB_VERSION" "$SCHEMA_DIR/runtime/logging.json"
+# Fetch common.json (at schema root, referenced by other schemas)
+fetch_schema "common.json" "$LIB_VERSION" "$SCHEMA_DIR/common.json"
+```
+
+#### Step 3.0.2: Validate with Fetched Schemas
 
 **Validation Commands:**
 
 ```bash
-# Set up schema paths
-SCHEMA_DIR="${CLAUDE_PLUGIN_ROOT}/../hiivmind-blueprint-lib/schema"
+# Set up schema base URI for $ref resolution
 LIB_SCHEMA="file://${SCHEMA_DIR}/"
 
 # Validate workflow.yaml
-~/.rye/shims/check-jsonschema \
+check-jsonschema \
   --base-uri "$LIB_SCHEMA" \
-  --schemafile "$SCHEMA_DIR/workflow.json" \
+  --schemafile "$SCHEMA_DIR/authoring/workflow.json" \
   "$WORKFLOW_PATH"
 
 # Validate intent-mapping.yaml (if present)
-~/.rye/shims/check-jsonschema \
+check-jsonschema \
   --base-uri "$LIB_SCHEMA" \
-  --schemafile "$SCHEMA_DIR/intent-mapping.json" \
+  --schemafile "$SCHEMA_DIR/authoring/intent-mapping.json" \
   "$INTENT_MAPPING_PATH"
 
 # Validate logging.yaml (if present)
-~/.rye/shims/check-jsonschema \
+check-jsonschema \
   --base-uri "$LIB_SCHEMA" \
-  --schemafile "$SCHEMA_DIR/logging-config.json" \
+  --schemafile "$SCHEMA_DIR/runtime/logging.json" \
   "$LOGGING_CONFIG_PATH"
 ```
 
@@ -327,30 +385,56 @@ Type validation uses an **extensible** approach:
 
 Load known types dynamically from hiivmind-blueprint-lib. Each YAML file is self-documenting with `type`, `description`, `parameters`, and evaluation/payload fields.
 
-**Type Definitions Source:** `hiivmind/hiivmind-blueprint-lib@v2.1.0`
+**Type Definitions Source:** `hiivmind/hiivmind-blueprint-lib@${LIB_VERSION}`
+
+**Fetch type index files from remote:**
+
+The lib uses consolidated index.yaml files that contain all types with their required_params already listed.
 
 ```bash
-# Set schema directory (local development path - adjust as needed)
-SCHEMA_DIR="${CLAUDE_PLUGIN_ROOT}/../hiivmind-blueprint-lib"
+# Create temp directory for type definitions
+TYPES_DIR=$(mktemp -d)
 
-# Build precondition type lookup (type -> required params)
+# Fetch type definition files (using same fetch pattern as schemas)
+fetch_type_file() {
+  local file_path="$1"
+  local version="$2"
+  local output_path="$3"
+
+  # Try gh api first
+  if gh api "repos/hiivmind/hiivmind-blueprint-lib/contents/${file_path}?ref=${version}" \
+    --jq '.content' 2>/dev/null | base64 -d > "$output_path" 2>/dev/null; then
+    return 0
+  fi
+
+  # Fallback to raw URL
+  if curl -sL "https://raw.githubusercontent.com/hiivmind/hiivmind-blueprint-lib/${version}/${file_path}" \
+    -o "$output_path" 2>/dev/null; then
+    return 0
+  fi
+
+  echo "WARNING: Failed to fetch ${file_path}@${version}" >&2
+  return 1
+}
+
+# Fetch type index files (contain all types with required_params)
+fetch_type_file "preconditions/index.yaml" "$LIB_VERSION" "$TYPES_DIR/preconditions_index.yaml"
+fetch_type_file "consequences/index.yaml" "$LIB_VERSION" "$TYPES_DIR/consequences_index.yaml"
+```
+
+**Build type lookups from index files:**
+
+The index.yaml files have a `types` object where each type has `required_params` already listed.
+
+```bash
+# Build precondition type lookup from index.yaml
 # Output: JSON object { "type_name": ["required_param1", "required_param2"], ... }
-yq eval-all '
-  [.preconditions[] | {
-    "key": .type,
-    "value": [.parameters[]? | select(.required == true) | .name]
-  }] | from_entries
-' "$SCHEMA_DIR"/preconditions/core/*.yaml "$SCHEMA_DIR"/preconditions/extensions/*.yaml \
-  > /tmp/precondition_types.json
+yq '.types | to_entries | map({key: .key, value: .value.required_params}) | from_entries' \
+  "$TYPES_DIR/preconditions_index.yaml" > /tmp/precondition_types.json
 
-# Build consequence type lookup (type -> required params)
-yq eval-all '
-  [.consequences[] | {
-    "key": .type,
-    "value": [.parameters[]? | select(.required == true) | .name]
-  }] | from_entries
-' "$SCHEMA_DIR"/consequences/core/*.yaml "$SCHEMA_DIR"/consequences/extensions/*.yaml \
-  > /tmp/consequence_types.json
+# Build consequence type lookup from index.yaml
+yq '.types | to_entries | map({key: .key, value: .value.required_params}) | from_entries' \
+  "$TYPES_DIR/consequences_index.yaml" > /tmp/consequence_types.json
 
 # Get list of all known precondition type names
 yq 'keys | .[]' /tmp/precondition_types.json > /tmp/known_preconditions.txt
@@ -936,8 +1020,8 @@ yq '.nodes | to_entries | .[] | select(.value.type == "user_prompt" and (.value.
 
 - **Validation Queries:** `${CLAUDE_PLUGIN_ROOT}/lib/workflow/validation-queries.md`
 - **Report Format:** `${CLAUDE_PLUGIN_ROOT}/lib/workflow/validation-report-format.md`
-- **Workflow JSON Schema:** `${CLAUDE_PLUGIN_ROOT}/../hiivmind-blueprint-lib/schema/workflow.json`
-- **Intent Mapping JSON Schema:** `${CLAUDE_PLUGIN_ROOT}/../hiivmind-blueprint-lib/schema/intent-mapping.json`
+- **Workflow JSON Schema:** Fetched from `hiivmind/hiivmind-blueprint-lib@${LIB_VERSION}/schema/authoring/workflow.json`
+- **Intent Mapping JSON Schema:** Fetched from `hiivmind/hiivmind-blueprint-lib@${LIB_VERSION}/schema/authoring/intent-mapping.json`
 <!--- **Workflow Schema (docs):** `${CLAUDE_PLUGIN_ROOT}/lib/workflow/engine.md`-->
 
 ---
