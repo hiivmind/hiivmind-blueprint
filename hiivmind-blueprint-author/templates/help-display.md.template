@@ -1,0 +1,154 @@
+# Help Display Template
+#
+# This template generates the help content for gateway commands.
+# Placeholders use {{placeholder}} syntax and are replaced at generation time.
+#
+# Designed for ASCII box display (Kleene-style) with visual separators.
+
+```
+═══════════════════════════════════════════════════════════
+{{PLUGIN_TITLE}} - {{plugin_description}}
+═══════════════════════════════════════════════════════════
+
+{{#skill_sections}}
+{{section_name}}
+{{#skills}}
+  /{{plugin_name}} {{skill_command}}{{padding}}{{skill_description}}
+{{/skills}}
+
+{{/skill_sections}}
+RUNTIME FLAGS
+  --verbose, -v    Verbose output (all details)
+  --quiet, -q      Quiet output (prompts + result only)
+  --debug          Debug output (full state dumps)
+  --no-log         Disable file logging
+  --no-display     Silent mode
+  --ci             CI mode (GitHub annotations)
+
+HELP
+  /{{plugin_name}} --help            This help screen
+  /{{plugin_name}} help [skill]      Help for specific skill
+  /{{plugin_name}} help flags        Explain runtime flags
+
+EXAMPLES
+{{#examples}}
+  {{command}}
+{{/examples}}
+
+═══════════════════════════════════════════════════════════
+```
+
+---
+
+## Template Variables
+
+| Variable | Description | Example |
+|----------|-------------|---------|
+| `{{PLUGIN_TITLE}}` | Plugin name in uppercase | `HIIVMIND-BLUEPRINT` |
+| `{{plugin_name}}` | Plugin name for commands | `hiivmind-blueprint` |
+| `{{plugin_description}}` | Short description | `Workflow Conversion System` |
+| `{{skill_sections}}` | Array of skill category sections | See below |
+| `{{examples}}` | Array of example commands | See below |
+
+### Skill Sections Structure
+
+```yaml
+skill_sections:
+  - section_name: "CONVERSION PIPELINE"
+    skills:
+      - skill_command: "init"
+        padding: "              "  # Align descriptions
+        skill_description: "Set up plugin for workflows"
+      - skill_command: "discover"
+        padding: "          "
+        skill_description: "Find skills to convert"
+```
+
+### Examples Structure
+
+```yaml
+examples:
+  - command: "/hiivmind-blueprint init ../my-plugin"
+  - command: "/hiivmind-blueprint analyze my-skill"
+```
+
+---
+
+## Flag Help Template
+
+For the `show_flag_help` action, use this extended template:
+
+```
+═══════════════════════════════════════════════════════════
+{{PLUGIN_TITLE}} - Runtime Flags
+═══════════════════════════════════════════════════════════
+
+OUTPUT FLAGS (unified control)
+  --verbose, -v    Verbose level: all details, no batching
+  --quiet, -q      Quiet level: prompts + result only
+  --debug          Debug level: full state dumps
+  --no-log         Disable file logging
+  --no-display     Disable terminal output
+  --ci             CI mode: GitHub annotations
+
+LEVEL BEHAVIOR
+  silent   Prompts + final result only, log errors only
+  quiet    + Batch summaries, + warnings
+  normal   + Node transitions, + info (default)
+  verbose  + All details no batching, + debug
+  debug    + Full state dumps, + trace
+
+CONFIGURATION HIERARCHY
+  1. Runtime flags (highest priority)
+  2. Workflow initial_state.output
+  3. Hardcoded defaults (lowest priority)
+
+═══════════════════════════════════════════════════════════
+```
+
+---
+
+## Skill-Specific Help Template
+
+For individual skill help (`show_skill_help_*`), use this structure:
+
+```markdown
+## {{plugin_name}}-{{skill_id}}
+
+**Purpose:** {{skill_purpose}}
+
+**Usage:**
+\`\`\`
+/{{plugin_name}} {{skill_command}} [args]
+/{{plugin_name}} {{skill_command}} --verbose
+\`\`\`
+
+**What it does:**
+{{#steps}}
+{{step_number}}. {{step_description}}
+{{/steps}}
+
+**Examples:**
+\`\`\`
+{{#skill_examples}}
+{{example}}
+{{/skill_examples}}
+\`\`\`
+```
+
+---
+
+## Generation Notes
+
+When `hiivmind-blueprint-gateway` generates a gateway command, it should:
+
+1. **Analyze skills** - Extract descriptions and trigger phrases
+2. **Group into sections** - Based on skill metadata or naming conventions
+3. **Calculate padding** - Align descriptions for visual consistency
+4. **Generate examples** - From skill trigger phrases
+
+The help content is embedded in:
+- `intent-mapping.yaml` → `actions.show_full_help.content`
+- `workflow.yaml` → `nodes.show_full_help.actions[0].content`
+
+Both should contain identical help text for consistency.

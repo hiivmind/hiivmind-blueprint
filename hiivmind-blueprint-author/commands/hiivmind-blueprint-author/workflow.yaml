@@ -1,0 +1,103 @@
+name: hiivmind-blueprint-author-gateway
+version: "2.0.0"
+description: Gateway workflow for hiivmind-blueprint-author plugin
+
+definitions:
+  source: "hiivmind/hiivmind-blueprint-lib@v3.0.0"
+
+start_node: route_by_intent
+
+initial_state:
+  flags:
+    help_requested: false
+    verbose: false
+  computed:
+    matched_action: null
+    matched_skill: null
+  prompts:
+    mode: "interactive"
+    tabular:
+      match_strategy: "fuzzy"
+      fuzzy_threshold: 0.7
+      other_handler: "prompt"
+
+nodes:
+  route_by_intent:
+    type: conditional
+    description: "Route to skill based on detected intent"
+    condition:
+      type: state_check
+      field: computed.matched_action
+      operator: not_null
+    branches:
+      on_true: execute_skill
+      on_false: show_menu
+
+  show_menu:
+    type: user_prompt
+    description: "Display available skills menu"
+    prompt:
+      question: "What would you like to do?"
+      header: "Action"
+      options:
+        - id: init
+          label: "Initialize"
+          description: "Set up plugin for workflow support"
+        - id: discover
+          label: "Discover"
+          description: "Find skills and show conversion status"
+        - id: analyze
+          label: "Analyze"
+          description: "Deep analysis of SKILL.md structure"
+        - id: convert
+          label: "Convert"
+          description: "Transform analysis into workflow.yaml"
+    on_response:
+      init:
+        consequence:
+          - type: mutate_state
+            operation: set
+            field: computed.matched_skill
+            value: "hiivmind-blueprint-author-init"
+        next_node: execute_skill
+      discover:
+        consequence:
+          - type: mutate_state
+            operation: set
+            field: computed.matched_skill
+            value: "hiivmind-blueprint-author-discover"
+        next_node: execute_skill
+      analyze:
+        consequence:
+          - type: mutate_state
+            operation: set
+            field: computed.matched_skill
+            value: "hiivmind-blueprint-author-analyze"
+        next_node: execute_skill
+      convert:
+        consequence:
+          - type: mutate_state
+            operation: set
+            field: computed.matched_skill
+            value: "hiivmind-blueprint-author-convert"
+        next_node: execute_skill
+
+  execute_skill:
+    type: action
+    description: "Execute the selected skill"
+    actions:
+      - type: invoke_skill
+        skill_path: "${CLAUDE_PLUGIN_ROOT}/skills/hiivmind-blueprint-author-${computed.matched_skill}/SKILL.md"
+    on_success: success_completed
+    on_failure: error_skill_failed
+
+endings:
+  success_completed:
+    type: success
+    message: "Operation completed successfully"
+
+  error_skill_failed:
+    type: error
+    message: "Skill execution failed: ${error.message}"
+    recovery:
+      suggestion: "Check the error message and try again"

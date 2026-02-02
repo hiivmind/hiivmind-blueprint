@@ -1,0 +1,107 @@
+# Thin Loader SKILL.md Template
+#
+# This template generates the minimal SKILL.md that loads and executes a workflow.
+# Placeholders use {{placeholder}} syntax and are replaced at generation time.
+# {{lib_version}} comes from workflow.yaml definitions.source
+#
+# Execution semantics: https://github.com/hiivmind/hiivmind-blueprint-lib
+
+---
+name: {{skill_name}}
+description: >
+  {{description}}
+allowed-tools: {{allowed_tools}}
+---
+
+# {{title}}
+
+Execute this workflow deterministically. State persists in conversation context.
+
+> **Workflow:** `${CLAUDE_PLUGIN_ROOT}/skills/{{skill_directory}}/workflow.yaml`
+
+---
+
+{{#workflow_graph}}
+## Workflow Graph Overview
+
+```
+{{graph_ascii}}
+```
+
+---
+{{/workflow_graph}}
+
+## Execution Protocol
+
+**MANDATORY:** Before executing any workflow node, complete these phases IN ORDER.
+
+### Phase 1: Load Remote Execution Semantics
+
+Fetch execution specifications from hiivmind-blueprint-lib. These define HOW to execute nodes.
+
+**Fetching Protocol:**
+1. Try gh api (authenticated, works with private repos):
+   ```bash
+   gh api repos/hiivmind/hiivmind-blueprint-lib/contents/execution/{file}?ref={{lib_version}} --jq '.content' | base64 -d
+   ```
+2. If gh api fails, fall back to raw URL:
+   ```
+   https://raw.githubusercontent.com/hiivmind/hiivmind-blueprint-lib/{{lib_version}}/execution/{file}
+   ```
+
+**Required files (fetch all before proceeding):**
+
+| File | Path | Purpose |
+|------|------|---------|
+| `execution-loader.yaml` | resolution/execution-loader.yaml | Bootstrap sequence (read first) |
+| `engine_execution.yaml` | execution/engine_execution.yaml | All execution semantics (traversal, state, dispatch) |
+| `type-loader.yaml` | resolution/type-loader.yaml | Type definition loading |
+
+### Phase 2: Load Type Definitions
+
+The type-loader supports multiple loading strategies and source types.
+
+**Loading strategies (auto-selected via `hybrid_loading`):**
+
+| Workflow Size | Strategy | Description |
+|---------------|----------|-------------|
+| < 30 types | `selective_loading` | Uses yq to extract only needed types |
+| ≥ 30 types | `lazy_loading` | Fetches full file, caches on first use |
+
+**Source types (from workflow.yaml `definitions.source`):**
+
+| Source Format | Type | Use Case |
+|---------------|------|----------|
+| `owner/repo@version` | Remote | Production, shared libraries |
+| `./` or `./path` | Local relative | Development, testing |
+| `/absolute/path` | Local absolute | Monorepos, CI |
+
+Follow the algorithm in `type-loader.yaml` section `hybrid_loading` to build TypeRegistry.
+
+### Phase 3: Execute Workflow
+
+**IMPORTANT:** Execute nodes EXACTLY as specified in `engine_execution.yaml`:
+
+1. Read the `execution.traversal` section for the execution loop
+2. Follow the `FUNCTION execute_node(node, types, state)` pseudocode
+3. Dispatch consequences per `execution.consequence_dispatch`
+4. Evaluate preconditions per `execution.precondition_dispatch`
+5. Mutate state per `execution.state` rules
+
+**DO NOT improvise execution semantics.** The fetched YAML files are authoritative.
+
+---
+
+## Reference Documentation
+
+- **Type Definitions:** [hiivmind-blueprint-lib](https://github.com/hiivmind/hiivmind-blueprint-lib/tree/{{lib_version}})
+
+---
+
+{{#related_skills}}
+## Related Skills
+
+{{#skills}}
+- {{description}}: `${CLAUDE_PLUGIN_ROOT}/skills/{{skill_id}}/SKILL.md`
+{{/skills}}
+{{/related_skills}}

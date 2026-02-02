@@ -1,0 +1,138 @@
+version: "1.0.0"
+description: Intent mapping for hiivmind-blueprint-ops gateway
+
+intent_flags:
+  # Main skill flags
+  has_validate:
+    keywords: ["validate", "check", "verify", "lint", "test"]
+    negative_keywords: []
+  has_upgrade:
+    keywords: ["upgrade", "migrate", "update", "modernize"]
+    negative_keywords: []
+  has_lib_validation:
+    keywords: ["lib-validation", "library validation", "type validation", "definitions"]
+    negative_keywords: []
+
+  has_intent_validation:
+    keywords: ["intent", "mapping", "intent mapping", "validate intent", "check intent", "intent gaps", "intent collisions", "flag coverage", "rule conflicts", "intent-validator"]
+    negative_keywords: ["workflow"]
+
+  # Validate mode flags
+  has_schema_mode:
+    keywords: ["schema", "structure", "json schema"]
+    negative_keywords: []
+  has_graph_mode:
+    keywords: ["graph", "reachability", "dead end", "cycle", "orphan"]
+    negative_keywords: []
+  has_types_mode:
+    keywords: ["types", "precondition", "consequence", "type check"]
+    negative_keywords: []
+  has_state_mode:
+    keywords: ["state", "variable", "variables"]
+    negative_keywords: []
+
+  # Upgrade target flags
+  has_skills_target:
+    keywords: ["skills", "skill"]
+    negative_keywords: ["gateway"]
+  has_gateway_target:
+    keywords: ["gateway", "command", "commands"]
+    negative_keywords: ["skill"]
+
+  has_help:
+    keywords: ["help", "--help", "-h", "?"]
+    negative_keywords: []
+
+rules:
+  # Validate with modes
+  - name: validate_schema
+    priority: 110
+    condition:
+      has_validate: T
+      has_schema_mode: T
+    action: hiivmind-blueprint-ops-validate
+    params:
+      mode: schema
+
+  - name: validate_graph
+    priority: 110
+    condition:
+      has_validate: T
+      has_graph_mode: T
+    action: hiivmind-blueprint-ops-validate
+    params:
+      mode: graph
+
+  - name: validate_types
+    priority: 110
+    condition:
+      has_validate: T
+      has_types_mode: T
+    action: hiivmind-blueprint-ops-validate
+    params:
+      mode: types
+
+  - name: validate_state
+    priority: 110
+    condition:
+      has_validate: T
+      has_state_mode: T
+    action: hiivmind-blueprint-ops-validate
+    params:
+      mode: state
+
+  - name: validate_full
+    priority: 100
+    condition:
+      has_validate: T
+    action: hiivmind-blueprint-ops-validate
+    params:
+      mode: full
+
+  # Upgrade with targets
+  - name: upgrade_skills
+    priority: 110
+    condition:
+      has_upgrade: T
+      has_skills_target: T
+    action: hiivmind-blueprint-ops-upgrade
+    params:
+      target: skills
+
+  - name: upgrade_gateway
+    priority: 110
+    condition:
+      has_upgrade: T
+      has_gateway_target: T
+    action: hiivmind-blueprint-ops-upgrade
+    params:
+      target: gateway
+
+  - name: upgrade_auto
+    priority: 100
+    condition:
+      has_upgrade: T
+    action: hiivmind-blueprint-ops-upgrade
+    params:
+      target: auto
+
+  # Lib validation
+  - name: lib_validation_action
+    priority: 100
+    condition:
+      has_lib_validation: T
+    action: hiivmind-blueprint-ops-lib-validation
+
+  # Intent validation
+  - name: intent_validation_action
+    priority: 100
+    condition:
+      has_intent_validation: T
+    action: hiivmind-blueprint-ops-intent-validator
+
+  # Help
+  - name: help_action
+    priority: 200
+    condition:
+      has_help: T
+    action: show_help

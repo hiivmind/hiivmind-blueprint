@@ -1,0 +1,105 @@
+name: hiivmind-blueprint-ops-gateway
+version: "2.0.0"
+description: Gateway workflow for hiivmind-blueprint-ops plugin
+
+definitions:
+  source: "hiivmind/hiivmind-blueprint-lib@v3.0.0"
+
+start_node: route_by_intent
+
+initial_state:
+  flags:
+    help_requested: false
+    verbose: false
+  computed:
+    matched_action: null
+    matched_skill: null
+    target_mode: null  # For validate: schema|graph|types|state
+    upgrade_target: null  # For upgrade: skills|gateway
+  prompts:
+    mode: "interactive"
+    tabular:
+      match_strategy: "fuzzy"
+      fuzzy_threshold: 0.7
+      other_handler: "prompt"
+
+nodes:
+  route_by_intent:
+    type: conditional
+    description: "Route to skill based on detected intent"
+    condition:
+      type: state_check
+      field: computed.matched_action
+      operator: not_null
+    branches:
+      on_true: execute_skill
+      on_false: show_menu
+
+  show_menu:
+    type: user_prompt
+    description: "Display available skills menu"
+    prompt:
+      question: "What operation would you like to perform?"
+      header: "Operation"
+      options:
+        - id: validate
+          label: "Validate"
+          description: "Check workflow.yaml for issues"
+        - id: upgrade
+          label: "Upgrade"
+          description: "Upgrade workflows to latest schema"
+        - id: lib-validation
+          label: "Lib Validation"
+          description: "Validate type definitions"
+        - id: intent-validator
+          label: "Intent Validator"
+          description: "Check intent-mapping.yaml for gaps and collisions"
+    on_response:
+      validate:
+        consequence:
+          - type: mutate_state
+            operation: set
+            field: computed.matched_skill
+            value: "hiivmind-blueprint-ops-validate"
+        next_node: execute_skill
+      upgrade:
+        consequence:
+          - type: mutate_state
+            operation: set
+            field: computed.matched_skill
+            value: "hiivmind-blueprint-ops-upgrade"
+        next_node: execute_skill
+      lib-validation:
+        consequence:
+          - type: mutate_state
+            operation: set
+            field: computed.matched_skill
+            value: "hiivmind-blueprint-ops-lib-validation"
+        next_node: execute_skill
+      intent-validator:
+        consequence:
+          - type: mutate_state
+            operation: set
+            field: computed.matched_skill
+            value: "hiivmind-blueprint-ops-intent-validator"
+        next_node: execute_skill
+
+  execute_skill:
+    type: action
+    description: "Execute the selected skill"
+    actions:
+      - type: invoke_skill
+        skill_path: "${CLAUDE_PLUGIN_ROOT}/skills/${computed.matched_skill}/SKILL.md"
+    on_success: success_completed
+    on_failure: error_skill_failed
+
+endings:
+  success_completed:
+    type: success
+    message: "Operation completed successfully"
+
+  error_skill_failed:
+    type: error
+    message: "Skill execution failed: ${error.message}"
+    recovery:
+      suggestion: "Check the error message and try again"

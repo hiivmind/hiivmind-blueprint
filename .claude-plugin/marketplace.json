@@ -10,18 +10,35 @@
   },
   "plugins": [
     {
-      "name": "hiivmind-blueprint",
-      "source": "./",
-      "description": "Convert prose-based skills to deterministic YAML workflows with predictable execution, testable behavior, and upgradeable schemas",
+      "name": "hiivmind-blueprint-author",
+      "source": "./hiivmind-blueprint-author/",
+      "description": "Authoring tools for converting Claude Code skills to deterministic YAML workflow patterns. Create, analyze, convert, and generate workflow-based skills.",
       "version": "1.0.0",
       "keywords": [
         "workflow",
         "yaml",
-        "meta-plugin",
         "skills",
         "conversion",
-        "deterministic",
-        "blueprint"
+        "authoring",
+        "blueprint",
+        "generate",
+        "analyze"
+      ]
+    },
+
+    {
+      "name": "hiivmind-blueprint-ops",
+      "source": "./hiivmind-blueprint-ops/",
+      "description": "Operations tools for validating and maintaining YAML workflow patterns. Validate workflows, upgrade schema versions, and manage type definitions.",
+      "version": "1.0.0",
+      "keywords": [
+        "workflow",
+        "yaml",
+        "validation",
+        "upgrade",
+        "blueprint",
+        "schema",
+        "operations"
       ]
     }
   ]

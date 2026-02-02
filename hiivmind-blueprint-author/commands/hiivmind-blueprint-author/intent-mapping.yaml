@@ -1,0 +1,77 @@
+version: "1.0.0"
+description: Intent mapping for hiivmind-blueprint-author gateway
+
+intent_flags:
+  has_init:
+    keywords: ["init", "initialize", "setup", "set up", "start"]
+    negative_keywords: []
+  has_discover:
+    keywords: ["discover", "find", "list", "search", "scan"]
+    negative_keywords: []
+  has_analyze:
+    keywords: ["analyze", "analyse", "analysis", "examine", "inspect"]
+    negative_keywords: []
+  has_convert:
+    keywords: ["convert", "transform", "translation", "translate"]
+    negative_keywords: []
+  has_generate:
+    keywords: ["generate", "create", "write", "output", "produce"]
+    negative_keywords: []
+  has_gateway:
+    keywords: ["gateway", "entry point", "command"]
+    negative_keywords: []
+  has_visualize:
+    keywords: ["visualize", "visualise", "diagram", "mermaid", "graph", "flow"]
+    negative_keywords: []
+  has_help:
+    keywords: ["help", "--help", "-h", "?"]
+    negative_keywords: []
+
+rules:
+  - name: init_action
+    priority: 100
+    condition:
+      has_init: T
+    action: hiivmind-blueprint-author-init
+
+  - name: discover_action
+    priority: 100
+    condition:
+      has_discover: T
+    action: hiivmind-blueprint-author-discover
+
+  - name: analyze_action
+    priority: 100
+    condition:
+      has_analyze: T
+    action: hiivmind-blueprint-author-analyze
+
+  - name: convert_action
+    priority: 100
+    condition:
+      has_convert: T
+    action: hiivmind-blueprint-author-convert
+
+  - name: generate_action
+    priority: 100
+    condition:
+      has_generate: T
+    action: hiivmind-blueprint-author-generate
+
+  - name: gateway_action
+    priority: 100
+    condition:
+      has_gateway: T
+    action: hiivmind-blueprint-author-gateway
+
+  - name: visualize_action
+    priority: 100
+    condition:
+      has_visualize: T
+    action: hiivmind-blueprint-author-visualize
+
+  - name: help_action
+    priority: 200
+    condition:
+      has_help: T
+    action: show_help

@@ -1,9 +1,16 @@
 # hiivmind-blueprint
 
+> **DEPRECATED:** This plugin has been split into two focused plugins:
+> - **[hiivmind-blueprint-author](https://github.com/hiivmind/hiivmind-blueprint-author)** - Authoring skills (init, discover, analyze, convert, generate, gateway, visualize)
+> - **[hiivmind-blueprint-ops](https://github.com/hiivmind/hiivmind-blueprint-ops)** - Operations skills (validate, upgrade, lib-validation)
+>
+> See [Command Migration](#command-migration) below for the mapping of old commands to new plugins.
+
 **Transform prose-based Claude Code skills into deterministic YAML workflows.**
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 [![Schema Version](https://img.shields.io/badge/Schema-v2.2-green.svg)](https://github.com/hiivmind/hiivmind-blueprint-lib)
+[![Status: Deprecated](https://img.shields.io/badge/Status-Deprecated-red.svg)](#deprecation-notice)
 
 ---
 
@@ -375,6 +382,42 @@ commands/hiivmind-blueprint/
 ├── workflow.yaml              # Gateway workflow
 └── intent-mapping.yaml        # 3VL skill routing
 ```
+
+---
+
+## Deprecation Notice
+
+This plugin is deprecated in favor of two focused plugins that provide better organization and maintainability:
+
+### New Plugins
+
+| Plugin | Purpose | Install |
+|--------|---------|---------|
+| [hiivmind-blueprint-author](https://github.com/hiivmind/hiivmind-blueprint-author) | Skill authoring & conversion | `/plugin install hiivmind-blueprint-author` |
+| [hiivmind-blueprint-ops](https://github.com/hiivmind/hiivmind-blueprint-ops) | Validation & maintenance | `/plugin install hiivmind-blueprint-ops` |
+
+### Command Migration
+
+| Old Command | New Command |
+|-------------|-------------|
+| `/hiivmind-blueprint init` | `/hiivmind-blueprint-author init` |
+| `/hiivmind-blueprint discover` | `/hiivmind-blueprint-author discover` |
+| `/hiivmind-blueprint analyze` | `/hiivmind-blueprint-author analyze` |
+| `/hiivmind-blueprint convert` | `/hiivmind-blueprint-author convert` |
+| `/hiivmind-blueprint generate` | `/hiivmind-blueprint-author generate` |
+| `/hiivmind-blueprint gateway` | `/hiivmind-blueprint-author gateway` |
+| `/hiivmind-blueprint visualize` | `/hiivmind-blueprint-author visualize` |
+| `/hiivmind-blueprint validate` | `/hiivmind-blueprint-ops validate` |
+| `/hiivmind-blueprint upgrade` | `/hiivmind-blueprint-ops upgrade skills` |
+| `/hiivmind-blueprint upgrade-gateway` | `/hiivmind-blueprint-ops upgrade gateway` |
+| `/hiivmind-blueprint lib-validation` | `/hiivmind-blueprint-ops lib-validation` |
+
+### Benefits of Split
+
+1. **Clearer purpose** - Author vs Operations lifecycle
+2. **Smaller install** - Only install what you need
+3. **Consolidated upgrade skill** - Single skill handles both skill and gateway upgrades with `--target` parameter
+4. **Mode parameters** - Validate skill supports `--mode=full|schema|graph|types|state`
 
 ---
 
