@@ -1,0 +1,271 @@
+# existing-file-handler.yaml
+# Layer 0: Atomic Subflow
+#
+# Handle existing file conflicts when writing output files.
+# Provides user with options to:
+# - Skip (keep existing)
+# - Overwrite (replace existing)
+# - Backup and replace (create .bak, then write new)
+# - Cancel (abort operation)
+#
+# This subflow is used by any workflow that writes files that may already exist.
+
+name: existing-file-handler
+version: 1.0.0
+description: Handle existing file conflicts with user options
+
+# Interface declaration for subflow composition
+input_schema:
+  target_path:
+    type: string
+    required: true
+    description: "Path to the file that may exist"
+  new_content:
+    type: string
+    required: true
+    description: "Content to write if proceeding"
+  file_description:
+    type: string
+    required: false
+    default: "file"
+    description: "Human-readable description for prompts (e.g., 'workflow.yaml')"
+  auto_backup:
+    type: boolean
+    required: false
+    default: false
+    description: "If true, automatically backup without prompting"
+  force_overwrite:
+    type: boolean
+    required: false
+    default: false
+    description: "If true, overwrite without prompting"
+
+output_schema:
+  action_taken:
+    type: string
+    enum: ["created", "skipped", "overwritten", "backed_up", "cancelled"]
+    description: "What action was taken"
+  backup_path:
+    type: string
+    description: "Path to backup file if created (null otherwise)"
+  final_path:
+    type: string
+    description: "Path where content was written (null if skipped/cancelled)"
+
+definitions:
+  source: "hiivmind/hiivmind-blueprint-lib"
+  version: "v3.0.0"
+
+start_node: check_file_exists
+
+initial_state:
+  action_taken: null
+  backup_path: null
+  final_path: null
+  file_exists: false
+
+nodes:
+  check_file_exists:
+    type: conditional
+    description: "Check if target file already exists"
+    condition:
+      type: path_check
+      path: "${input.target_path}"
+      check: exists
+    branches:
+      on_true: check_auto_modes
+      on_false: write_new_file
+
+  check_auto_modes:
+    type: conditional
+    description: "Check if auto-backup or force-overwrite is enabled"
+    condition:
+      type: any_of
+      conditions:
+        - type: state_check
+          field: input.auto_backup
+          operator: equals
+          value: true
+        - type: state_check
+          field: input.force_overwrite
+          operator: equals
+          value: true
+    branches:
+      on_true: handle_auto_mode
+      on_false: prompt_user_action
+
+  handle_auto_mode:
+    type: conditional
+    description: "Route based on which auto mode is set"
+    condition:
+      type: state_check
+      field: input.auto_backup
+      operator: equals
+      value: true
+    branches:
+      on_true: create_backup
+      on_false: overwrite_file
+
+  prompt_user_action:
+    type: user_prompt
+    description: "Ask user how to handle existing file"
+    prompt:
+      question: "${input.file_description} already exists at ${input.target_path}. How should I proceed?"
+      header: "Existing"
+      options:
+        - id: skip
+          label: "Skip"
+          description: "Keep existing file, don't modify"
+        - id: overwrite
+          label: "Overwrite"
+          description: "Replace with new content"
+        - id: backup
+          label: "Backup + Replace"
+          description: "Create .bak file, then write new content"
+        - id: cancel
+          label: "Cancel"
+          description: "Abort the operation"
+    on_response:
+      skip:
+        consequence:
+          - type: mutate_state
+            operation: set
+            field: action_taken
+            value: "skipped"
+        next_node: success_skipped
+      overwrite:
+        next_node: overwrite_file
+      backup:
+        next_node: create_backup
+      cancel:
+        consequence:
+          - type: mutate_state
+            operation: set
+            field: action_taken
+            value: "cancelled"
+        next_node: success_cancelled
+
+  create_backup:
+    type: action
+    description: "Create backup of existing file"
+    actions:
+      - type: run_command
+        interpreter: bash
+        command: |
+          backup_path="${input.target_path}.bak.$(date +%Y%m%d_%H%M%S)"
+          cp "${input.target_path}" "$backup_path"
+          echo "$backup_path"
+        store_in: backup_path
+    on_success: write_after_backup
+    on_failure: error_backup_failed
+
+  write_after_backup:
+    type: action
+    description: "Write new content after backup"
+    actions:
+      - type: local_file_ops
+        operation: write
+        path: "${input.target_path}"
+        content: "${input.new_content}"
+      - type: mutate_state
+        operation: set
+        field: action_taken
+        value: "backed_up"
+      - type: mutate_state
+        operation: set
+        field: final_path
+        value: "${input.target_path}"
+    on_success: success_backed_up
+    on_failure: error_write_failed
+
+  overwrite_file:
+    type: action
+    description: "Overwrite existing file without backup"
+    actions:
+      - type: local_file_ops
+        operation: write
+        path: "${input.target_path}"
+        content: "${input.new_content}"
+      - type: mutate_state
+        operation: set
+        field: action_taken
+        value: "overwritten"
+      - type: mutate_state
+        operation: set
+        field: final_path
+        value: "${input.target_path}"
+    on_success: success_overwritten
+    on_failure: error_write_failed
+
+  write_new_file:
+    type: action
+    description: "Write to new file (doesn't exist yet)"
+    actions:
+      - type: run_command
+        interpreter: bash
+        command: |
+          mkdir -p "$(dirname "${input.target_path}")"
+        description: "Ensure parent directory exists"
+      - type: local_file_ops
+        operation: write
+        path: "${input.target_path}"
+        content: "${input.new_content}"
+      - type: mutate_state
+        operation: set
+        field: action_taken
+        value: "created"
+      - type: mutate_state
+        operation: set
+        field: final_path
+        value: "${input.target_path}"
+    on_success: success_created
+    on_failure: error_write_failed
+
+endings:
+  success_created:
+    type: success
+    message: "Created ${input.file_description}"
+    summary:
+      action_taken: "created"
+      final_path: "${input.target_path}"
+
+  success_skipped:
+    type: success
+    message: "Skipped ${input.file_description} (existing kept)"
+    summary:
+      action_taken: "skipped"
+
+  success_overwritten:
+    type: success
+    message: "Overwrote ${input.file_description}"
+    summary:
+      action_taken: "overwritten"
+      final_path: "${input.target_path}"
+
+  success_backed_up:
+    type: success
+    message: "Backed up and replaced ${input.file_description}"
+    summary:
+      action_taken: "backed_up"
+      backup_path: "${backup_path}"
+      final_path: "${input.target_path}"
+
+  success_cancelled:
+    type: success
+    message: "Operation cancelled by user"
+    summary:
+      action_taken: "cancelled"
+
+  error_backup_failed:
+    type: error
+    code: "BACKUP_FAILED"
+    message: "Failed to create backup of ${input.target_path}"
+    recovery:
+      suggestion: "Check file permissions and disk space"
+
+  error_write_failed:
+    type: error
+    code: "WRITE_FAILED"
+    message: "Failed to write to ${input.target_path}"
+    recovery:
+      suggestion: "Check file permissions and disk space"

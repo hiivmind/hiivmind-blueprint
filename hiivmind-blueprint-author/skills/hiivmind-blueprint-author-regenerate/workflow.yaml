@@ -1,0 +1,436 @@
+# hiivmind-blueprint-author-regenerate workflow
+#
+# Regenerate SKILL.md loader from workflow.yaml
+# Opposite of convert - takes workflow and generates SKILL.md
+
+name: hiivmind-blueprint-author-regenerate
+version: 1.0.0
+description: Regenerate SKILL.md from workflow.yaml
+
+definitions:
+  source: "hiivmind/hiivmind-blueprint-lib"
+  version: "v3.0.0"
+
+start_node: check_prerequisites
+
+initial_state:
+  phase: "start"
+  flags:
+    force: false
+  input:
+    workflow_path: null
+  loaded:
+    workflow_path: null
+    workflow: null
+  generated:
+    skill_content: null
+  prompts:
+    mode: "interactive"
+
+nodes:
+  # --- Prerequisites ---
+  check_prerequisites:
+    type: conditional
+    description: "Check if jq is available"
+    condition:
+      type: tool_check
+      tool: jq
+      capability: available
+    branches:
+      on_true: check_yq
+      on_false: error_missing_jq
+
+  check_yq:
+    type: conditional
+    description: "Check if yq is available"
+    condition:
+      type: tool_check
+      tool: yq
+      capability: available
+    branches:
+      on_true: parse_args
+      on_false: error_missing_yq
+
+  parse_args:
+    type: action
+    description: "Parse command arguments"
+    actions:
+      - type: run_command
+        interpreter: bash
+        command: |
+          args="${arguments:-}"
+          echo "$args" | grep -qE '--force' && echo "true" || echo "false"
+        store_in: force_flag
+      - type: run_command
+        interpreter: bash
+        command: |
+          args="${arguments:-}"
+          echo "$args" | tr ' ' '\n' | grep -v '^-' | head -1
+        store_in: path_arg
+      - type: mutate_state
+        operation: set
+        field: flags.force
+        value: "${force_flag == 'true'}"
+      - type: mutate_state
+        operation: set
+        field: input.workflow_path
+        value: "${path_arg}"
+    on_success: check_workflow_path
+    on_failure: check_workflow_path
+
+  # --- Load Workflow (inline from subflows/load-workflow.yaml) ---
+  check_workflow_path:
+    type: conditional
+    description: "Check if workflow path was provided"
+    condition:
+      type: state_check
+      field: input.workflow_path
+      operator: not_null
+    branches:
+      on_true: validate_workflow_path
+      on_false: search_for_workflow
+
+  validate_workflow_path:
+    type: conditional
+    description: "Verify workflow path exists"
+    condition:
+      type: path_check
+      path: "${input.workflow_path}"
+      check: is_file
+    branches:
+      on_true: set_workflow_path
+      on_false: error_file_not_found
+
+  set_workflow_path:
+    type: action
+    description: "Set workflow path from input"
+    actions:
+      - type: mutate_state
+        operation: set
+        field: loaded.workflow_path
+        value: "${input.workflow_path}"
+    on_success: read_workflow
+    on_failure: read_workflow
+
+  search_for_workflow:
+    type: action
+    description: "Search for workflow.yaml files"
+    actions:
+      - type: run_command
+        interpreter: bash
+        command: |
+          find . -name "workflow.yaml" -type f 2>/dev/null | \
+            grep -v "_deprecated" | grep -v "node_modules" | \
+            grep -v "commands/" | head -20
+        store_in: found_workflows
+    on_success: check_search_results
+    on_failure: prompt_for_path
+
+  check_search_results:
+    type: conditional
+    description: "Check if workflows were found"
+    condition:
+      type: evaluate_expression
+      expression: "found_workflows != '' && found_workflows != null"
+    branches:
+      on_true: prompt_workflow_selection
+      on_false: prompt_for_path
+
+  prompt_workflow_selection:
+    type: user_prompt
+    description: "Ask user to select workflow"
+    prompt:
+      question: "Which workflow should I regenerate SKILL.md from?"
+      header: "Select"
+      options_from_state: found_workflows
+      allow_other: true
+    on_response:
+      selected:
+        consequence:
+          - type: mutate_state
+            operation: set
+            field: loaded.workflow_path
+            value: "${response.value}"
+        next_node: read_workflow
+      other:
+        next_node: prompt_for_path
+
+  prompt_for_path:
+    type: user_prompt
+    description: "Ask user for workflow path"
+    prompt:
+      question: "Please provide the path to workflow.yaml:"
+      header: "Path"
+      mode: text_input
+      placeholder: "skills/my-skill/workflow.yaml"
+    on_response:
+      provided:
+        consequence:
+          - type: mutate_state
+            operation: set
+            field: loaded.workflow_path
+            value: "${response.text}"
+        next_node: validate_workflow_path
+
+  read_workflow:
+    type: action
+    description: "Read and parse workflow.yaml"
+    actions:
+      - type: local_file_ops
+        operation: read
+        path: "${loaded.workflow_path}"
+        store_in: workflow_content
+      - type: run_command
+        interpreter: bash
+        command: |
+          echo '${workflow_content}' | yq -o=json '.'
+        store_in: workflow_json
+      - type: mutate_state
+        operation: set
+        field: loaded.workflow
+        value: "${workflow_json | fromjson}"
+      - type: mutate_state
+        operation: set
+        field: phase
+        value: "generating"
+    on_success: generate_skill_md
+    on_failure: error_invalid_yaml
+
+  # --- Generate SKILL.md ---
+  generate_skill_md:
+    type: action
+    description: "Generate SKILL.md content from workflow"
+    actions:
+      - type: run_command
+        interpreter: bash
+        command: |
+          workflow='${loaded.workflow | tojson}'
+          name=$(echo "$workflow" | jq -r '.name // "unnamed"')
+          description=$(echo "$workflow" | jq -r '.description // ""')
+          version=$(echo "$workflow" | jq -r '.version // "1.0.0"')
+          lib_version=$(echo "$workflow" | jq -r '.definitions.version // "v3.0.0"')
+
+          # Get skill directory name
+          skill_dir=$(dirname "${loaded.workflow_path}")
+          skill_dir_name=$(basename "$skill_dir")
+
+          # Determine allowed tools from node types
+          allowed_tools="Read, Write, Bash, AskUserQuestion"
+
+          cat << 'SKILL'
+          ---
+          name: ${name}
+          description: >
+            ${description}
+          allowed-tools: ${allowed_tools}
+          ---
+
+          # ${name}
+
+          Execute this workflow deterministically. State persists in conversation context.
+
+          ---
+
+          ## Prerequisites
+
+          **Check these dependencies before execution:**
+
+          | Tool | Required | Check | Install |
+          |------|----------|-------|---------|
+          | \`jq\` | **Mandatory** | \`command -v jq\` | \`brew install jq\` / \`apt install jq\` |
+          | \`yq\` | **Mandatory** | \`command -v yq\` | \`brew install yq\` / [github.com/mikefarah/yq](https://github.com/mikefarah/yq) |
+
+          If mandatory tools are missing, exit with error listing the install commands above.
+
+          ---
+
+          ## Initial State - Paths
+
+          Detect and set path variables:
+
+          \`\`\`pseudocode
+          workflow_path = "\${CLAUDE_PLUGIN_ROOT}/skills/${skill_dir_name}/workflow.yaml"
+
+          if file_exists(workflow_path):
+              state.workflow_available = true
+              state.workflow_path = workflow_path
+          else:
+              state.workflow_available = false
+              # ERROR: workflow.yaml is required
+          \`\`\`
+
+          ---
+
+          ## Usage
+
+          This skill is invoked via the Skill tool:
+
+          \`\`\`
+          Skill(skill: "${name}")
+          Skill(skill: "${name}", args: "[arguments]")
+          \`\`\`
+
+          ---
+
+          ## Execution Protocol
+
+          **See:** \`.hiivmind/blueprint/engine_entrypoint.md\` (Engine v1.0.0) for full protocol.
+
+          ### Quick Summary
+
+          1. **Bootstrap:** Extract \`${lib_version}\` from workflow.yaml
+          2. **Fetch Semantics:** Load execution rules from hiivmind-blueprint-lib@${lib_version}
+          3. **Load Local Files:** Read and validate workflow.yaml
+          4. **Execute:** Run workflow per traversal semantics (initialize → execute → complete)
+
+          ---
+
+          ## Reference Documentation
+
+          - **Type Definitions:** [hiivmind-blueprint-lib](https://github.com/hiivmind/hiivmind-blueprint-lib/tree/${lib_version})
+          SKILL
+        store_in: generated.skill_content
+    on_success: confirm_write
+    on_failure: error_generation_failed
+
+  confirm_write:
+    type: conditional
+    description: "Check if force flag is set"
+    condition:
+      type: state_check
+      field: flags.force
+      operator: equals
+      value: true
+    branches:
+      on_true: write_skill_md
+      on_false: prompt_confirm_write
+
+  prompt_confirm_write:
+    type: user_prompt
+    description: "Confirm SKILL.md write"
+    prompt:
+      question: "Write regenerated SKILL.md?"
+      header: "Confirm"
+      options:
+        - id: yes
+          label: "Yes, write"
+          description: "Create/replace SKILL.md"
+        - id: preview
+          label: "Preview"
+          description: "Show content first"
+        - id: cancel
+          label: "Cancel"
+          description: "Don't write"
+    on_response:
+      yes:
+        next_node: write_skill_md
+      preview:
+        next_node: show_preview
+      cancel:
+        next_node: success_cancelled
+
+  show_preview:
+    type: action
+    description: "Show generated content preview"
+    actions:
+      - type: display
+        format: markdown
+        content: |
+          ## Preview: SKILL.md
+
+          ```markdown
+          ${generated.skill_content}
+          ```
+    on_success: prompt_after_preview
+    on_failure: prompt_after_preview
+
+  prompt_after_preview:
+    type: user_prompt
+    description: "Confirm after preview"
+    prompt:
+      question: "Write this SKILL.md?"
+      header: "Write"
+      options:
+        - id: yes
+          label: "Yes"
+          description: "Write the file"
+        - id: no
+          label: "No"
+          description: "Cancel"
+    on_response:
+      yes:
+        next_node: write_skill_md
+      no:
+        next_node: success_cancelled
+
+  write_skill_md:
+    type: action
+    description: "Write SKILL.md file"
+    actions:
+      - type: run_command
+        interpreter: bash
+        command: |
+          dirname "${loaded.workflow_path}"
+        store_in: skill_dir
+      - type: run_command
+        interpreter: bash
+        command: |
+          skill_path="${skill_dir}/SKILL.md"
+          if [ -f "$skill_path" ]; then
+            cp "$skill_path" "${skill_path}.bak.$(date +%Y%m%d_%H%M%S)"
+            echo "backed_up"
+          else
+            echo "new"
+          fi
+        store_in: write_mode
+      - type: local_file_ops
+        operation: write
+        path: "${skill_dir}/SKILL.md"
+        content: "${generated.skill_content}"
+    on_success: success_complete
+    on_failure: error_write_failed
+
+endings:
+  success_complete:
+    type: success
+    message: |
+      ## SKILL.md Regenerated
+
+      **File:** ${skill_dir}/SKILL.md
+      **Mode:** ${write_mode}
+
+      The SKILL.md loader has been regenerated from workflow.yaml.
+
+  success_cancelled:
+    type: success
+    message: "Regeneration cancelled"
+
+  error_missing_jq:
+    type: error
+    code: "MISSING_JQ"
+    message: "Required tool 'jq' is not installed"
+
+  error_missing_yq:
+    type: error
+    code: "MISSING_YQ"
+    message: "Required tool 'yq' is not installed"
+
+  error_file_not_found:
+    type: error
+    code: "FILE_NOT_FOUND"
+    message: "workflow.yaml not found: ${input.workflow_path}"
+
+  error_invalid_yaml:
+    type: error
+    code: "INVALID_YAML"
+    message: "Could not parse workflow.yaml"
+
+  error_generation_failed:
+    type: error
+    code: "GENERATION_FAILED"
+    message: "Failed to generate SKILL.md content"
+
+  error_write_failed:
+    type: error
+    code: "WRITE_FAILED"
+    message: "Failed to write SKILL.md"

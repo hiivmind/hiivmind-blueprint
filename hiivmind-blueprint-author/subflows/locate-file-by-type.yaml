@@ -1,0 +1,232 @@
+# locate-file-by-type.yaml
+# Layer 0: Atomic Subflow
+#
+# Locate a file by type with intelligent fallback:
+# 1. If user provided a path, validate and use it
+# 2. Otherwise, glob for matching files
+# 3. If single match, use it; if multiple, prompt selection
+# 4. If no matches, prompt user for path
+#
+# This subflow handles the common pattern of finding a specific file type
+# (SKILL.md, workflow.yaml, etc.) that appears in many authoring skills.
+
+name: locate-file-by-type
+version: 1.0.0
+description: Locate a file by type with user fallback
+
+# Interface declaration for subflow composition
+input_schema:
+  file_type:
+    type: string
+    required: true
+    description: "Human-readable file type name for prompts (e.g., 'SKILL.md', 'workflow.yaml')"
+  search_pattern:
+    type: string
+    required: true
+    description: "Glob pattern to find files (e.g., '**/SKILL.md', '**/workflow.yaml')"
+  user_path:
+    type: string
+    required: false
+    description: "Optional path provided by user (skips search if valid)"
+  search_root:
+    type: string
+    required: false
+    default: "."
+    description: "Root directory for glob search"
+
+output_schema:
+  file_path:
+    type: string
+    description: "Resolved absolute path to the file"
+  file_content:
+    type: string
+    description: "Content of the located file"
+  source:
+    type: string
+    enum: ["user_provided", "single_match", "user_selected", "user_entered"]
+    description: "How the file was located"
+
+definitions:
+  source: "hiivmind/hiivmind-blueprint-lib"
+  version: "v3.0.0"
+
+start_node: check_user_path
+
+initial_state:
+  file_path: null
+  file_content: null
+  source: null
+  found_files: []
+
+nodes:
+  check_user_path:
+    type: conditional
+    description: "Check if user provided a path"
+    condition:
+      type: state_check
+      field: input.user_path
+      operator: not_null
+    branches:
+      on_true: validate_user_path
+      on_false: glob_search
+
+  validate_user_path:
+    type: conditional
+    description: "Verify the user-provided path exists"
+    condition:
+      type: path_check
+      path: "${input.user_path}"
+      check: is_file
+    branches:
+      on_true: read_user_file
+      on_false: error_invalid_path
+
+  read_user_file:
+    type: action
+    description: "Read the user-provided file"
+    actions:
+      - type: local_file_ops
+        operation: read
+        path: "${input.user_path}"
+        store_in: file_content
+      - type: mutate_state
+        operation: set
+        field: file_path
+        value: "${input.user_path}"
+      - type: mutate_state
+        operation: set
+        field: source
+        value: "user_provided"
+    on_success: success
+    on_failure: error_read_failed
+
+  glob_search:
+    type: action
+    description: "Search for files matching the pattern"
+    actions:
+      - type: run_command
+        interpreter: bash
+        command: |
+          find ${input.search_root:-"."} -name "${input.search_pattern##*/}" -type f 2>/dev/null | head -20
+        store_in: found_files_raw
+    on_success: parse_glob_results
+    on_failure: ask_user_for_path
+
+  parse_glob_results:
+    type: action
+    description: "Parse glob results into array"
+    actions:
+      - type: mutate_state
+        operation: set
+        field: found_files
+        value: "${found_files_raw | split('\n') | compact}"
+    on_success: check_result_count
+    on_failure: ask_user_for_path
+
+  check_result_count:
+    type: conditional
+    description: "Determine action based on number of matches"
+    condition:
+      type: evaluate_expression
+      expression: "len(found_files)"
+    branches:
+      "0": ask_user_for_path
+      "1": use_single_match
+      default: prompt_selection
+
+  use_single_match:
+    type: action
+    description: "Use the single matched file"
+    actions:
+      - type: mutate_state
+        operation: set
+        field: file_path
+        value: "${found_files[0]}"
+      - type: local_file_ops
+        operation: read
+        path: "${found_files[0]}"
+        store_in: file_content
+      - type: mutate_state
+        operation: set
+        field: source
+        value: "single_match"
+    on_success: success
+    on_failure: error_read_failed
+
+  prompt_selection:
+    type: user_prompt
+    description: "Ask user to select from multiple matches"
+    prompt:
+      question: "Multiple ${input.file_type} files found. Which one?"
+      header: "Select"
+      options_from: found_files
+      allow_other: true
+      other_label: "Enter different path"
+    on_response:
+      selected:
+        consequence:
+          - type: mutate_state
+            operation: set
+            field: file_path
+            value: "${response.value}"
+          - type: mutate_state
+            operation: set
+            field: source
+            value: "user_selected"
+        next_node: read_selected_file
+      other:
+        next_node: ask_user_for_path
+
+  read_selected_file:
+    type: action
+    description: "Read the user-selected file"
+    actions:
+      - type: local_file_ops
+        operation: read
+        path: "${file_path}"
+        store_in: file_content
+    on_success: success
+    on_failure: error_read_failed
+
+  ask_user_for_path:
+    type: user_prompt
+    description: "No files found, ask user for path"
+    prompt:
+      question: "No ${input.file_type} found in ${input.search_root}. Please provide the path:"
+      header: "Path"
+      mode: text_input
+      placeholder: "path/to/${input.file_type}"
+    on_response:
+      provided:
+        consequence:
+          - type: mutate_state
+            operation: set
+            field: input.user_path
+            value: "${response.text}"
+          - type: mutate_state
+            operation: set
+            field: source
+            value: "user_entered"
+        next_node: validate_user_path
+
+endings:
+  success:
+    type: success
+    message: "Located ${input.file_type}"
+    summary:
+      file_path: "${file_path}"
+      source: "${source}"
+
+  error_invalid_path:
+    type: error
+    code: "INVALID_PATH"
+    message: "File not found: ${input.user_path}"
+    recovery:
+      suggestion: "Check the path and try again"
+
+  error_read_failed:
+    type: error
+    code: "READ_FAILED"
+    message: "Failed to read file: ${file_path}"
+    recovery:
+      suggestion: "Check file permissions"

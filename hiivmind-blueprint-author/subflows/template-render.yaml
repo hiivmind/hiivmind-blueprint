@@ -1,0 +1,221 @@
+# template-render.yaml
+# Layer 0: Atomic Subflow
+#
+# Load a template file and substitute placeholders with provided values.
+# Supports {{placeholder}} syntax (mustache-style) and provides
+# structured variable substitution.
+#
+# Used by: safe-write-files, skill generation, gateway generation
+
+name: template-render
+version: 1.0.0
+description: Load template and substitute placeholders
+
+# Interface declaration for subflow composition
+input_schema:
+  template_path:
+    type: string
+    required: true
+    description: "Path to template file"
+  variables:
+    type: object
+    required: true
+    description: "Map of placeholder names to values"
+  conditional_sections:
+    type: object
+    required: false
+    default: {}
+    description: "Map of section names to boolean (enables/disables {{#section}}...{{/section}})"
+  output_format:
+    type: string
+    enum: ["string", "file"]
+    required: false
+    default: "string"
+    description: "Whether to return rendered content or write to file"
+  output_path:
+    type: string
+    required: false
+    description: "Path to write rendered content (required if output_format is 'file')"
+
+output_schema:
+  rendered:
+    type: string
+    description: "Rendered template content"
+  variables_used:
+    type: array
+    items: string
+    description: "List of variables that were substituted"
+  missing_variables:
+    type: array
+    items: string
+    description: "Variables in template that weren't provided"
+
+definitions:
+  source: "hiivmind/hiivmind-blueprint-lib"
+  version: "v3.0.0"
+
+start_node: load_template
+
+initial_state:
+  template_content: ""
+  rendered: ""
+  variables_used: []
+  missing_variables: []
+
+nodes:
+  load_template:
+    type: action
+    description: "Load template file content"
+    actions:
+      - type: local_file_ops
+        operation: read
+        path: "${input.template_path}"
+        store_in: template_content
+    on_success: extract_placeholders
+    on_failure: error_template_not_found
+
+  extract_placeholders:
+    type: action
+    description: "Extract placeholder names from template"
+    actions:
+      - type: run_command
+        interpreter: bash
+        command: |
+          # Extract all {{placeholder}} patterns
+          echo '${template_content}' | grep -oE '\{\{[a-zA-Z_][a-zA-Z0-9_]*\}\}' | \
+            sed 's/{{//g; s/}}//g' | sort -u | tr '\n' ',' | sed 's/,$//'
+        store_in: placeholders_found
+    on_success: substitute_variables
+    on_failure: substitute_variables
+
+  substitute_variables:
+    type: action
+    description: "Substitute variables into template"
+    actions:
+      - type: run_command
+        interpreter: bash
+        command: |
+          # Start with template content
+          result='${template_content}'
+
+          # Substitute each provided variable
+          # This is done via jq to properly handle the variables object
+          vars_json='${input.variables | tojson}'
+
+          # Use a bash loop with jq to do substitutions
+          for key in $(echo "$vars_json" | jq -r 'keys[]'); do
+            value=$(echo "$vars_json" | jq -r ".[\"$key\"]")
+            # Escape special characters for sed
+            escaped_value=$(printf '%s\n' "$value" | sed 's/[&/\]/\\&/g')
+            result=$(echo "$result" | sed "s/{{${key}}}/${escaped_value}/g")
+          done
+
+          echo "$result"
+        store_in: rendered_content
+    on_success: process_conditional_sections
+    on_failure: error_substitution_failed
+
+  process_conditional_sections:
+    type: action
+    description: "Process conditional sections ({{#section}}...{{/section}})"
+    actions:
+      - type: run_command
+        interpreter: bash
+        command: |
+          result='${rendered_content}'
+          sections_json='${input.conditional_sections | tojson}'
+
+          # For each conditional section, either keep or remove content
+          for section in $(echo "$sections_json" | jq -r 'keys[]'); do
+            enabled=$(echo "$sections_json" | jq -r ".[\"$section\"]")
+            if [ "$enabled" = "true" ]; then
+              # Remove section markers but keep content
+              result=$(echo "$result" | sed "s/{{#${section}}}//g; s/{{\\/${section}}}//g")
+            else
+              # Remove entire section including content
+              # This is a simplified version - full mustache needs proper parsing
+              result=$(echo "$result" | sed "/{{#${section}}}/,/{{\\/${section}}}/d")
+            fi
+          done
+
+          echo "$result"
+        store_in: final_content
+    on_success: check_missing_variables
+    on_failure: check_missing_variables
+
+  check_missing_variables:
+    type: action
+    description: "Check for unsubstituted placeholders"
+    actions:
+      - type: run_command
+        interpreter: bash
+        command: |
+          # Find any remaining {{placeholder}} patterns
+          echo '${final_content}' | grep -oE '\{\{[a-zA-Z_][a-zA-Z0-9_]*\}\}' | \
+            sed 's/{{//g; s/}}//g' | sort -u | tr '\n' ',' | sed 's/,$//'
+        store_in: missing_vars
+      - type: mutate_state
+        operation: set
+        field: rendered
+        value: "${final_content}"
+    on_success: route_output
+    on_failure: route_output
+
+  route_output:
+    type: conditional
+    description: "Route to file output or return"
+    condition:
+      type: state_check
+      field: input.output_format
+      operator: equals
+      value: "file"
+    branches:
+      on_true: write_to_file
+      on_false: success_string
+
+  write_to_file:
+    type: action
+    description: "Write rendered content to file"
+    actions:
+      - type: run_command
+        interpreter: bash
+        command: |
+          mkdir -p "$(dirname "${input.output_path}")"
+        description: "Ensure parent directory exists"
+      - type: local_file_ops
+        operation: write
+        path: "${input.output_path}"
+        content: "${final_content}"
+    on_success: success_file
+    on_failure: error_write_failed
+
+endings:
+  success_string:
+    type: success
+    message: "Template rendered successfully"
+    summary:
+      rendered: "${rendered}"
+      missing_variables: "${missing_vars | split(',') | compact}"
+
+  success_file:
+    type: success
+    message: "Template rendered and written to ${input.output_path}"
+    summary:
+      rendered: "${rendered}"
+      output_path: "${input.output_path}"
+      missing_variables: "${missing_vars | split(',') | compact}"
+
+  error_template_not_found:
+    type: error
+    code: "TEMPLATE_NOT_FOUND"
+    message: "Template file not found: ${input.template_path}"
+
+  error_substitution_failed:
+    type: error
+    code: "SUBSTITUTION_FAILED"
+    message: "Failed to substitute variables in template"
+
+  error_write_failed:
+    type: error
+    code: "WRITE_FAILED"
+    message: "Failed to write rendered template to: ${input.output_path}"

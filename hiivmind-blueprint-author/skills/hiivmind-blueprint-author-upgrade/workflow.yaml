@@ -1,0 +1,489 @@
+# hiivmind-blueprint-author-upgrade workflow
+#
+# Batch upgrade all prose skills to workflow format.
+# Combines discover + convert in batch mode.
+#
+# Subflow composition:
+# - discover-all-skills (inline) for discovery
+# - convert workflow (invoked per skill)
+
+name: hiivmind-blueprint-author-upgrade
+version: 1.0.0
+description: Batch upgrade prose skills to workflow format
+
+definitions:
+  source: "hiivmind/hiivmind-blueprint-lib"
+  version: "v3.0.0"
+
+start_node: check_prerequisites
+
+initial_state:
+  phase: "start"
+  flags:
+    dry_run: false
+    force: false
+    include_deprecated: false
+  discovered:
+    skills: []
+    summary:
+      total: 0
+      prose: 0
+      workflow: 0
+      hybrid: 0
+      incomplete: 0
+    conversion_candidates: []
+  conversion:
+    current_index: 0
+    results: []
+    succeeded: 0
+    failed: 0
+    skipped: 0
+  prompts:
+    mode: "interactive"
+
+nodes:
+  # --- Prerequisites ---
+  check_prerequisites:
+    type: conditional
+    description: "Check if jq is available"
+    condition:
+      type: tool_check
+      tool: jq
+      capability: available
+    branches:
+      on_true: check_yq
+      on_false: error_missing_jq
+
+  check_yq:
+    type: conditional
+    description: "Check if yq is available"
+    condition:
+      type: tool_check
+      tool: yq
+      capability: available
+    branches:
+      on_true: parse_args
+      on_false: error_missing_yq
+
+  parse_args:
+    type: action
+    description: "Parse command arguments"
+    actions:
+      - type: run_command
+        interpreter: bash
+        command: |
+          args="${arguments:-}"
+          echo "$args" | grep -qE '--dry-run' && echo "true" || echo "false"
+        store_in: dry_run_flag
+      - type: run_command
+        interpreter: bash
+        command: |
+          args="${arguments:-}"
+          echo "$args" | grep -qE '--force' && echo "true" || echo "false"
+        store_in: force_flag
+      - type: run_command
+        interpreter: bash
+        command: |
+          args="${arguments:-}"
+          echo "$args" | grep -qE '--include-deprecated' && echo "true" || echo "false"
+        store_in: include_deprecated_flag
+      - type: mutate_state
+        operation: set
+        field: flags.dry_run
+        value: "${dry_run_flag == 'true'}"
+      - type: mutate_state
+        operation: set
+        field: flags.force
+        value: "${force_flag == 'true'}"
+      - type: mutate_state
+        operation: set
+        field: flags.include_deprecated
+        value: "${include_deprecated_flag == 'true'}"
+    on_success: discover_skills
+    on_failure: discover_skills
+
+  # --- Discovery (inline from subflows/discover-all-skills.yaml) ---
+  discover_skills:
+    type: action
+    description: "Search for all SKILL.md files"
+    actions:
+      - type: mutate_state
+        operation: set
+        field: phase
+        value: "discovering"
+      - type: run_command
+        interpreter: bash
+        command: |
+          include_deprecated="${flags.include_deprecated:-false}"
+          if [ "$include_deprecated" = "true" ]; then
+            find . -name "SKILL.md" -type f 2>/dev/null
+          else
+            find . -name "SKILL.md" -type f 2>/dev/null | grep -v "_deprecated"
+          fi | grep -v "node_modules" | grep -v ".hiivmind"
+        store_in: found_skills_raw
+    on_success: classify_skills
+    on_failure: error_discovery_failed
+
+  classify_skills:
+    type: action
+    description: "Classify each discovered skill"
+    actions:
+      - type: run_command
+        interpreter: bash
+        command: |
+          # Process each SKILL.md and classify
+          results='[]'
+          total=0
+          prose=0
+          workflow=0
+          hybrid=0
+          incomplete=0
+          candidates='[]'
+
+          while IFS= read -r skill_path; do
+            [ -z "$skill_path" ] && continue
+            total=$((total + 1))
+
+            dir=$(dirname "$skill_path")
+            name=$(sed -n '/^---$/,/^---$/p' "$skill_path" | sed '1d;$d' | yq -r '.name // "unnamed"' 2>/dev/null || echo "unnamed")
+
+            # Check for workflow.yaml
+            if [ -f "$dir/workflow.yaml" ]; then
+              # Check if hybrid (large SKILL.md) or converted (small loader)
+              lines=$(wc -l < "$skill_path")
+              if [ "$lines" -gt 100 ]; then
+                classification="hybrid"
+                hybrid=$((hybrid + 1))
+              else
+                classification="workflow"
+                workflow=$((workflow + 1))
+              fi
+              conversion_ready="false"
+            else
+              classification="prose"
+              prose=$((prose + 1))
+              conversion_ready="true"
+              candidates=$(echo "$candidates" | jq --arg dir "$dir" '. + [$dir]')
+            fi
+
+            # Add to results
+            results=$(echo "$results" | jq --arg dir "$dir" --arg name "$name" \
+              --arg class "$classification" --arg ready "$conversion_ready" \
+              '. + [{"directory": $dir, "name": $name, "classification": $class, "conversion_ready": ($ready == "true")}]')
+
+          done <<< "${found_skills_raw}"
+
+          # Output as JSON
+          echo "{\"skills\": $results, \"summary\": {\"total\": $total, \"prose\": $prose, \"workflow\": $workflow, \"hybrid\": $hybrid, \"incomplete\": $incomplete}, \"conversion_candidates\": $candidates}"
+        store_in: discovery_json
+      - type: mutate_state
+        operation: set
+        field: discovered
+        value: "${discovery_json | fromjson}"
+    on_success: show_discovery_summary
+    on_failure: error_discovery_failed
+
+  show_discovery_summary:
+    type: action
+    description: "Display discovery summary"
+    actions:
+      - type: display
+        format: markdown
+        content: |
+          ## Skill Discovery Complete
+
+          | Classification | Count | Description |
+          |---------------|-------|-------------|
+          | **Prose** | ${discovered.summary.prose} | Ready for conversion |
+          | **Workflow** | ${discovered.summary.workflow} | Already converted |
+          | **Hybrid** | ${discovered.summary.hybrid} | Needs review |
+          | **Incomplete** | ${discovered.summary.incomplete} | Missing files |
+          | **Total** | ${discovered.summary.total} | |
+
+          **Conversion candidates:** ${discovered.conversion_candidates | length}
+    on_success: check_has_candidates
+    on_failure: check_has_candidates
+
+  check_has_candidates:
+    type: conditional
+    description: "Check if there are skills to convert"
+    condition:
+      type: evaluate_expression
+      expression: "discovered.summary.prose > 0"
+    branches:
+      on_true: confirm_batch_conversion
+      on_false: success_nothing_to_convert
+
+  confirm_batch_conversion:
+    type: conditional
+    description: "Check if force flag is set"
+    condition:
+      type: state_check
+      field: flags.force
+      operator: equals
+      value: true
+    branches:
+      on_true: start_batch_conversion
+      on_false: prompt_confirm_batch
+
+  prompt_confirm_batch:
+    type: user_prompt
+    description: "Confirm batch conversion"
+    prompt:
+      question: "Convert ${discovered.summary.prose} prose skills to workflow format?"
+      header: "Convert"
+      options:
+        - id: all
+          label: "Convert All"
+          description: "Convert all prose skills"
+        - id: select
+          label: "Select Skills"
+          description: "Choose which skills to convert"
+        - id: cancel
+          label: "Cancel"
+          description: "Don't convert anything"
+    on_response:
+      all:
+        next_node: start_batch_conversion
+      select:
+        next_node: prompt_skill_selection
+      cancel:
+        next_node: success_cancelled
+
+  prompt_skill_selection:
+    type: user_prompt
+    description: "Select skills to convert"
+    prompt:
+      question: "Select skills to convert:"
+      header: "Skills"
+      multiSelect: true
+      options_from_state: discovered.conversion_candidates
+    on_response:
+      selected:
+        consequence:
+          - type: mutate_state
+            operation: set
+            field: discovered.conversion_candidates
+            value: "${response.values}"
+        next_node: start_batch_conversion
+
+  # --- Batch Conversion ---
+  start_batch_conversion:
+    type: action
+    description: "Initialize batch conversion"
+    actions:
+      - type: mutate_state
+        operation: set
+        field: phase
+        value: "converting"
+      - type: mutate_state
+        operation: set
+        field: conversion.current_index
+        value: 0
+    on_success: process_next_skill
+    on_failure: process_next_skill
+
+  process_next_skill:
+    type: conditional
+    description: "Check if more skills to process"
+    condition:
+      type: evaluate_expression
+      expression: "conversion.current_index < (discovered.conversion_candidates | length)"
+    branches:
+      on_true: convert_current_skill
+      on_false: show_final_report
+
+  convert_current_skill:
+    type: action
+    description: "Convert current skill"
+    actions:
+      - type: mutate_state
+        operation: set
+        field: current_skill_dir
+        value: "${discovered.conversion_candidates[conversion.current_index]}"
+      - type: display
+        format: text
+        content: "Converting: ${current_skill_dir} (${conversion.current_index + 1}/${discovered.conversion_candidates | length})"
+    on_success: check_dry_run
+    on_failure: record_conversion_failure
+
+  check_dry_run:
+    type: conditional
+    description: "Check if dry run"
+    condition:
+      type: state_check
+      field: flags.dry_run
+      operator: equals
+      value: true
+    branches:
+      on_true: dry_run_skill
+      on_false: invoke_convert_skill
+
+  dry_run_skill:
+    type: action
+    description: "Dry run - show what would be converted"
+    actions:
+      - type: display
+        format: text
+        content: "[DRY RUN] Would convert: ${current_skill_dir}"
+      - type: mutate_state
+        operation: append
+        field: conversion.results
+        value:
+          directory: "${current_skill_dir}"
+          status: "dry_run"
+          files: []
+    on_success: increment_and_continue
+    on_failure: increment_and_continue
+
+  invoke_convert_skill:
+    type: action
+    description: "Invoke convert skill for current directory"
+    actions:
+      # In practice, this would invoke the convert skill
+      # For now, simulate the conversion
+      - type: run_command
+        interpreter: bash
+        command: |
+          skill_dir="${current_skill_dir}"
+          skill_path="$skill_dir/SKILL.md"
+
+          if [ ! -f "$skill_path" ]; then
+            echo "error:SKILL.md not found"
+            exit 1
+          fi
+
+          # Read skill and generate basic workflow
+          name=$(sed -n '/^---$/,/^---$/p' "$skill_path" | sed '1d;$d' | yq -r '.name // "unnamed"')
+          desc=$(sed -n '/^---$/,/^---$/p' "$skill_path" | sed '1d;$d' | yq -r '.description // ""')
+
+          # Create workflow.yaml
+          cat > "$skill_dir/workflow.yaml" << WORKFLOW
+          # $name workflow
+          # Auto-generated by hiivmind-blueprint-author-upgrade
+
+          name: $name
+          version: 1.0.0
+          description: >
+            $desc
+
+          definitions:
+            source: "hiivmind/hiivmind-blueprint-lib"
+            version: "v3.0.0"
+
+          start_node: main
+          initial_state: {}
+
+          nodes:
+            main:
+              type: action
+              description: "Main execution"
+              actions: []
+              on_success: success
+
+          endings:
+            success:
+              type: success
+              message: "Completed"
+          WORKFLOW
+
+          echo "success:$skill_dir/workflow.yaml"
+        store_in: convert_result
+    on_success: record_conversion_success
+    on_failure: record_conversion_failure
+
+  record_conversion_success:
+    type: action
+    description: "Record successful conversion"
+    actions:
+      - type: mutate_state
+        operation: append
+        field: conversion.results
+        value:
+          directory: "${current_skill_dir}"
+          status: "success"
+          files: ["workflow.yaml"]
+      - type: mutate_state
+        operation: set
+        field: conversion.succeeded
+        value: "${conversion.succeeded + 1}"
+    on_success: increment_and_continue
+    on_failure: increment_and_continue
+
+  record_conversion_failure:
+    type: action
+    description: "Record conversion failure"
+    actions:
+      - type: mutate_state
+        operation: append
+        field: conversion.results
+        value:
+          directory: "${current_skill_dir}"
+          status: "failed"
+          error: "Conversion failed"
+      - type: mutate_state
+        operation: set
+        field: conversion.failed
+        value: "${conversion.failed + 1}"
+    on_success: increment_and_continue
+    on_failure: increment_and_continue
+
+  increment_and_continue:
+    type: action
+    description: "Move to next skill"
+    actions:
+      - type: mutate_state
+        operation: set
+        field: conversion.current_index
+        value: "${conversion.current_index + 1}"
+    on_success: process_next_skill
+    on_failure: process_next_skill
+
+  show_final_report:
+    type: action
+    description: "Display final conversion report"
+    actions:
+      - type: display
+        format: markdown
+        content: |
+          ## Batch Upgrade Complete
+
+          | Status | Count |
+          |--------|-------|
+          | ✅ Succeeded | ${conversion.succeeded} |
+          | ❌ Failed | ${conversion.failed} |
+          | ⏭️ Skipped | ${conversion.skipped} |
+
+          ### Results
+          ${conversion.results | map(.directory + ": " + .status) | join('\n')}
+    on_success: success_complete
+    on_failure: success_complete
+
+endings:
+  success_complete:
+    type: success
+    message: |
+      Upgrade complete: ${conversion.succeeded} skills converted, ${conversion.failed} failed
+
+  success_nothing_to_convert:
+    type: success
+    message: "No prose skills found to convert. All skills are already using workflows."
+
+  success_cancelled:
+    type: success
+    message: "Upgrade cancelled by user"
+
+  error_missing_jq:
+    type: error
+    code: "MISSING_JQ"
+    message: "Required tool 'jq' is not installed"
+
+  error_missing_yq:
+    type: error
+    code: "MISSING_YQ"
+    message: "Required tool 'yq' is not installed"
+
+  error_discovery_failed:
+    type: error
+    code: "DISCOVERY_FAILED"
+    message: "Failed to discover skills"

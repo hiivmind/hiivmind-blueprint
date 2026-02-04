@@ -1,0 +1,411 @@
+# load-workflow.yaml
+# Layer 1: Composite Subflow
+#
+# Load and validate a workflow.yaml file with full prerequisites checking.
+# Composes: prerequisites-check → locate-file-by-type → validate-yaml-structure
+#
+# This is the standard entry point for any skill that needs to read
+# and process a workflow.yaml file.
+
+name: load-workflow
+version: 1.0.0
+description: Load and validate a workflow.yaml file with prerequisites
+
+# Interface declaration for subflow composition
+input_schema:
+  workflow_path:
+    type: string
+    required: false
+    description: "Path to workflow.yaml (optional, will discover if not provided)"
+  search_root:
+    type: string
+    required: false
+    default: "."
+    description: "Root directory to search for workflow.yaml if path not provided"
+  validate_structure:
+    type: boolean
+    required: false
+    default: true
+    description: "Whether to validate workflow structure"
+
+output_schema:
+  workflow_path:
+    type: string
+    description: "Resolved path to the workflow.yaml file"
+  workflow_content:
+    type: string
+    description: "Raw content of the workflow.yaml file"
+  workflow:
+    type: object
+    description: "Parsed workflow object"
+  metadata:
+    type: object
+    properties:
+      name: string
+      version: string
+      node_count: integer
+      ending_count: integer
+    description: "Workflow metadata extracted from content"
+
+# Subflow composition declarations
+composes:
+  - ref: subflows/prerequisites-check.yaml
+    as: prerequisites
+  - ref: subflows/locate-file-by-type.yaml
+    as: locate
+  - ref: subflows/validate-yaml-structure.yaml
+    as: validate
+
+definitions:
+  source: "hiivmind/hiivmind-blueprint-lib"
+  version: "v3.0.0"
+
+start_node: check_prerequisites
+
+initial_state:
+  workflow_path: null
+  workflow_content: null
+  workflow: null
+  metadata:
+    name: null
+    version: null
+    node_count: 0
+    ending_count: 0
+  tools_status: {}
+
+nodes:
+  # --- Prerequisites Check ---
+  check_prerequisites:
+    type: conditional
+    description: "Check if jq is available"
+    condition:
+      type: tool_check
+      tool: jq
+      capability: available
+    branches:
+      on_true: check_yq
+      on_false: error_missing_jq
+
+  check_yq:
+    type: conditional
+    description: "Check if yq is available"
+    condition:
+      type: tool_check
+      tool: yq
+      capability: available
+    branches:
+      on_true: prerequisites_passed
+      on_false: error_missing_yq
+
+  prerequisites_passed:
+    type: action
+    description: "Record prerequisites as passed"
+    actions:
+      - type: mutate_state
+        operation: set
+        field: tools_status
+        value:
+          jq: true
+          yq: true
+    on_success: check_user_path
+    on_failure: check_user_path
+
+  # --- Locate File ---
+  check_user_path:
+    type: conditional
+    description: "Check if user provided a workflow path"
+    condition:
+      type: state_check
+      field: input.workflow_path
+      operator: not_null
+    branches:
+      on_true: validate_user_path
+      on_false: search_for_workflow
+
+  validate_user_path:
+    type: conditional
+    description: "Verify the provided path exists"
+    condition:
+      type: path_check
+      path: "${input.workflow_path}"
+      check: is_file
+    branches:
+      on_true: set_workflow_path
+      on_false: error_file_not_found
+
+  set_workflow_path:
+    type: action
+    description: "Set workflow path from user input"
+    actions:
+      - type: mutate_state
+        operation: set
+        field: workflow_path
+        value: "${input.workflow_path}"
+    on_success: read_workflow_file
+    on_failure: read_workflow_file
+
+  search_for_workflow:
+    type: action
+    description: "Search for workflow.yaml files"
+    actions:
+      - type: run_command
+        interpreter: bash
+        command: |
+          find ${input.search_root:-"."} -name "workflow.yaml" -type f 2>/dev/null | \
+            grep -v "_deprecated" | grep -v "node_modules" | head -20
+        store_in: found_workflows
+    on_success: check_search_results
+    on_failure: prompt_for_path
+
+  check_search_results:
+    type: conditional
+    description: "Check if any workflows were found"
+    condition:
+      type: evaluate_expression
+      expression: "found_workflows != '' && found_workflows != null"
+    branches:
+      on_true: parse_search_results
+      on_false: prompt_for_path
+
+  parse_search_results:
+    type: action
+    description: "Parse found workflows into array"
+    actions:
+      - type: run_command
+        interpreter: bash
+        command: |
+          echo '${found_workflows}' | head -1
+        store_in: first_workflow
+      - type: run_command
+        interpreter: bash
+        command: |
+          echo '${found_workflows}' | wc -l | tr -d ' '
+        store_in: workflow_count
+    on_success: route_by_count
+    on_failure: prompt_for_path
+
+  route_by_count:
+    type: conditional
+    description: "Route based on number of workflows found"
+    condition:
+      type: evaluate_expression
+      expression: "workflow_count == '1'"
+    branches:
+      on_true: use_single_workflow
+      on_false: prompt_workflow_selection
+
+  use_single_workflow:
+    type: action
+    description: "Use the single found workflow"
+    actions:
+      - type: mutate_state
+        operation: set
+        field: workflow_path
+        value: "${first_workflow}"
+    on_success: read_workflow_file
+    on_failure: error_read_failed
+
+  prompt_workflow_selection:
+    type: user_prompt
+    description: "Ask user to select from multiple workflows"
+    prompt:
+      question: "Multiple workflow.yaml files found. Which one should I load?"
+      header: "Select"
+      options_from_state: found_workflows
+      allow_other: true
+      other_label: "Enter different path"
+    on_response:
+      selected:
+        consequence:
+          - type: mutate_state
+            operation: set
+            field: workflow_path
+            value: "${response.value}"
+        next_node: read_workflow_file
+      other:
+        next_node: prompt_for_path
+
+  prompt_for_path:
+    type: user_prompt
+    description: "Ask user to provide workflow path"
+    prompt:
+      question: "No workflow.yaml found. Please provide the path:"
+      header: "Path"
+      mode: text_input
+      placeholder: "path/to/workflow.yaml"
+    on_response:
+      provided:
+        consequence:
+          - type: mutate_state
+            operation: set
+            field: workflow_path
+            value: "${response.text}"
+        next_node: validate_user_path
+
+  # --- Read and Parse ---
+  read_workflow_file:
+    type: action
+    description: "Read the workflow.yaml content"
+    actions:
+      - type: local_file_ops
+        operation: read
+        path: "${workflow_path}"
+        store_in: workflow_content
+    on_success: parse_workflow
+    on_failure: error_read_failed
+
+  parse_workflow:
+    type: action
+    description: "Parse workflow YAML into object"
+    actions:
+      - type: run_command
+        interpreter: bash
+        command: |
+          echo '${workflow_content}' | yq -o=json '.'
+        store_in: workflow_json
+    on_success: store_parsed_workflow
+    on_failure: error_invalid_yaml
+
+  store_parsed_workflow:
+    type: action
+    description: "Store parsed workflow and extract metadata"
+    actions:
+      - type: mutate_state
+        operation: set
+        field: workflow
+        value: "${workflow_json | fromjson}"
+      - type: run_command
+        interpreter: bash
+        command: |
+          echo '${workflow_json}' | jq -r '.name // "unnamed"'
+        store_in: workflow_name
+      - type: run_command
+        interpreter: bash
+        command: |
+          echo '${workflow_json}' | jq -r '.version // "0.0.0"'
+        store_in: workflow_version
+      - type: run_command
+        interpreter: bash
+        command: |
+          echo '${workflow_json}' | jq '.nodes | keys | length'
+        store_in: node_count
+      - type: run_command
+        interpreter: bash
+        command: |
+          echo '${workflow_json}' | jq '.endings | keys | length'
+        store_in: ending_count
+    on_success: set_metadata
+    on_failure: error_invalid_yaml
+
+  set_metadata:
+    type: action
+    description: "Set workflow metadata"
+    actions:
+      - type: mutate_state
+        operation: set
+        field: metadata
+        value:
+          name: "${workflow_name}"
+          version: "${workflow_version}"
+          node_count: "${node_count}"
+          ending_count: "${ending_count}"
+    on_success: check_validation_needed
+    on_failure: check_validation_needed
+
+  check_validation_needed:
+    type: conditional
+    description: "Check if structure validation is requested"
+    condition:
+      type: state_check
+      field: input.validate_structure
+      operator: equals
+      value: true
+    branches:
+      on_true: validate_structure
+      on_false: success
+
+  # --- Validation ---
+  validate_structure:
+    type: conditional
+    description: "Validate workflow has required fields"
+    condition:
+      type: all_of
+      conditions:
+        - type: evaluate_expression
+          expression: "workflow.name != null"
+        - type: evaluate_expression
+          expression: "workflow.start_node != null"
+        - type: evaluate_expression
+          expression: "workflow.nodes != null"
+        - type: evaluate_expression
+          expression: "workflow.endings != null"
+    audit:
+      enabled: true
+      output: validation_errors
+      messages:
+        "workflow.name != null": "Missing required field: name"
+        "workflow.start_node != null": "Missing required field: start_node"
+        "workflow.nodes != null": "Missing required field: nodes"
+        "workflow.endings != null": "Missing required field: endings"
+    branches:
+      on_true: validate_start_node
+      on_false: error_invalid_structure
+
+  validate_start_node:
+    type: conditional
+    description: "Verify start_node exists in nodes"
+    condition:
+      type: evaluate_expression
+      expression: "workflow.nodes[workflow.start_node] != null"
+    branches:
+      on_true: success
+      on_false: error_invalid_start_node
+
+endings:
+  success:
+    type: success
+    message: "Loaded workflow: ${metadata.name} v${metadata.version}"
+    summary:
+      workflow_path: "${workflow_path}"
+      metadata: "${metadata}"
+
+  error_missing_jq:
+    type: error
+    code: "MISSING_JQ"
+    message: |
+      Required tool 'jq' is not installed.
+      Install with: brew install jq (macOS) or apt install jq (Linux)
+
+  error_missing_yq:
+    type: error
+    code: "MISSING_YQ"
+    message: |
+      Required tool 'yq' is not installed.
+      Install with: brew install yq (macOS) or see https://github.com/mikefarah/yq
+
+  error_file_not_found:
+    type: error
+    code: "FILE_NOT_FOUND"
+    message: "workflow.yaml not found at: ${input.workflow_path}"
+
+  error_read_failed:
+    type: error
+    code: "READ_FAILED"
+    message: "Failed to read workflow.yaml: ${workflow_path}"
+
+  error_invalid_yaml:
+    type: error
+    code: "INVALID_YAML"
+    message: "Could not parse workflow.yaml as valid YAML"
+
+  error_invalid_structure:
+    type: error
+    code: "INVALID_STRUCTURE"
+    message: |
+      workflow.yaml is missing required fields:
+      ${validation_errors | join('\n')}
+
+  error_invalid_start_node:
+    type: error
+    code: "INVALID_START_NODE"
+    message: "start_node '${workflow.start_node}' not found in nodes"

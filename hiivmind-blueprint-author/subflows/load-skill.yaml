@@ -1,0 +1,326 @@
+# load-skill.yaml
+# Layer 1: Composite Subflow
+#
+# Load and validate a SKILL.md file with full prerequisites checking.
+# Composes: prerequisites-check → locate-file-by-type → validate frontmatter
+#
+# This is the standard entry point for any skill that needs to read
+# and process a SKILL.md file.
+
+name: load-skill
+version: 1.0.0
+description: Load and validate a SKILL.md file with prerequisites
+
+# Interface declaration for subflow composition
+input_schema:
+  skill_path:
+    type: string
+    required: false
+    description: "Path to SKILL.md (optional, will discover if not provided)"
+  search_root:
+    type: string
+    required: false
+    default: "."
+    description: "Root directory to search for SKILL.md if path not provided"
+
+output_schema:
+  skill_path:
+    type: string
+    description: "Resolved path to the SKILL.md file"
+  skill_content:
+    type: string
+    description: "Raw content of the SKILL.md file"
+  frontmatter:
+    type: object
+    properties:
+      name: string
+      description: string
+      allowed_tools: array
+    description: "Parsed YAML frontmatter"
+  body:
+    type: string
+    description: "Markdown body (content after frontmatter)"
+
+# Subflow composition declarations (for future blueprint-lib support)
+# Currently these are documentation - actual composition is inline
+composes:
+  - ref: subflows/prerequisites-check.yaml
+    as: prerequisites
+  - ref: subflows/locate-file-by-type.yaml
+    as: locate
+
+definitions:
+  source: "hiivmind/hiivmind-blueprint-lib"
+  version: "v3.0.0"
+
+start_node: check_prerequisites
+
+initial_state:
+  skill_path: null
+  skill_content: null
+  frontmatter: null
+  body: null
+  tools_status: {}
+
+nodes:
+  # --- Prerequisites Check (inline from prerequisites-check.yaml) ---
+  check_prerequisites:
+    type: conditional
+    description: "Check if jq is available"
+    condition:
+      type: tool_check
+      tool: jq
+      capability: available
+    branches:
+      on_true: check_yq
+      on_false: error_missing_jq
+
+  check_yq:
+    type: conditional
+    description: "Check if yq is available"
+    condition:
+      type: tool_check
+      tool: yq
+      capability: available
+    branches:
+      on_true: prerequisites_passed
+      on_false: error_missing_yq
+
+  prerequisites_passed:
+    type: action
+    description: "Record prerequisites as passed"
+    actions:
+      - type: mutate_state
+        operation: set
+        field: tools_status
+        value:
+          jq: true
+          yq: true
+    on_success: check_user_path
+    on_failure: check_user_path
+
+  # --- Locate File (inline from locate-file-by-type.yaml) ---
+  check_user_path:
+    type: conditional
+    description: "Check if user provided a skill path"
+    condition:
+      type: state_check
+      field: input.skill_path
+      operator: not_null
+    branches:
+      on_true: validate_user_path
+      on_false: search_for_skill
+
+  validate_user_path:
+    type: conditional
+    description: "Verify the provided path exists"
+    condition:
+      type: path_check
+      path: "${input.skill_path}"
+      check: is_file
+    branches:
+      on_true: read_skill_file
+      on_false: error_file_not_found
+
+  search_for_skill:
+    type: action
+    description: "Search for SKILL.md files"
+    actions:
+      - type: run_command
+        interpreter: bash
+        command: |
+          find ${input.search_root:-"."} -name "SKILL.md" -type f 2>/dev/null | \
+            grep -v "_deprecated" | grep -v "node_modules" | head -20
+        store_in: found_skills
+    on_success: check_search_results
+    on_failure: prompt_for_path
+
+  check_search_results:
+    type: conditional
+    description: "Check how many skills were found"
+    condition:
+      type: evaluate_expression
+      expression: "found_skills != '' && found_skills != null"
+    branches:
+      on_true: parse_search_results
+      on_false: prompt_for_path
+
+  parse_search_results:
+    type: action
+    description: "Parse found skills into array"
+    actions:
+      - type: run_command
+        interpreter: bash
+        command: |
+          echo '${found_skills}' | head -1
+        store_in: first_skill
+      - type: run_command
+        interpreter: bash
+        command: |
+          echo '${found_skills}' | wc -l | tr -d ' '
+        store_in: skill_count
+    on_success: route_by_count
+    on_failure: prompt_for_path
+
+  route_by_count:
+    type: conditional
+    description: "Route based on number of skills found"
+    condition:
+      type: evaluate_expression
+      expression: "skill_count == '1'"
+    branches:
+      on_true: use_single_skill
+      on_false: prompt_skill_selection
+
+  use_single_skill:
+    type: action
+    description: "Use the single found skill"
+    actions:
+      - type: mutate_state
+        operation: set
+        field: skill_path
+        value: "${first_skill}"
+    on_success: read_skill_file
+    on_failure: error_read_failed
+
+  prompt_skill_selection:
+    type: user_prompt
+    description: "Ask user to select from multiple skills"
+    prompt:
+      question: "Multiple SKILL.md files found. Which one should I load?"
+      header: "Select"
+      options_from_state: found_skills
+      allow_other: true
+      other_label: "Enter different path"
+    on_response:
+      selected:
+        consequence:
+          - type: mutate_state
+            operation: set
+            field: skill_path
+            value: "${response.value}"
+        next_node: read_skill_file
+      other:
+        next_node: prompt_for_path
+
+  prompt_for_path:
+    type: user_prompt
+    description: "Ask user to provide skill path"
+    prompt:
+      question: "No SKILL.md found. Please provide the path to the skill file:"
+      header: "Path"
+      mode: text_input
+      placeholder: "path/to/SKILL.md"
+    on_response:
+      provided:
+        consequence:
+          - type: mutate_state
+            operation: set
+            field: skill_path
+            value: "${response.text}"
+        next_node: validate_user_path
+
+  # --- Read and Parse ---
+  read_skill_file:
+    type: action
+    description: "Read the SKILL.md content"
+    actions:
+      - type: local_file_ops
+        operation: read
+        path: "${skill_path}"
+        store_in: skill_content
+    on_success: extract_frontmatter
+    on_failure: error_read_failed
+
+  extract_frontmatter:
+    type: action
+    description: "Extract YAML frontmatter from SKILL.md"
+    actions:
+      - type: run_command
+        interpreter: bash
+        command: |
+          # Extract content between --- markers
+          echo '${skill_content}' | sed -n '/^---$/,/^---$/p' | sed '1d;$d' | yq -o=json '.'
+        store_in: frontmatter_json
+    on_success: parse_frontmatter
+    on_failure: error_invalid_frontmatter
+
+  parse_frontmatter:
+    type: action
+    description: "Parse and validate frontmatter"
+    actions:
+      - type: mutate_state
+        operation: set
+        field: frontmatter
+        value: "${frontmatter_json | fromjson}"
+      - type: run_command
+        interpreter: bash
+        command: |
+          # Extract body (everything after second ---)
+          echo '${skill_content}' | sed '1,/^---$/d' | sed '1,/^---$/d'
+        store_in: body
+    on_success: validate_frontmatter
+    on_failure: error_invalid_frontmatter
+
+  validate_frontmatter:
+    type: conditional
+    description: "Check required frontmatter fields"
+    condition:
+      type: all_of
+      conditions:
+        - type: evaluate_expression
+          expression: "frontmatter.name != null && frontmatter.name != ''"
+        - type: evaluate_expression
+          expression: "frontmatter.description != null && frontmatter.description != ''"
+    branches:
+      on_true: success
+      on_false: error_missing_fields
+
+endings:
+  success:
+    type: success
+    message: "Loaded skill: ${frontmatter.name}"
+    summary:
+      skill_path: "${skill_path}"
+      skill_name: "${frontmatter.name}"
+      frontmatter: "${frontmatter}"
+
+  error_missing_jq:
+    type: error
+    code: "MISSING_JQ"
+    message: |
+      Required tool 'jq' is not installed.
+      Install with: brew install jq (macOS) or apt install jq (Linux)
+
+  error_missing_yq:
+    type: error
+    code: "MISSING_YQ"
+    message: |
+      Required tool 'yq' is not installed.
+      Install with: brew install yq (macOS) or see https://github.com/mikefarah/yq
+
+  error_file_not_found:
+    type: error
+    code: "FILE_NOT_FOUND"
+    message: "SKILL.md not found at: ${input.skill_path}"
+    recovery:
+      suggestion: "Check the path and try again"
+
+  error_read_failed:
+    type: error
+    code: "READ_FAILED"
+    message: "Failed to read SKILL.md: ${skill_path}"
+
+  error_invalid_frontmatter:
+    type: error
+    code: "INVALID_FRONTMATTER"
+    message: "Could not parse YAML frontmatter in SKILL.md"
+    recovery:
+      suggestion: "Ensure the file has valid YAML between --- markers"
+
+  error_missing_fields:
+    type: error
+    code: "MISSING_FIELDS"
+    message: "SKILL.md frontmatter missing required fields (name, description)"
+    recovery:
+      suggestion: "Add 'name' and 'description' to the frontmatter"

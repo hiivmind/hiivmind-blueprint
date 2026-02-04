@@ -1,0 +1,484 @@
+# safe-write-files.yaml
+# Layer 1: Composite Subflow
+#
+# Safely write one or more files with conflict handling.
+# Composes: existing-file-handler → template-render (optional) → validation
+#
+# This subflow handles the common pattern of writing generated files
+# (SKILL.md, workflow.yaml) with proper backup and user confirmation.
+
+name: safe-write-files
+version: 1.0.0
+description: Safely write files with conflict handling and backup
+
+# Interface declaration for subflow composition
+input_schema:
+  files:
+    type: array
+    items:
+      type: object
+      properties:
+        path: string
+        content: string
+        description: string
+        template_path: string
+        template_vars: object
+    required: true
+    description: "List of files to write (either content or template_path+template_vars)"
+  conflict_mode:
+    type: string
+    enum: ["ask", "skip", "overwrite", "backup"]
+    required: false
+    default: "ask"
+    description: "How to handle existing files"
+  validate_yaml:
+    type: boolean
+    required: false
+    default: false
+    description: "Validate YAML files after writing"
+  dry_run:
+    type: boolean
+    required: false
+    default: false
+    description: "Show what would be written without actually writing"
+
+output_schema:
+  results:
+    type: array
+    items:
+      type: object
+      properties:
+        path: string
+        action: string
+        backup_path: string
+        success: boolean
+        error: string
+    description: "Results for each file operation"
+  summary:
+    type: object
+    properties:
+      created: integer
+      skipped: integer
+      overwritten: integer
+      backed_up: integer
+      failed: integer
+    description: "Summary counts"
+
+# Subflow composition declarations
+composes:
+  - ref: subflows/existing-file-handler.yaml
+    as: file_handler
+  - ref: subflows/template-render.yaml
+    as: template
+  - ref: subflows/validate-yaml-structure.yaml
+    as: validate
+
+definitions:
+  source: "hiivmind/hiivmind-blueprint-lib"
+  version: "v3.0.0"
+
+start_node: init_processing
+
+initial_state:
+  results: []
+  current_index: 0
+  summary:
+    created: 0
+    skipped: 0
+    overwritten: 0
+    backed_up: 0
+    failed: 0
+
+nodes:
+  init_processing:
+    type: action
+    description: "Initialize file processing"
+    actions:
+      - type: mutate_state
+        operation: set
+        field: current_index
+        value: 0
+      - type: mutate_state
+        operation: set
+        field: total_files
+        value: "${input.files | length}"
+    on_success: check_has_files
+    on_failure: error_init
+
+  check_has_files:
+    type: conditional
+    description: "Check if there are files to process"
+    condition:
+      type: evaluate_expression
+      expression: "total_files > 0"
+    branches:
+      on_true: process_next_file
+      on_false: success_no_files
+
+  process_next_file:
+    type: conditional
+    description: "Check if more files to process"
+    condition:
+      type: evaluate_expression
+      expression: "current_index < total_files"
+    branches:
+      on_true: get_current_file
+      on_false: success_complete
+
+  get_current_file:
+    type: action
+    description: "Get current file from list"
+    actions:
+      - type: mutate_state
+        operation: set
+        field: current_file
+        value: "${input.files[current_index]}"
+    on_success: check_template_mode
+    on_failure: record_failure
+
+  check_template_mode:
+    type: conditional
+    description: "Check if file uses template or direct content"
+    condition:
+      type: state_check
+      field: current_file.template_path
+      operator: not_null
+    branches:
+      on_true: render_template
+      on_false: check_dry_run
+
+  render_template:
+    type: action
+    description: "Render template to get content"
+    actions:
+      - type: local_file_ops
+        operation: read
+        path: "${current_file.template_path}"
+        store_in: template_content
+      - type: run_command
+        interpreter: bash
+        command: |
+          # Simple placeholder substitution
+          content='${template_content}'
+          vars='${current_file.template_vars | tojson}'
+
+          for key in $(echo "$vars" | jq -r 'keys[]'); do
+            value=$(echo "$vars" | jq -r ".[\"$key\"]")
+            escaped_value=$(printf '%s\n' "$value" | sed 's/[&/\]/\\&/g')
+            content=$(echo "$content" | sed "s/{{${key}}}/${escaped_value}/g")
+          done
+
+          echo "$content"
+        store_in: rendered_content
+      - type: mutate_state
+        operation: set
+        field: current_file.content
+        value: "${rendered_content}"
+    on_success: check_dry_run
+    on_failure: record_failure
+
+  check_dry_run:
+    type: conditional
+    description: "Check if this is a dry run"
+    condition:
+      type: state_check
+      field: input.dry_run
+      operator: equals
+      value: true
+    branches:
+      on_true: dry_run_output
+      on_false: check_file_exists
+
+  dry_run_output:
+    type: action
+    description: "Output what would be written (dry run)"
+    actions:
+      - type: display
+        format: markdown
+        content: |
+          **[DRY RUN]** Would write: ${current_file.path}
+          - Description: ${current_file.description}
+          - Content length: ${current_file.content | length} bytes
+      - type: mutate_state
+        operation: append
+        field: results
+        value:
+          path: "${current_file.path}"
+          action: "dry_run"
+          success: true
+    on_success: increment_and_continue
+    on_failure: increment_and_continue
+
+  check_file_exists:
+    type: conditional
+    description: "Check if target file already exists"
+    condition:
+      type: path_check
+      path: "${current_file.path}"
+      check: exists
+    branches:
+      on_true: route_conflict_mode
+      on_false: write_new_file
+
+  route_conflict_mode:
+    type: conditional
+    description: "Route based on conflict handling mode"
+    condition:
+      type: state_check
+      field: input.conflict_mode
+      operator: equals
+    branches:
+      "ask": prompt_conflict_action
+      "skip": skip_file
+      "overwrite": overwrite_file
+      "backup": backup_and_write
+      default: prompt_conflict_action
+
+  prompt_conflict_action:
+    type: user_prompt
+    description: "Ask user how to handle existing file"
+    prompt:
+      question: "${current_file.description} already exists at ${current_file.path}. What should I do?"
+      header: "Conflict"
+      options:
+        - id: skip
+          label: "Skip"
+          description: "Keep existing file"
+        - id: overwrite
+          label: "Overwrite"
+          description: "Replace with new content"
+        - id: backup
+          label: "Backup + Replace"
+          description: "Create .bak then write new"
+        - id: cancel
+          label: "Cancel All"
+          description: "Stop processing files"
+    on_response:
+      skip:
+        next_node: skip_file
+      overwrite:
+        next_node: overwrite_file
+      backup:
+        next_node: backup_and_write
+      cancel:
+        next_node: cancelled
+
+  skip_file:
+    type: action
+    description: "Skip existing file"
+    actions:
+      - type: mutate_state
+        operation: append
+        field: results
+        value:
+          path: "${current_file.path}"
+          action: "skipped"
+          success: true
+      - type: mutate_state
+        operation: set
+        field: summary.skipped
+        value: "${summary.skipped + 1}"
+    on_success: increment_and_continue
+    on_failure: increment_and_continue
+
+  backup_and_write:
+    type: action
+    description: "Create backup then write new file"
+    actions:
+      - type: run_command
+        interpreter: bash
+        command: |
+          backup_path="${current_file.path}.bak.$(date +%Y%m%d_%H%M%S)"
+          cp "${current_file.path}" "$backup_path"
+          echo "$backup_path"
+        store_in: backup_path
+    on_success: write_after_backup
+    on_failure: record_failure
+
+  write_after_backup:
+    type: action
+    description: "Write file after backup"
+    actions:
+      - type: local_file_ops
+        operation: write
+        path: "${current_file.path}"
+        content: "${current_file.content}"
+      - type: mutate_state
+        operation: append
+        field: results
+        value:
+          path: "${current_file.path}"
+          action: "backed_up"
+          backup_path: "${backup_path}"
+          success: true
+      - type: mutate_state
+        operation: set
+        field: summary.backed_up
+        value: "${summary.backed_up + 1}"
+    on_success: validate_if_yaml
+    on_failure: record_failure
+
+  overwrite_file:
+    type: action
+    description: "Overwrite existing file"
+    actions:
+      - type: local_file_ops
+        operation: write
+        path: "${current_file.path}"
+        content: "${current_file.content}"
+      - type: mutate_state
+        operation: append
+        field: results
+        value:
+          path: "${current_file.path}"
+          action: "overwritten"
+          success: true
+      - type: mutate_state
+        operation: set
+        field: summary.overwritten
+        value: "${summary.overwritten + 1}"
+    on_success: validate_if_yaml
+    on_failure: record_failure
+
+  write_new_file:
+    type: action
+    description: "Write new file"
+    actions:
+      - type: run_command
+        interpreter: bash
+        command: |
+          mkdir -p "$(dirname "${current_file.path}")"
+        description: "Ensure parent directory exists"
+      - type: local_file_ops
+        operation: write
+        path: "${current_file.path}"
+        content: "${current_file.content}"
+      - type: mutate_state
+        operation: append
+        field: results
+        value:
+          path: "${current_file.path}"
+          action: "created"
+          success: true
+      - type: mutate_state
+        operation: set
+        field: summary.created
+        value: "${summary.created + 1}"
+    on_success: validate_if_yaml
+    on_failure: record_failure
+
+  validate_if_yaml:
+    type: conditional
+    description: "Check if YAML validation needed"
+    condition:
+      type: all_of
+      conditions:
+        - type: state_check
+          field: input.validate_yaml
+          operator: equals
+          value: true
+        - type: evaluate_expression
+          expression: "current_file.path | ends_with('.yaml') || current_file.path | ends_with('.yml')"
+    branches:
+      on_true: validate_written_yaml
+      on_false: increment_and_continue
+
+  validate_written_yaml:
+    type: action
+    description: "Validate written YAML file"
+    actions:
+      - type: run_command
+        interpreter: bash
+        command: |
+          yq '.' "${current_file.path}" > /dev/null 2>&1 && echo "valid" || echo "invalid"
+        store_in: yaml_valid
+    on_success: check_yaml_result
+    on_failure: increment_and_continue
+
+  check_yaml_result:
+    type: conditional
+    description: "Check if YAML was valid"
+    condition:
+      type: evaluate_expression
+      expression: "yaml_valid == 'valid'"
+    branches:
+      on_true: increment_and_continue
+      on_false: record_validation_warning
+
+  record_validation_warning:
+    type: action
+    description: "Record YAML validation warning"
+    actions:
+      - type: display
+        format: text
+        content: "Warning: ${current_file.path} may have invalid YAML syntax"
+    on_success: increment_and_continue
+    on_failure: increment_and_continue
+
+  record_failure:
+    type: action
+    description: "Record file operation failure"
+    actions:
+      - type: mutate_state
+        operation: append
+        field: results
+        value:
+          path: "${current_file.path}"
+          action: "failed"
+          success: false
+          error: "Write operation failed"
+      - type: mutate_state
+        operation: set
+        field: summary.failed
+        value: "${summary.failed + 1}"
+    on_success: increment_and_continue
+    on_failure: increment_and_continue
+
+  increment_and_continue:
+    type: action
+    description: "Increment index and continue"
+    actions:
+      - type: mutate_state
+        operation: set
+        field: current_index
+        value: "${current_index + 1}"
+    on_success: process_next_file
+    on_failure: process_next_file
+
+endings:
+  success_complete:
+    type: success
+    message: |
+      File operations complete:
+      - Created: ${summary.created}
+      - Skipped: ${summary.skipped}
+      - Overwritten: ${summary.overwritten}
+      - Backed up: ${summary.backed_up}
+      - Failed: ${summary.failed}
+    summary:
+      results: "${results}"
+      summary: "${summary}"
+
+  success_no_files:
+    type: success
+    message: "No files to write"
+    summary:
+      results: []
+      summary:
+        created: 0
+        skipped: 0
+        overwritten: 0
+        backed_up: 0
+        failed: 0
+
+  cancelled:
+    type: success
+    message: "Operation cancelled by user"
+    summary:
+      results: "${results}"
+      cancelled: true
+
+  error_init:
+    type: error
+    code: "INIT_FAILED"
+    message: "Failed to initialize file processing"

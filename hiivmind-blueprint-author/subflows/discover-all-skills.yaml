@@ -1,0 +1,433 @@
+# discover-all-skills.yaml
+# Layer 1: Composite Subflow
+#
+# Discover all skills in a plugin and classify each one.
+# Composes: iterate-files → classify-skill (for each)
+#
+# Used by: upgrade, gateway skills for batch operations
+
+name: discover-all-skills
+version: 1.0.0
+description: Discover and classify all skills in a plugin
+
+# Interface declaration for subflow composition
+input_schema:
+  search_root:
+    type: string
+    required: false
+    default: "."
+    description: "Root directory to search for skills"
+  include_deprecated:
+    type: boolean
+    required: false
+    default: false
+    description: "Include skills in *_deprecated directories"
+  filter_classification:
+    type: string
+    enum: ["all", "prose", "workflow", "hybrid", "incomplete"]
+    required: false
+    default: "all"
+    description: "Only return skills matching this classification"
+
+output_schema:
+  skills:
+    type: array
+    items:
+      type: object
+      properties:
+        directory: string
+        name: string
+        classification: string
+        conversion_ready: boolean
+        complexity: string
+    description: "List of discovered skills with classifications"
+  summary:
+    type: object
+    properties:
+      total: integer
+      prose: integer
+      workflow: integer
+      hybrid: integer
+      incomplete: integer
+    description: "Summary counts by classification"
+  conversion_candidates:
+    type: array
+    items: string
+    description: "List of skill directories ready for conversion"
+
+# Subflow composition declarations
+composes:
+  - ref: subflows/iterate-files.yaml
+    as: iterate
+  - ref: subflows/classify-skill.yaml
+    as: classify
+
+definitions:
+  source: "hiivmind/hiivmind-blueprint-lib"
+  version: "v3.0.0"
+
+start_node: search_for_skills
+
+initial_state:
+  skills: []
+  skill_directories: []
+  current_index: 0
+  summary:
+    total: 0
+    prose: 0
+    workflow: 0
+    hybrid: 0
+    incomplete: 0
+  conversion_candidates: []
+
+nodes:
+  search_for_skills:
+    type: action
+    description: "Search for SKILL.md files to find skill directories"
+    actions:
+      - type: run_command
+        interpreter: bash
+        command: |
+          search_root="${input.search_root:-"."}"
+          include_deprecated="${input.include_deprecated:-false}"
+
+          # Find all SKILL.md files
+          if [ "$include_deprecated" = "true" ]; then
+            find "$search_root" -name "SKILL.md" -type f 2>/dev/null
+          else
+            find "$search_root" -name "SKILL.md" -type f 2>/dev/null | \
+              grep -v "_deprecated" | grep -v "node_modules"
+          fi
+        store_in: found_skills_raw
+    on_success: parse_skill_directories
+    on_failure: error_search_failed
+
+  parse_skill_directories:
+    type: action
+    description: "Extract unique skill directories"
+    actions:
+      - type: run_command
+        interpreter: bash
+        command: |
+          # Extract directory paths from SKILL.md paths
+          echo '${found_skills_raw}' | while read -r skill_path; do
+            if [ -n "$skill_path" ]; then
+              dirname "$skill_path"
+            fi
+          done | sort -u
+        store_in: directories_raw
+      - type: run_command
+        interpreter: bash
+        command: |
+          # Convert to array (newline separated to comma separated for JSON)
+          echo '${directories_raw}' | grep -v '^$' | jq -R -s 'split("\n") | map(select(length > 0))'
+        store_in: skill_directories_json
+      - type: mutate_state
+        operation: set
+        field: skill_directories
+        value: "${skill_directories_json | fromjson}"
+      - type: run_command
+        interpreter: bash
+        command: |
+          echo '${directories_raw}' | grep -c -v '^$' || echo "0"
+        store_in: total_count
+      - type: mutate_state
+        operation: set
+        field: summary.total
+        value: "${total_count}"
+    on_success: check_has_skills
+    on_failure: success_no_skills
+
+  check_has_skills:
+    type: conditional
+    description: "Check if any skills were found"
+    condition:
+      type: evaluate_expression
+      expression: "summary.total > 0"
+    branches:
+      on_true: process_next_skill
+      on_false: success_no_skills
+
+  process_next_skill:
+    type: conditional
+    description: "Check if more skills to process"
+    condition:
+      type: evaluate_expression
+      expression: "current_index < summary.total"
+    branches:
+      on_true: classify_current_skill
+      on_false: filter_results
+
+  classify_current_skill:
+    type: action
+    description: "Classify the current skill directory"
+    actions:
+      - type: mutate_state
+        operation: set
+        field: current_directory
+        value: "${skill_directories[current_index]}"
+    on_success: check_skill_md_exists
+    on_failure: increment_and_continue
+
+  check_skill_md_exists:
+    type: conditional
+    description: "Check if SKILL.md exists in directory"
+    condition:
+      type: path_check
+      path: "${current_directory}/SKILL.md"
+      check: is_file
+    branches:
+      on_true: read_and_classify
+      on_false: classify_as_incomplete
+
+  read_and_classify:
+    type: action
+    description: "Read SKILL.md and classify"
+    actions:
+      - type: local_file_ops
+        operation: read
+        path: "${current_directory}/SKILL.md"
+        store_in: skill_content
+      - type: run_command
+        interpreter: bash
+        command: |
+          echo '${skill_content}' | sed -n '/^---$/,/^---$/p' | \
+            sed '1d;$d' | yq -r '.name // "unnamed"'
+        store_in: skill_name
+    on_success: check_workflow_exists
+    on_failure: classify_as_incomplete
+
+  check_workflow_exists:
+    type: conditional
+    description: "Check if workflow.yaml exists"
+    condition:
+      type: path_check
+      path: "${current_directory}/workflow.yaml"
+      check: is_file
+    branches:
+      on_true: check_if_hybrid
+      on_false: classify_as_prose
+
+  check_if_hybrid:
+    type: action
+    description: "Check if hybrid (both files with substantial prose)"
+    actions:
+      - type: run_command
+        interpreter: bash
+        command: |
+          line_count=$(echo '${skill_content}' | wc -l)
+          if [ "$line_count" -gt 100 ]; then
+            echo "hybrid"
+          else
+            echo "workflow"
+          fi
+        store_in: classification
+    on_success: estimate_complexity
+    on_failure: classify_as_workflow
+
+  classify_as_prose:
+    type: action
+    description: "Classify as prose (no workflow.yaml)"
+    actions:
+      - type: mutate_state
+        operation: set
+        field: classification
+        value: "prose"
+    on_success: estimate_complexity
+    on_failure: estimate_complexity
+
+  classify_as_workflow:
+    type: action
+    description: "Classify as workflow (converted)"
+    actions:
+      - type: mutate_state
+        operation: set
+        field: classification
+        value: "workflow"
+    on_success: estimate_complexity
+    on_failure: estimate_complexity
+
+  classify_as_incomplete:
+    type: action
+    description: "Classify as incomplete"
+    actions:
+      - type: mutate_state
+        operation: set
+        field: classification
+        value: "incomplete"
+      - type: mutate_state
+        operation: set
+        field: skill_name
+        value: "unknown"
+      - type: mutate_state
+        operation: set
+        field: complexity
+        value: "unknown"
+    on_success: add_to_results
+    on_failure: add_to_results
+
+  estimate_complexity:
+    type: action
+    description: "Estimate skill complexity"
+    actions:
+      - type: run_command
+        interpreter: bash
+        command: |
+          phase_count=$(echo '${skill_content}' | grep -cE '^#{2,3} (Phase|Step|Stage)' || echo "0")
+          conditional_count=$(echo '${skill_content}' | grep -ciE '(^If |When |Based on )' || echo "0")
+          total=$((phase_count + conditional_count))
+          if [ "$total" -le 5 ]; then
+            echo "low"
+          elif [ "$total" -le 12 ]; then
+            echo "medium"
+          else
+            echo "high"
+          fi
+        store_in: complexity
+    on_success: add_to_results
+    on_failure: add_to_results
+
+  add_to_results:
+    type: action
+    description: "Add skill to results array"
+    actions:
+      - type: mutate_state
+        operation: append
+        field: skills
+        value:
+          directory: "${current_directory}"
+          name: "${skill_name}"
+          classification: "${classification}"
+          conversion_ready: "${classification == 'prose'}"
+          complexity: "${complexity}"
+      # Update summary counts
+      - type: run_command
+        interpreter: bash
+        command: |
+          echo "${classification}"
+        store_in: current_class
+    on_success: update_summary_count
+    on_failure: increment_and_continue
+
+  update_summary_count:
+    type: action
+    description: "Update summary count for classification"
+    actions:
+      - type: run_command
+        interpreter: bash
+        command: |
+          case "${current_class}" in
+            "prose") echo "prose" ;;
+            "workflow") echo "workflow" ;;
+            "hybrid") echo "hybrid" ;;
+            "incomplete") echo "incomplete" ;;
+            *) echo "incomplete" ;;
+          esac
+        store_in: class_key
+    on_success: increment_class_count
+    on_failure: increment_and_continue
+
+  increment_class_count:
+    type: action
+    description: "Increment the appropriate classification count"
+    actions:
+      # This is a simplified version - actual implementation would use
+      # dynamic field access based on classification
+      - type: mutate_state
+        operation: set
+        field: summary.${class_key}
+        value: "${summary[class_key] + 1}"
+    on_success: check_conversion_candidate
+    on_failure: check_conversion_candidate
+
+  check_conversion_candidate:
+    type: conditional
+    description: "Check if skill is a conversion candidate"
+    condition:
+      type: evaluate_expression
+      expression: "classification == 'prose'"
+    branches:
+      on_true: add_conversion_candidate
+      on_false: increment_and_continue
+
+  add_conversion_candidate:
+    type: action
+    description: "Add to conversion candidates list"
+    actions:
+      - type: mutate_state
+        operation: append
+        field: conversion_candidates
+        value: "${current_directory}"
+    on_success: increment_and_continue
+    on_failure: increment_and_continue
+
+  increment_and_continue:
+    type: action
+    description: "Increment index and continue"
+    actions:
+      - type: mutate_state
+        operation: set
+        field: current_index
+        value: "${current_index + 1}"
+    on_success: process_next_skill
+    on_failure: process_next_skill
+
+  filter_results:
+    type: conditional
+    description: "Check if filtering is needed"
+    condition:
+      type: state_check
+      field: input.filter_classification
+      operator: equals
+      value: "all"
+    branches:
+      on_true: success_complete
+      on_false: apply_filter
+
+  apply_filter:
+    type: action
+    description: "Filter results by classification"
+    actions:
+      - type: run_command
+        interpreter: bash
+        command: |
+          echo '${skills | tojson}' | jq '[.[] | select(.classification == "${input.filter_classification}")]'
+        store_in: filtered_skills_json
+      - type: mutate_state
+        operation: set
+        field: skills
+        value: "${filtered_skills_json | fromjson}"
+    on_success: success_complete
+    on_failure: success_complete
+
+endings:
+  success_complete:
+    type: success
+    message: |
+      Discovered ${summary.total} skills:
+      - Prose (conversion ready): ${summary.prose}
+      - Workflow (converted): ${summary.workflow}
+      - Hybrid (needs review): ${summary.hybrid}
+      - Incomplete: ${summary.incomplete}
+    summary:
+      skills: "${skills}"
+      summary: "${summary}"
+      conversion_candidates: "${conversion_candidates}"
+
+  success_no_skills:
+    type: success
+    message: "No skills found in ${input.search_root}"
+    summary:
+      skills: []
+      summary:
+        total: 0
+        prose: 0
+        workflow: 0
+        hybrid: 0
+        incomplete: 0
+      conversion_candidates: []
+
+  error_search_failed:
+    type: error
+    code: "SEARCH_FAILED"
+    message: "Failed to search for skills in ${input.search_root}"

@@ -1,16 +1,18 @@
 ---
-name: hiivmind-blueprint-author-gateway
+name: hiivmind-blueprint-author-regenerate
 description: >
-  Generate a gateway command for multi-skill plugins. Creates the gateway command file,
-  workflow, and intent-mapping from discovered skills. Triggers on "generate gateway",
-  "create gateway", "setup gateway command", "multi-skill routing".
-allowed-tools: Read, Write, Glob, Grep, Bash, AskUserQuestion
+  Regenerate a SKILL.md loader from an existing workflow.yaml. Use when you need to update
+  the SKILL.md to match workflow changes, or when SKILL.md was accidentally modified.
+  Triggers on "regenerate skill", "rebuild skill.md", "update skill loader", "sync skill".
+allowed-tools: Read, Write, Bash, AskUserQuestion
 ---
 
-# Generate Gateway Command
+# Regenerate SKILL.md
 
-Create a gateway command for multi-skill plugins that routes user requests to the appropriate skill
-based on intent detection.
+Rebuild the SKILL.md thin loader from an existing workflow.yaml file.
+
+**Use case:** When workflow.yaml has been updated and SKILL.md needs to reflect those changes,
+or when the SKILL.md loader template has been updated.
 
 ---
 
@@ -35,17 +37,20 @@ If mandatory tools are missing, exit with error listing the install commands abo
 └────────┬────────┘
          │
 ┌────────▼────────┐
-│ discover-all    │◄── subflow: find all skills
+│ load-workflow   │◄── subflow: locate + validate workflow
 └────────┬────────┘
          │
 ┌────────▼────────┐
-│ extract intent  │
-│ keywords        │
+│ extract metadata│
 └────────┬────────┘
          │
 ┌────────▼────────┐
-│ generate files  │
-│ (3 files)       │
+│ generate SKILL  │
+│ from template   │
+└────────┬────────┘
+         │
+┌────────▼────────┐
+│ safe-write      │
 └────────┬────────┘
          │
 ┌────────▼────────┐
@@ -58,35 +63,25 @@ If mandatory tools are missing, exit with error listing the install commands abo
 ## Usage
 
 ```
-Skill(skill: "hiivmind-blueprint-author-gateway")
-Skill(skill: "hiivmind-blueprint-author-gateway", args: "--plugin-name my-plugin")
+Skill(skill: "hiivmind-blueprint-author-regenerate")
+Skill(skill: "hiivmind-blueprint-author-regenerate", args: "path/to/workflow.yaml")
 ```
 
 Or via gateway routing:
 ```
-/hiivmind-blueprint-author gateway
+/hiivmind-blueprint-author regenerate
+/hiivmind-blueprint-author regenerate skills/my-skill/workflow.yaml
 ```
-
----
-
-## Output Files
-
-This skill generates three files in `commands/{plugin-name}/`:
-
-1. **{plugin-name}.md** - Gateway command entry point
-2. **workflow.yaml** - Gateway routing workflow
-3. **intent-mapping.yaml** - Intent detection rules
 
 ---
 
 ## Reference Documentation
 
-- **Gateway Template:** `${CLAUDE_PLUGIN_ROOT}/templates/gateway-command.md.template`
-- **Intent Mapping Template:** `${CLAUDE_PLUGIN_ROOT}/templates/intent-mapping.yaml.template`
+- **SKILL.md Template:** `${CLAUDE_PLUGIN_ROOT}/templates/SKILL.md.template`
 
 ---
 
 ## Related Skills
 
-- Discover skills: `${CLAUDE_PLUGIN_ROOT}/skills/hiivmind-blueprint-author-upgrade/SKILL.md`
 - Convert skill: `${CLAUDE_PLUGIN_ROOT}/skills/hiivmind-blueprint-author-convert/SKILL.md`
+- Visualize workflow: `${CLAUDE_PLUGIN_ROOT}/skills/hiivmind-blueprint-author-visualize/SKILL.md`
