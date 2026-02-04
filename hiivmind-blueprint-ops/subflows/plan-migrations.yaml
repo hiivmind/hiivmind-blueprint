@@ -1,0 +1,382 @@
+# plan-migrations.yaml
+# Layer 0: Atomic Subflow
+#
+# Phase 3 of the upgrade workflow: Build migration plan from analysis
+# results and get user confirmation for how to proceed.
+#
+# Takes the issues and deprecated patterns from analysis, builds a
+# migration plan, presents it to the user, and gets confirmation
+# for the desired action (apply all, review each, dry run, cancel).
+
+name: plan-migrations
+version: 1.0.0
+description: Build migration plan and get user confirmation
+
+# Interface declaration for subflow composition
+input_schema:
+  workflow_path:
+    type: string
+    required: true
+    description: "Path to the workflow being upgraded"
+  workflow_name:
+    type: string
+    required: true
+    description: "Name of the workflow for display"
+  target_type:
+    type: string
+    enum: ["skill", "gateway"]
+    required: true
+    description: "Type of workflow being upgraded"
+  detected_version:
+    type: string
+    required: true
+    description: "Current detected schema version"
+  target_version:
+    type: string
+    required: false
+    default: "2.3.0"
+    description: "Target schema version for upgrade"
+  issues:
+    type: array
+    required: true
+    description: "Array of issues from analysis"
+  deprecated_patterns:
+    type: array
+    required: true
+    description: "List of deprecated patterns found"
+  has_legacy_refs:
+    type: boolean
+    required: true
+    description: "Whether SKILL.md has legacy engine refs"
+  skill_md_needs_normalization:
+    type: boolean
+    required: true
+    description: "Whether SKILL.md needs normalization"
+  mode_flags:
+    type: object
+    required: false
+    default: {}
+    description: "Mode flags to filter migrations"
+
+output_schema:
+  migrations:
+    type: array
+    description: "Array of migration objects to apply"
+  user_decision:
+    type: string
+    enum: ["apply_all", "review_each", "dry_run", "cancelled"]
+    description: "User's decision on how to proceed"
+  plan_summary:
+    type: string
+    description: "Formatted markdown summary of the plan"
+
+definitions:
+  source: "hiivmind/hiivmind-blueprint-lib"
+  version: "v2.1.0"
+
+start_node: build_migration_list
+
+initial_state:
+  migrations: []
+  user_decision: null
+  plan_summary: ""
+  migration_count: 0
+
+nodes:
+  build_migration_list:
+    type: action
+    description: "Build list of migrations from issues"
+    effect: |
+      Build a migrations array by checking input.issues for specific patterns:
+
+      migrations = []
+
+      IF input.issues CONTAINS {field: "version", type: "missing_field"}:
+        APPEND to migrations: {
+          name: "add_version_field",
+          applies_when: "version is missing",
+          action: "Add version: '${input.target_version}' to workflow root",
+          risk: "low",
+          auto_fixable: true,
+          category: "schema"
+        }
+
+      IF input.issues CONTAINS {pattern: "old_set_state_format"}:
+        count = GET count from matching issue
+        APPEND to migrations: {
+          name: "update_set_state_format",
+          applies_when: "old set_state format detected",
+          action: "Convert state object to field/value pairs",
+          changes: count,
+          risk: "medium",
+          auto_fixable: true,
+          category: "schema"
+        }
+
+      IF input.issues CONTAINS {field: "description", location: "nodes"}:
+        count = GET count from matching issue
+        APPEND to migrations: {
+          name: "add_node_descriptions",
+          applies_when: "nodes missing descriptions",
+          action: "Generate descriptions from node names",
+          changes: count,
+          risk: "low",
+          auto_fixable: true,
+          category: "schema"
+        }
+
+      IF input.issues CONTAINS {field: "recovery", location: "endings"}:
+        count = GET count from matching issue
+        APPEND to migrations: {
+          name: "add_error_recovery",
+          applies_when: "error endings without recovery",
+          action: "Add recovery suggestions to error endings",
+          changes: count,
+          risk: "low",
+          auto_fixable: true,
+          category: "schema"
+        }
+
+      IF input.has_legacy_refs == true:
+        APPEND to migrations: {
+          name: "migrate_execution_refs",
+          applies_when: "SKILL.md has local engine.md references",
+          action: "Replace local engine.md reference with remote execution URLs",
+          risk: "medium",
+          auto_fixable: true,
+          category: "refs"
+        }
+
+      IF input.skill_md_needs_normalization == true:
+        APPEND to migrations: {
+          name: "normalize_skill_md",
+          applies_when: "SKILL.md exceeds template size limits",
+          action: "Normalize SKILL.md to match template standards",
+          risk: "medium",
+          auto_fixable: true,
+          category: "normalize"
+        }
+
+      SET state.migrations_json = migrations AS JSON
+    on_success: store_migrations
+    on_failure: error_build_migrations
+
+  store_migrations:
+    type: action
+    description: "Store migrations in state"
+    actions:
+      - type: mutate_state
+        operation: set
+        field: migrations
+        value: "${migrations_json | fromjson}"
+      - type: mutate_state
+        operation: set
+        field: migration_count
+        value: "${migrations_json | fromjson | length}"
+    on_success: filter_by_mode
+    on_failure: filter_by_mode
+
+  filter_by_mode:
+    type: action
+    description: "Filter migrations based on mode flags"
+    effect: |
+      Filter state.migrations based on input.mode_flags:
+
+      flags = input.mode_flags
+
+      IF flags.schema_only == true:
+        filtered = FILTER migrations WHERE category == "schema"
+      ELSE IF flags.refs_only == true:
+        filtered = FILTER migrations WHERE category == "refs"
+      ELSE IF flags.normalize_only == true:
+        filtered = FILTER migrations WHERE category == "normalize"
+      ELSE IF flags.intent_only == true:
+        filtered = FILTER migrations WHERE category == "intent"
+      ELSE:
+        # No specific mode - return all, but check skip_normalize
+        IF flags.skip_normalize == true:
+          filtered = FILTER migrations WHERE category != "normalize"
+        ELSE:
+          filtered = migrations
+
+      SET state.filtered_migrations_json = filtered AS JSON
+    on_success: update_filtered_migrations
+    on_failure: format_plan_summary
+
+  update_filtered_migrations:
+    type: action
+    description: "Update migrations with filtered list"
+    actions:
+      - type: mutate_state
+        operation: set
+        field: migrations
+        value: "${filtered_migrations_json | fromjson}"
+      - type: mutate_state
+        operation: set
+        field: migration_count
+        value: "${filtered_migrations_json | fromjson | length}"
+    on_success: check_empty_plan
+    on_failure: format_plan_summary
+
+  check_empty_plan:
+    type: conditional
+    description: "Check if there are any migrations to apply"
+    condition:
+      type: evaluate_expression
+      expression: "migration_count == 0"
+    branches:
+      on_true: success_no_migrations
+      on_false: format_plan_summary
+
+  format_plan_summary:
+    type: action
+    description: "Format markdown summary of migration plan"
+    effect: |
+      Build a markdown summary from state.migrations and input.issues:
+
+      summary = "## Upgrade Plan: ${input.workflow_name}
+
+      **Target type:** ${input.target_type}
+      **Current version:** ${input.detected_version}
+      **Target version:** ${input.target_version}
+
+      ### Migrations to Apply (${migration_count})
+      "
+
+      FOR EACH migration IN state.migrations:
+        APPEND to summary:
+          "#### ${migration.name}
+          - **Action:** ${migration.action}
+          - **Changes:** ${migration.changes OR 'N/A'}
+          - **Risk:** ${migration.risk}
+          "
+
+      APPEND to summary: "### Issues Found (${input.issues.length})"
+
+      FOR EACH issue IN input.issues:
+        field_or_pattern = issue.field OR issue.pattern OR "N/A"
+        APPEND to summary:
+          "- **${issue.severity}:** ${issue.type} - ${field_or_pattern} at ${issue.location}"
+
+      SET state.plan_summary_str = summary
+    on_success: store_plan_summary
+    on_failure: store_plan_summary
+
+  store_plan_summary:
+    type: action
+    description: "Store formatted plan summary"
+    actions:
+      - type: mutate_state
+        operation: set
+        field: plan_summary
+        value: "${plan_summary_str}"
+    on_success: check_mode_flags
+    on_failure: present_plan
+
+  check_mode_flags:
+    type: conditional
+    description: "Check if check_only mode is set"
+    condition:
+      type: evaluate_expression
+      expression: "input.mode_flags.check_only == true"
+    branches:
+      on_true: success_check_only
+      on_false: present_plan
+
+  present_plan:
+    type: action
+    description: "Present migration plan to user"
+    actions:
+      - type: emit_text
+        content: "${plan_summary}"
+    on_success: prompt_confirmation
+    on_failure: prompt_confirmation
+
+  prompt_confirmation:
+    type: user_prompt
+    description: "Ask user how to proceed with upgrade"
+    prompt:
+      question: "How would you like to proceed with the upgrade?"
+      header: "Upgrade"
+      options:
+        - id: apply_all
+          label: "Apply all"
+          description: "Apply all ${migration_count} migrations automatically"
+        - id: review_each
+          label: "Review each"
+          description: "Confirm each migration individually"
+        - id: dry_run
+          label: "Dry run"
+          description: "Show changes without applying"
+        - id: cancel
+          label: "Cancel"
+          description: "Exit without changes"
+    on_response:
+      apply_all:
+        consequence:
+          - type: mutate_state
+            operation: set
+            field: user_decision
+            value: "apply_all"
+        next_node: success
+      review_each:
+        consequence:
+          - type: mutate_state
+            operation: set
+            field: user_decision
+            value: "review_each"
+        next_node: success
+      dry_run:
+        consequence:
+          - type: mutate_state
+            operation: set
+            field: user_decision
+            value: "dry_run"
+        next_node: success
+      cancel:
+        consequence:
+          - type: mutate_state
+            operation: set
+            field: user_decision
+            value: "cancelled"
+        next_node: success_cancelled
+
+endings:
+  success:
+    type: success
+    message: "Migration plan ready"
+    summary:
+      migrations: "${migrations}"
+      user_decision: "${user_decision}"
+      plan_summary: "${plan_summary}"
+
+  success_no_migrations:
+    type: success
+    message: "No migrations needed - workflow is already up to date"
+    summary:
+      migrations: []
+      user_decision: "no_action_needed"
+      plan_summary: "Workflow ${input.workflow_name} is already at the latest version"
+
+  success_check_only:
+    type: success
+    message: "Check complete - no changes applied"
+    summary:
+      migrations: "${migrations}"
+      user_decision: "check_only"
+      plan_summary: "${plan_summary}"
+
+  success_cancelled:
+    type: success
+    message: "Upgrade cancelled by user"
+    summary:
+      migrations: "${migrations}"
+      user_decision: "cancelled"
+      plan_summary: "${plan_summary}"
+
+  error_build_migrations:
+    type: error
+    code: "BUILD_MIGRATIONS_FAILED"
+    message: "Failed to build migration plan from issues"
+    recovery:
+      suggestion: "Check that the analysis results are valid"

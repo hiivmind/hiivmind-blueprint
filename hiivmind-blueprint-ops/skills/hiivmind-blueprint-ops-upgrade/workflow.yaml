@@ -1,0 +1,446 @@
+# workflow.yaml
+# Master workflow for hiivmind-blueprint-ops-upgrade
+#
+# Composes 5 subflows to upgrade workflow.yaml files to the latest schema:
+# 1. discover-and-target - Find workflows and determine target type
+# 2. analyze-workflow-state - Analyze version and issues
+# 3. plan-migrations - Build migration plan with user confirmation
+# 4. apply-migrations - Apply schema, refs, and intent migrations
+# 5. normalize-and-verify - Normalize SKILL.md files and verify results
+#
+# Supports both skill workflows (skills/) and gateway commands (commands/).
+
+name: hiivmind-blueprint-ops-upgrade
+version: 1.0.0
+description: Upgrade workflow.yaml files to latest schema version
+
+composes:
+  - ref: ../../subflows/discover-and-target.yaml
+    as: discover
+  - ref: ../../subflows/analyze-workflow-state.yaml
+    as: analyze
+  - ref: ../../subflows/plan-migrations.yaml
+    as: plan
+  - ref: ../../subflows/apply-migrations.yaml
+    as: apply
+  - ref: ../../subflows/normalize-and-verify.yaml
+    as: verify
+
+definitions:
+  source: "hiivmind/hiivmind-blueprint-lib@v2.1.0"
+
+start_node: parse_arguments
+
+initial_state:
+  # Arguments
+  explicit_target: null
+  mode_flags:
+    check_only: false
+    schema_only: false
+    refs_only: false
+    normalize_only: false
+    skip_normalize: false
+    intent_only: false
+
+  # Discovery results
+  target_type: null
+  skill_workflows: []
+  gateway_workflows: []
+  selected_workflows: []
+  config: {}
+  has_legacy_engine: false
+  needs_execution_migration: false
+
+  # Processing state
+  current_workflow_index: 0
+  current_workflow: null
+  lib_version: "v2.1.0"
+
+  # Results
+  all_results: []
+  final_report: ""
+
+nodes:
+  parse_arguments:
+    type: action
+    description: "Parse command line arguments into state"
+    actions:
+      - type: run_command
+        interpreter: bash
+        command: |
+          # Parse arguments from input
+          args='${input.arguments | default("") | tojson}'
+
+          # Check for explicit target
+          if echo "$args" | grep -q '"skills"'; then
+            echo "skills"
+          elif echo "$args" | grep -q '"gateway"'; then
+            echo "gateway"
+          else
+            echo "auto"
+          fi
+        store_in: explicit_target_str
+      - type: run_command
+        interpreter: bash
+        command: |
+          # Parse mode flags
+          args='${input.arguments | default("") | tojson}'
+
+          check_only=$(echo "$args" | grep -q '"\-\-check"' && echo "true" || echo "false")
+          schema_only=$(echo "$args" | grep -q '"\-\-schema-only"' && echo "true" || echo "false")
+          refs_only=$(echo "$args" | grep -q '"\-\-refs-only"' && echo "true" || echo "false")
+          normalize_only=$(echo "$args" | grep -q '"\-\-normalize-only"' && echo "true" || echo "false")
+          skip_normalize=$(echo "$args" | grep -q '"\-\-skip-normalize"' && echo "true" || echo "false")
+          intent_only=$(echo "$args" | grep -q '"\-\-intent-only"' && echo "true" || echo "false")
+
+          jq -n \
+            --argjson check_only "$check_only" \
+            --argjson schema_only "$schema_only" \
+            --argjson refs_only "$refs_only" \
+            --argjson normalize_only "$normalize_only" \
+            --argjson skip_normalize "$skip_normalize" \
+            --argjson intent_only "$intent_only" \
+            '{
+              check_only: $check_only,
+              schema_only: $schema_only,
+              refs_only: $refs_only,
+              normalize_only: $normalize_only,
+              skip_normalize: $skip_normalize,
+              intent_only: $intent_only
+            }'
+        store_in: mode_flags_json
+    on_success: store_arguments
+    on_failure: invoke_discover
+
+  store_arguments:
+    type: action
+    description: "Store parsed arguments in state"
+    actions:
+      - type: mutate_state
+        operation: set
+        field: explicit_target
+        value: "${explicit_target_str}"
+      - type: mutate_state
+        operation: set
+        field: mode_flags
+        value: "${mode_flags_json | fromjson}"
+    on_success: read_lib_version
+    on_failure: read_lib_version
+
+  read_lib_version:
+    type: action
+    description: "Read library version from BLUEPRINT_LIB_VERSION.yaml"
+    actions:
+      - type: run_command
+        interpreter: bash
+        command: |
+          if [ -f "BLUEPRINT_LIB_VERSION.yaml" ]; then
+            yq '.lib_version' BLUEPRINT_LIB_VERSION.yaml
+          else
+            echo "v2.1.0"
+          fi
+        store_in: lib_version_str
+      - type: mutate_state
+        operation: set
+        field: lib_version
+        value: "${lib_version_str | trim}"
+    on_success: invoke_discover
+    on_failure: invoke_discover
+
+  invoke_discover:
+    type: subflow
+    description: "Invoke discover-and-target subflow"
+    subflow: discover
+    input:
+      explicit_target: "${explicit_target}"
+      search_root: "."
+      mode_flags: "${mode_flags}"
+    on_success: store_discovery_results
+    on_failure: error_discovery
+
+  store_discovery_results:
+    type: action
+    description: "Store discovery results in state"
+    actions:
+      - type: mutate_state
+        operation: set
+        field: target_type
+        value: "${subflow.discover.output.target_type}"
+      - type: mutate_state
+        operation: set
+        field: skill_workflows
+        value: "${subflow.discover.output.skill_workflows}"
+      - type: mutate_state
+        operation: set
+        field: gateway_workflows
+        value: "${subflow.discover.output.gateway_workflows}"
+      - type: mutate_state
+        operation: set
+        field: selected_workflows
+        value: "${subflow.discover.output.selected_workflows}"
+      - type: mutate_state
+        operation: set
+        field: config
+        value: "${subflow.discover.output.config}"
+      - type: mutate_state
+        operation: set
+        field: has_legacy_engine
+        value: "${subflow.discover.output.has_legacy_engine}"
+      - type: mutate_state
+        operation: set
+        field: needs_execution_migration
+        value: "${subflow.discover.output.needs_execution_migration}"
+    on_success: check_workflows_found
+    on_failure: check_workflows_found
+
+  check_workflows_found:
+    type: conditional
+    description: "Check if any workflows were found"
+    condition:
+      type: evaluate_expression
+      expression: "selected_workflows | length > 0"
+    branches:
+      on_true: check_cancelled
+      on_false: success_no_workflows
+
+  check_cancelled:
+    type: conditional
+    description: "Check if user cancelled"
+    condition:
+      type: evaluate_expression
+      expression: "target_type == null"
+    branches:
+      on_true: success_cancelled
+      on_false: process_next_workflow
+
+  process_next_workflow:
+    type: conditional
+    description: "Check if there are more workflows to process"
+    condition:
+      type: evaluate_expression
+      expression: "current_workflow_index < (selected_workflows | length)"
+    branches:
+      on_true: get_current_workflow
+      on_false: build_final_report
+
+  get_current_workflow:
+    type: action
+    description: "Get the current workflow to process"
+    actions:
+      - type: mutate_state
+        operation: set
+        field: current_workflow
+        value: "${selected_workflows[current_workflow_index]}"
+    on_success: invoke_analyze
+    on_failure: error_processing
+
+  invoke_analyze:
+    type: subflow
+    description: "Analyze current workflow"
+    subflow: analyze
+    input:
+      workflow_path: "${current_workflow.path}"
+      skill_md_path: "${current_workflow.skill_md_path}"
+      target_type: "${current_workflow.type}"
+      config: "${config}"
+    on_success: invoke_plan
+    on_failure: record_workflow_error
+
+  invoke_plan:
+    type: subflow
+    description: "Build migration plan for current workflow"
+    subflow: plan
+    input:
+      workflow_path: "${current_workflow.path}"
+      workflow_name: "${current_workflow.name}"
+      target_type: "${current_workflow.type}"
+      detected_version: "${subflow.analyze.output.detected_version}"
+      target_version: "2.3.0"
+      issues: "${subflow.analyze.output.issues}"
+      deprecated_patterns: "${subflow.analyze.output.deprecated_patterns}"
+      has_legacy_refs: "${subflow.analyze.output.has_legacy_refs}"
+      skill_md_needs_normalization: "${subflow.analyze.output.skill_md_needs_normalization}"
+      mode_flags: "${mode_flags}"
+    on_success: check_plan_decision
+    on_failure: record_workflow_error
+
+  check_plan_decision:
+    type: conditional
+    description: "Check user's decision from planning"
+    condition:
+      type: evaluate_expression
+      expression: |
+        subflow.plan.output.user_decision == 'cancelled' ||
+        subflow.plan.output.user_decision == 'no_action_needed' ||
+        subflow.plan.output.user_decision == 'check_only'
+    branches:
+      on_true: record_workflow_result
+      on_false: invoke_apply
+
+  invoke_apply:
+    type: subflow
+    description: "Apply migrations to current workflow"
+    subflow: apply
+    input:
+      workflow_path: "${current_workflow.path}"
+      skill_md_path: "${current_workflow.skill_md_path}"
+      intent_mapping_path: "${current_workflow.intent_mapping_path}"
+      migrations: "${subflow.plan.output.migrations}"
+      user_decision: "${subflow.plan.output.user_decision}"
+      lib_version: "${lib_version}"
+      target_type: "${current_workflow.type}"
+      target_version: "2.3.0"
+    on_success: invoke_verify
+    on_failure: record_workflow_error
+
+  invoke_verify:
+    type: subflow
+    description: "Normalize and verify current workflow"
+    subflow: verify
+    input:
+      skill_md_path: "${current_workflow.skill_md_path}"
+      workflow_path: "${current_workflow.path}"
+      intent_mapping_path: "${current_workflow.intent_mapping_path}"
+      target_type: "${current_workflow.type}"
+      config: "${config}"
+      lib_version: "${lib_version}"
+      skip_normalize: "${mode_flags.skip_normalize}"
+      applied_migrations: "${subflow.apply.output.applied_migrations}"
+    on_success: record_workflow_result
+    on_failure: record_workflow_error
+
+  record_workflow_result:
+    type: action
+    description: "Record result for current workflow"
+    actions:
+      - type: mutate_state
+        operation: append
+        field: all_results
+        value:
+          workflow: "${current_workflow}"
+          success: true
+          analysis: "${subflow.analyze.output}"
+          plan: "${subflow.plan.output}"
+          apply: "${subflow.apply.output}"
+          verify: "${subflow.verify.output}"
+    on_success: increment_workflow_index
+    on_failure: increment_workflow_index
+
+  record_workflow_error:
+    type: action
+    description: "Record error for current workflow"
+    actions:
+      - type: mutate_state
+        operation: append
+        field: all_results
+        value:
+          workflow: "${current_workflow}"
+          success: false
+          error: "Processing failed"
+    on_success: increment_workflow_index
+    on_failure: increment_workflow_index
+
+  increment_workflow_index:
+    type: action
+    description: "Move to next workflow"
+    actions:
+      - type: mutate_state
+        operation: set
+        field: current_workflow_index
+        value: "${current_workflow_index + 1}"
+    on_success: process_next_workflow
+    on_failure: process_next_workflow
+
+  build_final_report:
+    type: action
+    description: "Build final summary report"
+    actions:
+      - type: run_command
+        interpreter: bash
+        command: |
+          results='${all_results | tojson}'
+          target_type='${target_type}'
+
+          total=$(echo "$results" | jq 'length')
+          successful=$(echo "$results" | jq '[.[] | select(.success == true)] | length')
+          failed=$((total - successful))
+
+          cat << EOF
+## Upgrade Summary
+
+**Target type:** ${target_type}
+**Total workflows:** ${total}
+**Successful:** ${successful}
+**Failed:** ${failed}
+
+### Results by Workflow
+
+EOF
+
+          for i in $(seq 0 $((total - 1))); do
+            name=$(echo "$results" | jq -r ".[$i].workflow.name")
+            success=$(echo "$results" | jq -r ".[$i].success")
+            path=$(echo "$results" | jq -r ".[$i].workflow.path")
+
+            if [ "$success" = "true" ]; then
+              decision=$(echo "$results" | jq -r ".[$i].plan.user_decision // \"applied\"")
+              echo "- **${name}** (\`${path}\`): ${decision}"
+            else
+              echo "- **${name}** (\`${path}\`): Failed"
+            fi
+          done
+
+          cat << EOF
+
+### Next Steps
+
+1. Test upgraded workflows to verify behavior
+2. Review any warnings or manual review notes
+3. Commit changes to version control
+EOF
+        store_in: final_report_str
+      - type: mutate_state
+        operation: set
+        field: final_report
+        value: "${final_report_str}"
+      - type: emit_text
+        content: "${final_report_str}"
+    on_success: success
+    on_failure: success
+
+endings:
+  success:
+    type: success
+    message: "Upgrade complete"
+    summary:
+      target_type: "${target_type}"
+      workflows_processed: "${all_results | length}"
+      results: "${all_results}"
+      report: "${final_report}"
+
+  success_no_workflows:
+    type: success
+    message: "No workflows found to upgrade"
+    summary:
+      target_type: "${target_type}"
+      workflows_processed: 0
+
+  success_cancelled:
+    type: success
+    message: "Upgrade cancelled"
+    summary:
+      cancelled: true
+
+  error_discovery:
+    type: error
+    code: "DISCOVERY_FAILED"
+    message: "Failed to discover workflows"
+    recovery:
+      suggestion: "Check that the plugin has valid workflow.yaml files"
+
+  error_processing:
+    type: error
+    code: "PROCESSING_FAILED"
+    message: "Failed to process workflow"
+    recovery:
+      suggestion: "Check workflow file permissions and structure"

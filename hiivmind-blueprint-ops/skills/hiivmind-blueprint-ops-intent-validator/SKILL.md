@@ -26,7 +26,7 @@ This skill validates intent-mapping.yaml files against 16 checks organized into 
 | Category | Checks |
 |----------|--------|
 | **Coverage Analysis** | Keyword uniqueness, overlap, negative coverage, dead flags |
-| **Rule Collision Detection** | Identical conditions, subset conditions, mutual exclusivity, priority collisions |
+| **Rule Collision Detection** | Identical conditions, subset conditions, mutual exclusivity, ranking ties |
 | **Gap Detection** | Uncovered flag combinations, missing fallback, orphan rules |
 | **3VL Semantics** | U-in-rule semantics, all-U conditions, soft match risk |
 | **Cross-Reference** | Action targets, parameter consistency |
@@ -190,15 +190,17 @@ Rule A's conditions are a proper subset of Rule B's conditions.
 Algorithm:
 1. For each pair of rules (A, B)
 2. If A.conditions ⊂ B.conditions (proper subset)
-3. And A.priority >= B.priority (A would match first)
-4. Report ambiguous priority
+3. Analyze which rule wins under different input states
+4. Report the input-dependent behavior
 
 Report format:
 ```
-WARN: Subset condition ambiguity:
-  - validate_full (priority 100, {has_validate: T})
-    is subset of validate_schema (priority 110, {has_validate: T, has_schema_mode: T})
-  - Note: Higher priority on specific rule is correct behavior
+WARN: Subset condition relationship:
+  - validate_full ({has_validate: T}) ⊂ validate_schema ({has_validate: T, has_schema_mode: T})
+  - Winner depends on input state:
+    • Extra conditions satisfied (T): More specific rule wins (more hard matches)
+    • Extra conditions unknown (U): Simpler rule wins (fewer soft matches)
+    • Extra conditions negated (F): Specific rule excluded (contradiction)
 ```
 
 ### Check 7: Mutual Exclusivity
@@ -219,24 +221,26 @@ INFO: Mutually exclusive rules (cannot both match):
   - upgrade_gateway requires has_gateway_target: T, has_skills_target: F
 ```
 
-### Check 8: Priority Collisions
+### Check 8: Ranking Ties
 
 **Severity:** Warning
 
-Same priority with overlapping conditions.
+Rules with same ranking score under 3VL algorithm.
 
 Algorithm:
-1. Group rules by priority
-2. For each group with >1 rule
-3. Check if conditions can overlap (no contradiction)
-4. Report potential tie
+1. For each pair of rules (A, B) with same condition count
+2. Identify conditions unique to each rule
+3. Check if input states exist where both rules score identically
+4. Report potential ties (requires disambiguation)
 
 Report format:
 ```
-WARN: Priority collision (priority 110):
+WARN: Potential ranking tie:
   - validate_schema: {has_validate: T, has_schema_mode: T}
   - validate_graph: {has_validate: T, has_graph_mode: T}
-  - These could tie if both has_schema_mode and has_graph_mode are T
+  - Ties occur when unique conditions have matching states:
+    • Both T: score (-2, 0, 2) each — both fully satisfied
+    • Both U: score (-1, 1, 2) each — both partially uncertain
 ```
 
 ---
@@ -276,8 +280,8 @@ yq -r '.rules[] | select(.condition == {} or .condition == null) | .name' "$PATH
 Report format:
 ```
 ERROR: No fallback rule defined
-  - Add a rule with empty conditions {} as lowest priority
-  - Example: {name: fallback, priority: 0, condition: {}, action: show_menu}
+  - Add a rule with empty conditions {} to catch unmatched inputs
+  - Example: {name: fallback, condition: {}, action: show_menu}
 ```
 
 ### Check 11: Orphan Rules
@@ -432,7 +436,7 @@ WARN: Parameter consistency issues:
 
 ## Warnings (should fix)
 
-1. **Priority collision**: validate_schema, validate_graph at priority 110 (Check 8)
+1. **Ranking tie**: validate_schema, validate_graph could tie (Check 8)
 2. **Subset ambiguity**: validate_full vs validate_schema (Check 6)
 3. **Soft match risk**: compound_rule (Check 14)
 4. **Keyword uniqueness**: "validate" in multiple flags (Check 1)

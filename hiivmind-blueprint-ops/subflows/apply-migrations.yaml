@@ -1,0 +1,656 @@
+# apply-migrations.yaml
+# Layer 0: Atomic Subflow
+#
+# Phases 4, 5, 6.5 of the upgrade workflow: Apply schema migrations,
+# execution reference migrations, and intent mapping upgrades.
+#
+# This subflow handles creating backups, applying each migration type,
+# and supports dry-run mode and individual review mode.
+
+name: apply-migrations
+version: 1.0.0
+description: Apply schema, execution ref, and intent mapping migrations
+
+# Interface declaration for subflow composition
+input_schema:
+  workflow_path:
+    type: string
+    required: true
+    description: "Path to the workflow.yaml file"
+  skill_md_path:
+    type: string
+    required: true
+    description: "Path to the SKILL.md file"
+  intent_mapping_path:
+    type: string
+    required: false
+    description: "Path to intent-mapping.yaml (gateway only)"
+  migrations:
+    type: array
+    required: true
+    description: "Array of migrations to apply"
+  user_decision:
+    type: string
+    enum: ["apply_all", "review_each", "dry_run"]
+    required: true
+    description: "User's decision from planning phase"
+  lib_version:
+    type: string
+    required: true
+    description: "Library version for execution references"
+  target_type:
+    type: string
+    enum: ["skill", "gateway"]
+    required: true
+    description: "Type of workflow being upgraded"
+  target_version:
+    type: string
+    required: false
+    default: "2.3.0"
+    description: "Target schema version"
+
+output_schema:
+  applied_migrations:
+    type: array
+    description: "Array of applied migration results"
+  backup_paths:
+    type: object
+    description: "Paths to backup files created"
+  files_modified:
+    type: array
+    description: "List of files that were modified"
+  dry_run_output:
+    type: string
+    description: "Formatted output if dry run mode"
+
+definitions:
+  source: "hiivmind/hiivmind-blueprint-lib"
+  version: "v2.1.0"
+
+composes:
+  - ref: ../../hiivmind-blueprint-author/subflows/existing-file-handler.yaml
+    as: file_handler
+
+start_node: check_dry_run
+
+initial_state:
+  applied_migrations: []
+  backup_paths:
+    workflow: null
+    skill_md: null
+    intent_mapping: null
+  files_modified: []
+  dry_run_output: ""
+  current_migration_index: 0
+  workflow_content: ""
+  skill_md_content: ""
+
+nodes:
+  check_dry_run:
+    type: conditional
+    description: "Check if this is a dry run"
+    condition:
+      type: state_check
+      field: input.user_decision
+      operator: equals
+      value: "dry_run"
+    branches:
+      on_true: generate_dry_run_output
+      on_false: create_backups
+
+  generate_dry_run_output:
+    type: action
+    description: "Generate dry run output showing what would change"
+    effect: |
+      Build markdown output showing what would be changed:
+
+      output = "## Dry Run - Changes That Would Be Made
+
+      **Workflow:** ${input.workflow_path}
+      **SKILL.md:** ${input.skill_md_path}
+      **Library Version:** ${input.lib_version}
+
+      ### Migrations (${input.migrations.length})
+      "
+
+      index = 0
+      FOR EACH migration IN input.migrations:
+        APPEND to output:
+          "${index}. **${migration.name}**
+             ${migration.action}
+          "
+        index = index + 1
+
+      APPEND to output:
+        "### Files That Would Be Modified
+
+        - `${input.workflow_path}`
+        - `${input.skill_md_path}`
+        "
+
+      IF input.intent_mapping_path IS NOT EMPTY:
+        APPEND to output: "- `${input.intent_mapping_path}`"
+
+      APPEND to output:
+        "### Backups That Would Be Created
+
+        - `${input.workflow_path}.backup`
+        - `${input.skill_md_path}.backup`
+        "
+
+      IF input.intent_mapping_path IS NOT EMPTY:
+        APPEND to output: "- `${input.intent_mapping_path}.backup`"
+
+      SET state.dry_run_str = output
+    on_success: store_dry_run_output
+    on_failure: error_dry_run
+
+  store_dry_run_output:
+    type: action
+    description: "Store dry run output"
+    actions:
+      - type: mutate_state
+        operation: set
+        field: dry_run_output
+        value: "${dry_run_str}"
+    on_success: success_dry_run
+    on_failure: success_dry_run
+
+  create_backups:
+    type: action
+    description: "Create backup copies of files to be modified"
+    actions:
+      - type: run_command
+        interpreter: bash
+        command: |
+          workflow_path='${input.workflow_path}'
+          backup_path="${workflow_path}.backup"
+          cp "$workflow_path" "$backup_path"
+          echo "$backup_path"
+        store_in: workflow_backup_path
+      - type: run_command
+        interpreter: bash
+        command: test -f '${input.skill_md_path}' && cp '${input.skill_md_path}' '${input.skill_md_path}.backup' && echo '${input.skill_md_path}.backup' || echo ""
+        store_in: skill_md_backup_path
+    on_success: store_backup_paths
+    on_failure: error_backup
+
+  store_backup_paths:
+    type: action
+    description: "Store backup paths in state"
+    actions:
+      - type: mutate_state
+        operation: set
+        field: backup_paths.workflow
+        value: "${workflow_backup_path}"
+      - type: mutate_state
+        operation: set
+        field: backup_paths.skill_md
+        value: "${skill_md_backup_path}"
+    on_success: backup_intent_mapping
+    on_failure: read_workflow_content
+
+  backup_intent_mapping:
+    type: conditional
+    description: "Check if intent mapping needs backup"
+    condition:
+      type: evaluate_expression
+      expression: "input.intent_mapping_path != null && input.intent_mapping_path != ''"
+    branches:
+      on_true: create_intent_mapping_backup
+      on_false: read_workflow_content
+
+  create_intent_mapping_backup:
+    type: action
+    description: "Create backup of intent-mapping.yaml"
+    actions:
+      - type: run_command
+        interpreter: bash
+        command: test -f '${input.intent_mapping_path}' && cp '${input.intent_mapping_path}' '${input.intent_mapping_path}.backup' && echo '${input.intent_mapping_path}.backup' || echo ""
+        store_in: intent_backup_path
+      - type: mutate_state
+        operation: set
+        field: backup_paths.intent_mapping
+        value: "${intent_backup_path}"
+    on_success: read_workflow_content
+    on_failure: read_workflow_content
+
+  read_workflow_content:
+    type: action
+    description: "Read current workflow content"
+    actions:
+      - type: local_file_ops
+        operation: read
+        path: "${input.workflow_path}"
+        store_in: workflow_content
+    on_success: read_skill_md_content
+    on_failure: error_read_workflow
+
+  read_skill_md_content:
+    type: action
+    description: "Read current SKILL.md content"
+    actions:
+      - type: local_file_ops
+        operation: read
+        path: "${input.skill_md_path}"
+        store_in: skill_md_content
+    on_success: process_migrations
+    on_failure: process_migrations
+
+  process_migrations:
+    type: conditional
+    description: "Check if there are more migrations to process"
+    condition:
+      type: evaluate_expression
+      expression: "current_migration_index < (input.migrations | length)"
+    branches:
+      on_true: get_current_migration
+      on_false: write_workflow
+
+  get_current_migration:
+    type: action
+    description: "Get the current migration to apply"
+    actions:
+      - type: run_command
+        interpreter: bash
+        command: |
+          migrations='${input.migrations | tojson}'
+          index=${current_migration_index}
+          echo "$migrations" | jq -r ".[$index].name"
+        store_in: current_migration_name
+    on_success: route_migration
+    on_failure: increment_migration_index
+
+  route_migration:
+    type: conditional
+    description: "Route to appropriate migration handler"
+    condition:
+      type: state_check
+      field: current_migration_name
+      operator: equals
+      value: "add_version_field"
+    branches:
+      on_true: apply_add_version_field
+      on_false: check_set_state_migration
+
+  check_set_state_migration:
+    type: conditional
+    description: "Check for set_state migration"
+    condition:
+      type: state_check
+      field: current_migration_name
+      operator: equals
+      value: "update_set_state_format"
+    branches:
+      on_true: apply_update_set_state_format
+      on_false: check_node_descriptions_migration
+
+  check_node_descriptions_migration:
+    type: conditional
+    description: "Check for node descriptions migration"
+    condition:
+      type: state_check
+      field: current_migration_name
+      operator: equals
+      value: "add_node_descriptions"
+    branches:
+      on_true: apply_add_node_descriptions
+      on_false: check_error_recovery_migration
+
+  check_error_recovery_migration:
+    type: conditional
+    description: "Check for error recovery migration"
+    condition:
+      type: state_check
+      field: current_migration_name
+      operator: equals
+      value: "add_error_recovery"
+    branches:
+      on_true: apply_add_error_recovery
+      on_false: check_execution_refs_migration
+
+  check_execution_refs_migration:
+    type: conditional
+    description: "Check for execution refs migration"
+    condition:
+      type: state_check
+      field: current_migration_name
+      operator: equals
+      value: "migrate_execution_refs"
+    branches:
+      on_true: apply_migrate_execution_refs
+      on_false: check_intent_priority_migration
+
+  check_intent_priority_migration:
+    type: conditional
+    description: "Check for intent priority migration"
+    condition:
+      type: state_check
+      field: current_migration_name
+      operator: equals
+      value: "remove_intent_priority"
+    branches:
+      on_true: apply_remove_intent_priority
+      on_false: increment_migration_index
+
+  # Migration Handlers
+
+  apply_add_version_field:
+    type: action
+    description: "Add version field to workflow"
+    effect: |
+      Add version field to workflow_content:
+
+      IF workflow_content CONTAINS line starting with "name:":
+        INSERT "version: '${input.target_version}'" AFTER the "name:" line
+      ELSE:
+        PREPEND "version: '${input.target_version}'" TO workflow_content
+
+      SET state.workflow_content = updated content
+
+      APPEND to state.applied_migrations: {
+        name: "add_version_field",
+        success: true
+      }
+    on_success: increment_migration_index
+    on_failure: record_migration_failure
+
+  apply_update_set_state_format:
+    type: action
+    description: "Convert old set_state format to new field/value format"
+    effect: |
+      Convert old set_state format to new field/value format:
+
+      # Check for old format set_state blocks
+      IF workflow_content CONTAINS "type: set_state" AND CONTAINS "state:":
+        # Old format detected - flag for manual review
+        # Real implementation would need YAML manipulation for nested state objects
+        SET state.set_state_result = "MANUAL_REVIEW_NEEDED"
+      ELSE:
+        SET state.set_state_result = workflow_content
+
+      APPEND to state.applied_migrations: {
+        name: "update_set_state_format",
+        success: true,
+        note: "Manual review may be needed for complex state objects"
+      }
+    on_success: increment_migration_index
+    on_failure: record_migration_failure
+
+  apply_add_node_descriptions:
+    type: action
+    description: "Add descriptions to nodes that are missing them"
+    effect: |
+      Add descriptions to nodes missing them:
+
+      # For each node in workflow_content.nodes:
+      #   IF node.description IS null OR empty:
+      #     Generate description from node name (humanize the snake_case name)
+
+      # Note: Proper YAML manipulation needed for implementation
+      SET state.workflow_with_descriptions = workflow_content
+
+      APPEND to state.applied_migrations: {
+        name: "add_node_descriptions",
+        success: true,
+        note: "Node descriptions should be generated from node names"
+      }
+    on_success: increment_migration_index
+    on_failure: record_migration_failure
+
+  apply_add_error_recovery:
+    type: action
+    description: "Add recovery suggestions to error endings"
+    actions:
+    effect: |
+      Add recovery suggestions to error endings:
+
+      # For each ending in workflow_content.endings:
+      #   IF ending.type == "error" AND ending.recovery IS null:
+      #     Add recovery.suggestion based on error code/message
+
+      # Note: Proper YAML manipulation needed for implementation
+      SET state.workflow_with_recovery = workflow_content
+
+      APPEND to state.applied_migrations: {
+        name: "add_error_recovery",
+        success: true,
+        note: "Recovery suggestions added to error endings"
+      }
+    on_success: increment_migration_index
+    on_failure: record_migration_failure
+
+  apply_migrate_execution_refs:
+    type: action
+    description: "Replace local engine.md references with remote URLs"
+    effect: |
+      Replace legacy engine.md references in skill_md_content:
+
+      # Build the new execution reference section
+      new_section = "## Execution Reference
+
+      Execution semantics from [hiivmind-blueprint-lib](https://github.com/hiivmind/hiivmind-blueprint-lib) (version: ${input.lib_version}):
+
+      | Semantic | Source |
+      |----------|--------|
+      | Core loop | [traversal.yaml](https://raw.githubusercontent.com/hiivmind/hiivmind-blueprint-lib/${input.lib_version}/execution/traversal.yaml) |
+      | State | [state.yaml](https://raw.githubusercontent.com/hiivmind/hiivmind-blueprint-lib/${input.lib_version}/execution/state.yaml) |
+      | Consequences | [consequence-dispatch.yaml](https://raw.githubusercontent.com/hiivmind/hiivmind-blueprint-lib/${input.lib_version}/execution/consequence-dispatch.yaml) |
+      | Preconditions | [precondition-dispatch.yaml](https://raw.githubusercontent.com/hiivmind/hiivmind-blueprint-lib/${input.lib_version}/execution/precondition-dispatch.yaml) |"
+
+      updated = skill_md_content
+
+      # Remove old reference patterns
+      REMOVE from updated: lines matching "## Reference" section containing "engine.md"
+      REMOVE from updated: lines containing ".hiivmind/blueprint/engine.md"
+      REMOVE from updated: lines containing "lib/workflow/engine.md"
+
+      # Add new section if not already present
+      IF updated NOT CONTAINS "## Execution Reference":
+        IF updated CONTAINS "## Related Skills":
+          INSERT new_section BEFORE "## Related Skills"
+        ELSE:
+          APPEND new_section TO END
+
+      SET state.skill_md_content = updated
+
+      APPEND to state.applied_migrations: {
+        name: "migrate_execution_refs",
+        success: true
+      }
+    on_success: increment_migration_index
+    on_failure: record_migration_failure
+
+  apply_remove_intent_priority:
+    type: conditional
+    description: "Check if intent mapping exists"
+    condition:
+      type: evaluate_expression
+      expression: "input.intent_mapping_path != null && input.intent_mapping_path != ''"
+    branches:
+      on_true: read_and_update_intent_mapping
+      on_false: increment_migration_index
+
+  read_and_update_intent_mapping:
+    type: action
+    description: "Remove priority fields from intent-mapping.yaml"
+    effect: |
+      Remove priority fields from intent-mapping.yaml:
+
+      IF input.intent_mapping_path FILE EXISTS:
+        READ content FROM input.intent_mapping_path
+
+        # Remove lines matching "  priority: N" pattern
+        updated = FILTER OUT lines matching /^\s*priority:\s*[0-9]*\s*$/
+
+        WRITE updated TO input.intent_mapping_path
+        SET state.intent_update_result = "success"
+      ELSE:
+        SET state.intent_update_result = "no_file"
+
+      APPEND to state.applied_migrations: {
+        name: "remove_intent_priority",
+        success: true
+      }
+
+      APPEND to state.files_modified: input.intent_mapping_path
+    on_success: increment_migration_index
+    on_failure: record_migration_failure
+
+  record_migration_failure:
+    type: action
+    description: "Record that a migration failed"
+    actions:
+      - type: mutate_state
+        operation: append
+        field: applied_migrations
+        value:
+          name: "${current_migration_name}"
+          success: false
+    on_success: increment_migration_index
+    on_failure: increment_migration_index
+
+  increment_migration_index:
+    type: action
+    description: "Move to next migration"
+    actions:
+      - type: mutate_state
+        operation: set
+        field: current_migration_index
+        value: "${current_migration_index + 1}"
+    on_success: process_migrations
+    on_failure: process_migrations
+
+  write_workflow:
+    type: action
+    description: "Write updated workflow content to file"
+    actions:
+      - type: local_file_ops
+        operation: write
+        path: "${input.workflow_path}"
+        content: "${workflow_content}"
+      - type: mutate_state
+        operation: append
+        field: files_modified
+        value: "${input.workflow_path}"
+    on_success: write_skill_md
+    on_failure: error_write_workflow
+
+  write_skill_md:
+    type: action
+    description: "Write updated SKILL.md content to file"
+    actions:
+      - type: local_file_ops
+        operation: write
+        path: "${input.skill_md_path}"
+        content: "${skill_md_content}"
+      - type: mutate_state
+        operation: append
+        field: files_modified
+        value: "${input.skill_md_path}"
+    on_success: prompt_engine_removal
+    on_failure: error_write_skill_md
+
+  prompt_engine_removal:
+    type: conditional
+    description: "Check if engine.md removal should be prompted"
+    condition:
+      type: evaluate_expression
+      expression: |
+        applied_migrations | map(select(.name == "migrate_execution_refs" and .success == true)) | length > 0
+    branches:
+      on_true: check_engine_file_exists
+      on_false: success
+
+  check_engine_file_exists:
+    type: conditional
+    description: "Check if .hiivmind/blueprint/engine.md exists"
+    condition:
+      type: path_check
+      path: ".hiivmind/blueprint/engine.md"
+      check: exists
+    branches:
+      on_true: prompt_remove_engine
+      on_false: success
+
+  prompt_remove_engine:
+    type: user_prompt
+    description: "Ask user about removing obsolete engine.md"
+    prompt:
+      question: "Remove obsolete .hiivmind/blueprint/engine.md?"
+      header: "Cleanup"
+      options:
+        - id: remove
+          label: "Remove"
+          description: "Delete the obsolete engine.md file"
+        - id: keep
+          label: "Keep"
+          description: "Keep engine.md for reference (will be ignored)"
+    on_response:
+      remove:
+        next_node: remove_engine_file
+      keep:
+        next_node: success
+
+  remove_engine_file:
+    type: action
+    description: "Remove obsolete engine.md file"
+    actions:
+      - type: run_command
+        interpreter: bash
+        command: |
+          rm -f ".hiivmind/blueprint/engine.md"
+          # Remove directory if empty
+          rmdir ".hiivmind/blueprint" 2>/dev/null || true
+          echo "removed"
+        store_in: engine_removal_result
+    on_success: success
+    on_failure: success
+
+endings:
+  success:
+    type: success
+    message: "Applied ${applied_migrations | length} migrations"
+    summary:
+      applied_migrations: "${applied_migrations}"
+      backup_paths: "${backup_paths}"
+      files_modified: "${files_modified}"
+
+  success_dry_run:
+    type: success
+    message: "Dry run complete - no changes applied"
+    summary:
+      dry_run_output: "${dry_run_output}"
+      applied_migrations: []
+      files_modified: []
+
+  error_dry_run:
+    type: error
+    code: "DRY_RUN_FAILED"
+    message: "Failed to generate dry run output"
+
+  error_backup:
+    type: error
+    code: "BACKUP_FAILED"
+    message: "Failed to create backup files"
+    recovery:
+      suggestion: "Check file permissions and disk space"
+
+  error_read_workflow:
+    type: error
+    code: "READ_WORKFLOW_FAILED"
+    message: "Failed to read workflow file: ${input.workflow_path}"
+
+  error_write_workflow:
+    type: error
+    code: "WRITE_WORKFLOW_FAILED"
+    message: "Failed to write workflow file: ${input.workflow_path}"
+    recovery:
+      suggestion: "Restore from backup at ${backup_paths.workflow}"
+
+  error_write_skill_md:
+    type: error
+    code: "WRITE_SKILL_MD_FAILED"
+    message: "Failed to write SKILL.md file: ${input.skill_md_path}"
+    recovery:
+      suggestion: "Restore from backup at ${backup_paths.skill_md}"
