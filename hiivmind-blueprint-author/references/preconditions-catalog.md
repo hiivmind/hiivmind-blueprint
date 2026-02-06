@@ -394,6 +394,28 @@ validate_prerequisites:
 
 ---
 
+## Fetching Examples
+
+```bash
+# All precondition examples
+gh api repos/hiivmind/hiivmind-blueprint-lib/contents/examples/preconditions.yaml?ref=v3.0.0 \
+  --jq '.content' | base64 -d
+
+# Examples for a specific category
+gh api repos/hiivmind/hiivmind-blueprint-lib/contents/examples/preconditions.yaml?ref=v3.0.0 \
+  --jq '.content' | base64 -d | yq '.examples["core/state"]'
+
+# Examples for a specific type
+gh api repos/hiivmind/hiivmind-blueprint-lib/contents/examples/preconditions.yaml?ref=v3.0.0 \
+  --jq '.content' | base64 -d | yq '.examples["core/state"].state_check'
+
+# Canonical type definition
+gh api repos/hiivmind/hiivmind-blueprint-lib/contents/preconditions/preconditions.yaml?ref=v3.0.0 \
+  --jq '.content' | base64 -d | yq '.preconditions.state_check'
+```
+
+---
+
 ## Related Documentation
 
 - **Examples:** `hiivmind/hiivmind-blueprint-lib@v3.0.0/examples/preconditions.yaml`

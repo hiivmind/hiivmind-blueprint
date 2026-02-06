@@ -17,7 +17,7 @@ Consequences are actions executed when a node runs or a user responds. They are 
 | core/control | 5 | Workflow control (checkpoints, rollback, spawn, inline, invoke_skill) |
 | core/evaluation | 2 | Expression and computation |
 | core/interaction | 1 | User-facing output |
-| core/logging | 9 | Logging and audit trail |
+| core/logging | 8 | Logging and audit trail |
 | core/state | 2 | State manipulation |
 | core/utility | 2 | Timestamps, hashes |
 | core/intent | 4 | Intent detection and routing |
@@ -86,7 +86,6 @@ Consequences are actions executed when a node runs or a user responds. They are 
 | `write_log` | Write log to file | `format`, `path` |
 | `apply_log_retention` | Clean up old logs | `path`, `strategy`, `count`/`days` |
 | `output_ci_summary` | Format for CI environments | `format`, `annotations` |
-| `install_tool` | Install CLI tool | `tool`, `install_command` |
 
 **log_entry levels:** `debug`, `info`, `warning`, `error`
 
@@ -356,6 +355,28 @@ Use this table when converting prose skill descriptions to consequences:
 | "calculate", "compute" | `evaluate`, `compute` | expression |
 | "route", "delegate" | `dynamic_route` | action |
 | "invoke skill", "call skill" | `invoke_skill` | skill |
+
+---
+
+## Fetching Examples
+
+```bash
+# All consequence examples
+gh api repos/hiivmind/hiivmind-blueprint-lib/contents/examples/consequences.yaml?ref=v3.0.0 \
+  --jq '.content' | base64 -d
+
+# Examples for a specific category
+gh api repos/hiivmind/hiivmind-blueprint-lib/contents/examples/consequences.yaml?ref=v3.0.0 \
+  --jq '.content' | base64 -d | yq '.examples["core/control"]'
+
+# Examples for a specific type
+gh api repos/hiivmind/hiivmind-blueprint-lib/contents/examples/consequences.yaml?ref=v3.0.0 \
+  --jq '.content' | base64 -d | yq '.examples["core/control"].create_checkpoint'
+
+# Canonical type definition
+gh api repos/hiivmind/hiivmind-blueprint-lib/contents/consequences/consequences.yaml?ref=v3.0.0 \
+  --jq '.content' | base64 -d | yq '.consequences.create_checkpoint'
+```
 
 ---
 

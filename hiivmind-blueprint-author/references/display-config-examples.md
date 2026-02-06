@@ -1,12 +1,14 @@
-# Display Configuration Examples
+# Output Configuration Examples
 
-Examples of configuring workflow display verbosity and batching.
+Examples of configuring workflow output (display + logging) using the unified `output` config.
+
+> **Schema:** `hiivmind/hiivmind-blueprint-lib@v3.0.0/schema/config/output-config.json`
 
 ---
 
 ## Default Configuration (No Configuration)
 
-When `initial_state.display` is omitted, default settings are used:
+When `initial_state.output` is omitted, default settings are used:
 
 ```yaml
 name: "my-skill"
@@ -14,32 +16,32 @@ version: "1.0.0"
 
 initial_state:
   phase: "start"
-  # No display config - defaults to normal verbosity with batching
+  # No output config - defaults to level: normal, batch_enabled: true
 
 nodes:
   # ...workflow nodes...
 ```
 
-**Behavior:** Normal verbosity with batching enabled (threshold: 3).
+**Behavior:** Normal verbosity with batching enabled (threshold: 3), logging enabled.
 
 ---
 
-## Terse Mode for Production
+## Quiet Mode for Production
 
 Minimal feedback without losing important information:
 
 ```yaml
 initial_state:
-  display:
-    verbosity: "terse"
+  output:
+    level: "quiet"
 ```
 
 **Output:**
 
 ```
-Routing... [3 nodes] → show_main_menu
+Routing... [3 nodes] -> show_main_menu
 ? Select operation: build, validate, deploy
-Processing... [2 nodes] → success
+Processing... [2 nodes] -> success
 ✓ Workflow completed successfully
 ```
 
@@ -51,8 +53,8 @@ Maximum brevity when embedding workflows:
 
 ```yaml
 initial_state:
-  display:
-    verbosity: "silent"
+  output:
+    level: "silent"
 ```
 
 **Output:**
@@ -70,8 +72,8 @@ Detailed feedback when troubleshooting:
 
 ```yaml
 initial_state:
-  display:
-    verbosity: "verbose"
+  output:
+    level: "verbose"
 ```
 
 **Output:**
@@ -81,23 +83,23 @@ initial_state:
   - phase: "routing"
   - has_arguments: false
 
-  Node: check_arguments → Evaluating condition: arguments != null && arguments.trim() != ''
+  Node: check_arguments -> Evaluating condition: arguments != null && arguments.trim() != ''
   - Result: false
-  - Branch: on_false → show_main_menu
+  - Branch: on_false -> show_main_menu
 
-→ show_main_menu
+-> show_main_menu
 ? Select operation: build, validate, deploy
 
 ● User Response:
   - Selection: "build"
   - Handler: "build"
 
-→ execute_build
-  Node: execute_build → Executing actions
-  - Action 1: set_state(operation: "build")
-  - Action 2: run_build(target: "all")
+-> execute_build
+  Node: execute_build -> Executing actions
+  - Action 1: mutate_state(operation: set, field: operation)
+  - Action 2: run_command(script: build.sh)
 
-→ success
+-> success
 ✓ Workflow completed successfully
   - operation: build
   - duration: 2.3s
@@ -111,15 +113,15 @@ Full diagnostic output:
 
 ```yaml
 initial_state:
-  display:
-    verbosity: "debug"
+  output:
+    level: "debug"
 ```
 
 **Output:**
 
 ```
 [DEBUG] Loading workflow: decision-maker
-[DEBUG] Resolved types from: hiivmind/hiivmind-blueprint-lib@v2.1.0
+[DEBUG] Resolved types from: hiivmind/hiivmind-blueprint-lib@v3.0.0
 [DEBUG] Initialized state: { phase: "routing", flags: {}, computed: {} }
 
 ● Full State Dump:
@@ -134,7 +136,7 @@ initial_state:
 
 [DEBUG] Evaluating node: check_arguments (type: conditional)
 [DEBUG] Condition: arguments != null && arguments.trim() != ''
-[DEBUG] Interpolating: arguments → null
+[DEBUG] Interpolating: arguments -> null
 [DEBUG] Result: false
 [DEBUG] Routing to: show_main_menu
 
@@ -149,11 +151,10 @@ Require more nodes before batching:
 
 ```yaml
 initial_state:
-  display:
-    verbosity: "terse"
-    batch:
-      enabled: true
-      threshold: 5           # Only batch when >= 5 consecutive nodes
+  output:
+    level: "quiet"
+    batch_enabled: true
+    batch_threshold: 5       # Only batch when >= 5 consecutive nodes
 ```
 
 ---
@@ -164,89 +165,32 @@ Show every node transition:
 
 ```yaml
 initial_state:
-  display:
-    verbosity: "normal"
-    batch:
-      enabled: false
+  output:
+    level: "normal"
+    batch_enabled: false
 ```
 
 **Output:**
 
 ```
-→ check_arguments
-→ validate_config
-→ parse_options
-→ show_main_menu
+-> check_arguments
+-> validate_config
+-> parse_options
+-> show_main_menu
 ? Select operation: ...
 ```
 
 ---
 
-## Batch with Node List
+## Disable Icons
 
-Show which nodes were batched:
-
-```yaml
-initial_state:
-  display:
-    verbosity: "terse"
-    batch:
-      enabled: true
-      threshold: 3
-      show_node_list: true   # Include node IDs
-```
-
-**Output:**
-
-```
-Routing... [check_arguments, validate_config, parse_options] → show_main_menu
-```
-
----
-
-## Fine-Grained Show Controls
-
-Customize what's displayed at each verbosity level:
+Remove visual icons from output:
 
 ```yaml
 initial_state:
-  display:
-    verbosity: "normal"
-    show:
-      workflow_state: false      # Don't show state dumps
-      node_transitions: true     # Show → arrows
-      condition_eval: true       # Show condition expressions
-      branch_result: true        # Show branch decisions
-      phase_markers: true        # Show phase boundaries
-      spinner_text: true         # Show spinner during long operations
-```
-
-**Output:**
-
-```
-── Phase: Initialize ──
-→ check_arguments
-  Condition: arguments != null
-  Branch: on_false → show_main_menu
-→ show_main_menu
-── Phase: Execute ──
-? Select operation: ...
-```
-
----
-
-## Minimal Format Style
-
-Reduce visual noise:
-
-```yaml
-initial_state:
-  display:
-    verbosity: "normal"
-    format:
-      style: "minimal"
-      use_icons: false
-      indent: 0
+  output:
+    level: "normal"
+    use_icons: false
 ```
 
 **Output:**
@@ -262,68 +206,19 @@ Workflow completed successfully
 
 ---
 
-## Inline Format Style
-
-Single-line output:
-
-```yaml
-initial_state:
-  display:
-    verbosity: "terse"
-    format:
-      style: "inline"
-```
-
-**Output:**
-
-```
-Routing [3] → show_main_menu | ? operation | Processing [2] → success | ✓ Done
-```
-
----
-
-## Timestamps
-
-Add timestamps to output:
-
-```yaml
-initial_state:
-  display:
-    verbosity: "verbose"
-    format:
-      timestamp: true
-```
-
-**Output:**
-
-```
-[10:23:45.123] → check_arguments
-[10:23:45.145] → show_main_menu
-[10:23:47.891] ? Select operation: ...
-[10:23:52.234] → execute_build
-```
-
----
-
 ## Combined Display and Logging
 
-Use terse display with detailed file logging:
+Use quiet display with detailed file logging:
 
 ```yaml
 initial_state:
-  display:
-    verbosity: "terse"         # Minimal terminal output
-    batch:
-      enabled: true
-      threshold: 3
-  logging:
-    enabled: true
-    level: "debug"             # Full details in log file
-    auto:
-      init: true
-      node_tracking: true
-      finalize: true
-      write: true
+  output:
+    level: "quiet"           # Minimal terminal output
+    batch_enabled: true
+    batch_threshold: 3
+    log_enabled: true         # Full details in log file
+    log_format: "yaml"
+    log_location: ".logs/"
 ```
 
 **Terminal shows:** Minimal batched output
@@ -331,19 +226,51 @@ initial_state:
 
 ---
 
-## Plugin-Level Display Configuration
+## Disable File Logging
 
-Create `.hiivmind/blueprint/display.yaml` for plugin-wide defaults:
+Terminal output only, no log files:
 
 ```yaml
-# .hiivmind/blueprint/display.yaml
-display:
-  verbosity: "terse"
-  batch:
-    enabled: true
-    threshold: 3
-  format:
-    use_icons: true
+initial_state:
+  output:
+    level: "normal"
+    log_enabled: false
+```
+
+---
+
+## CI Mode
+
+Enable GitHub Actions integration:
+
+```yaml
+initial_state:
+  output:
+    level: "quiet"
+    ci_mode: true
+    display_enabled: false    # No terminal output in CI
+    log_enabled: true
+    log_format: "json"
+```
+
+**Behavior:** Emits GitHub annotations for errors and warnings. No terminal display.
+
+---
+
+## Plugin-Level Output Configuration
+
+Create `.hiivmind/blueprint/output.yaml` for plugin-wide defaults:
+
+```yaml
+# .hiivmind/blueprint/output.yaml
+output:
+  level: "quiet"
+  batch_enabled: true
+  batch_threshold: 3
+  use_icons: true
+  log_enabled: true
+  log_format: "yaml"
+  log_location: ".logs/"
 ```
 
 Skills can override:
@@ -351,109 +278,100 @@ Skills can override:
 ```yaml
 # skills/my-skill/workflow.yaml
 initial_state:
-  display:
-    verbosity: "verbose"  # Override for this skill only
+  output:
+    level: "verbose"   # Override for this skill only
 ```
 
 ---
 
 ## Runtime Flag Overrides
 
-Users can override any display setting via command line:
+Users can override any output setting via command line:
 
 ```bash
 # Force verbose output
-claude --verbose /my-skill
+/my-skill --verbose
 
-# Force silent output
-claude --quiet /my-skill
-
-# Force terse output
-claude --terse /my-skill
-
-# Disable batching
-claude --no-batch /my-skill
+# Force quiet output
+/my-skill --quiet
 
 # Debug mode
-claude --debug /my-skill
+/my-skill --debug
+
+# Disable file logging
+/my-skill --no-log
+
+# Disable terminal display
+/my-skill --no-display
+
+# CI mode
+/my-skill --ci
 ```
+
+### Flag Mapping Reference
+
+| Flag | Maps To |
+|------|---------|
+| `--verbose`, `-v` | `output.level: verbose` |
+| `--quiet`, `-q` | `output.level: quiet` |
+| `--debug` | `output.level: debug` |
+| `--no-log` | `output.log_enabled: false` |
+| `--no-display` | `output.display_enabled: false` |
+| `--ci` | `output.ci_mode: true` |
 
 ---
 
-## Sub-Workflow Display Override
+## Sub-Workflow Output Override
 
-Override display for a referenced sub-workflow:
+Override output for a referenced sub-workflow:
 
 ```yaml
 nodes:
   detect_intent:
     type: reference
-    workflow: hiivmind/hiivmind-blueprint-lib@v2.1.0:intent-detection
+    workflow: hiivmind/hiivmind-blueprint-lib@v3.0.0:intent-detection
     context:
       arguments: "${arguments}"
-      display:
-        verbosity: "verbose"    # More detail for intent detection
-        batch:
-          enabled: false        # Show all nodes
+      output:
+        level: "verbose"       # More detail for intent detection
+        batch_enabled: false   # Show all nodes
     next_node: execute_dynamic_route
 ```
 
 ---
 
-## Expand on Error
+## Level Behavior Reference
 
-Automatically show details when an error occurs:
-
-```yaml
-initial_state:
-  display:
-    verbosity: "terse"
-    batch:
-      enabled: true
-      threshold: 3
-      expand_on_error: true    # Show batch contents on failure
-```
-
-**Normal output (success):**
-```
-Processing... [3 nodes] → success
-```
-
-**Expanded output (error):**
-```
-Processing... [3 nodes] ─ EXPANDED DUE TO ERROR:
-  → validate_input: passed
-  → check_permissions: passed
-  → execute_action: FAILED
-    Error: Permission denied for /etc/config
-```
+| Level | Terminal Shows | Log Captures |
+|-------|--------------|--------------|
+| `silent` | Prompts, final result | Errors |
+| `quiet` | + batch summaries | + warnings |
+| `normal` | + node transitions | + info |
+| `verbose` | + condition details, branch decisions, state | + debug |
+| `debug` | + interpolation steps, type resolution | + trace |
 
 ---
 
-## Conditional Verbosity by Environment
+## Fetching Examples
 
-Use environment-based configuration:
+```bash
+# Output config schema
+gh api repos/hiivmind/hiivmind-blueprint-lib/contents/schema/config/output-config.json?ref=v3.0.0 \
+  --jq '.content' | base64 -d
 
-```yaml
-# In workflow.yaml - check environment
-initial_state:
-  display:
-    verbosity: "${env.BLUEPRINT_VERBOSITY:-normal}"
-```
+# Schema properties
+gh api repos/hiivmind/hiivmind-blueprint-lib/contents/schema/config/output-config.json?ref=v3.0.0 \
+  --jq '.content' | base64 -d | jq '."$defs".outputConfig.properties'
 
-Or in plugin-level config:
-
-```yaml
-# .hiivmind/blueprint/display.yaml
-display:
-  verbosity: "${CI:-false}" == "true" ? "silent" : "normal"
+# Runtime flag mappings
+gh api repos/hiivmind/hiivmind-blueprint-lib/contents/schema/config/output-config.json?ref=v3.0.0 \
+  --jq '.content' | base64 -d | jq '.runtime_flags'
 ```
 
 ---
 
 ## Related Documentation
 
-- **Config Loader:** `lib/workflow/display-config-loader.md`
-- **Execution:** `hiivmind-blueprint-lib/execution/display.yaml`
-- **Schema:** `hiivmind-blueprint-lib/schema/display-config.json`
-- **Logging Examples:** `references/logging-config-examples.md` (for file-based logging)
+- **Schema:** `hiivmind-blueprint-lib/schema/config/output-config.json`
+- **Execution:** `hiivmind-blueprint-lib/execution/engine_execution.yaml`
+- **Prompts Config:** `references/prompts-config-examples.md`

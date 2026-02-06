@@ -3,7 +3,7 @@
 Complete reference for the 5 prompt interface modes in hiivmind-blueprint-lib v2.4.0+.
 
 > **Configuration Examples:** `references/prompts-config-examples.md`
-> **Node Definition:** `hiivmind/hiivmind-blueprint-lib@v2.1.0/nodes/workflow_nodes.yaml`
+> **Node Definition:** `hiivmind/hiivmind-blueprint-lib@v3.0.0/nodes/workflow_nodes.yaml`
 
 ---
 
@@ -323,6 +323,24 @@ initial_state:
 | "Web form with buttons" | forms | `modes.web: forms` |
 | "API endpoint" | structured | `modes.api: structured` |
 | "Agent decides automatically" | autonomous | `modes.agent: autonomous` |
+
+---
+
+## Fetching Examples
+
+```bash
+# Prompts config schema
+gh api repos/hiivmind/hiivmind-blueprint-lib/contents/schema/config/prompts-config.json?ref=v3.0.0 \
+  --jq '.content' | base64 -d
+
+# User prompt node definition
+gh api repos/hiivmind/hiivmind-blueprint-lib/contents/nodes/workflow_nodes.yaml?ref=v3.0.0 \
+  --jq '.content' | base64 -d | yq '.nodes.user_prompt'
+
+# User prompt examples
+gh api repos/hiivmind/hiivmind-blueprint-lib/contents/examples/nodes.yaml?ref=v3.0.0 \
+  --jq '.content' | base64 -d | yq '.examples.user_prompt'
+```
 
 ---
 
