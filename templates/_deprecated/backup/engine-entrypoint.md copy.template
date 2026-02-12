@@ -1,0 +1,319 @@
+# Hiivmind Blueprint Engine Entrypoint
+## Version: {{engine_version}}
+
+This document defines the standardized execution protocol used by all hiivmind-blueprint gateway commands and workflow-based skills. It provides a deterministic 4-phase model for loading external execution semantics and executing YAML workflows.
+
+---
+
+## Purpose
+
+This entrypoint protocol ensures that:
+1. All workflows execute consistently across different plugins
+2. External library versions are bootstrapped before fetching semantics
+3. Execution semantics are fetched from the correct version of hiivmind-blueprint-lib
+4. Local workflow files are validated against fetched type definitions
+5. Workflow traversal follows standardized 3-phase execution
+
+---
+
+## Prerequisites
+
+**Check these dependencies before execution:**
+
+| Tool | Required | Check | Install |
+|------|----------|-------|---------|
+| `jq` | **Mandatory** | `command -v jq` | `brew install jq` / `apt install jq` |
+| `yq` | **Mandatory** | `command -v yq` | `brew install yq` / [github.com/mikefarah/yq](https://github.com/mikefarah/yq) |
+| `gh` | Recommended | `command -v gh` | `brew install gh` / `apt install gh` |
+
+If mandatory tools are missing, exit with error listing the install commands above.
+
+---
+
+## Pseudocode Overview
+
+```
+ENTRYPOINT(workflow_path, [intent_mapping_path]):
+  # Phase 1: Bootstrap
+  lib_version ← EXTRACT_VERSION(workflow_path)
+  state._bootstrap.lib_version ← lib_version
+
+  # Phase 2: Fetch Semantics
+  semantics ← FETCH_REMOTE_SEMANTICS(lib_version)
+  VERIFY_SEMANTICS(semantics) OR FAIL
+  state._semantics ← semantics
+
+  # Phase 3: Load Local
+  workflow ← LOAD_YAML(workflow_path)
+  VALIDATE_WORKFLOW(workflow, semantics) OR FAIL
+  IF intent_mapping_path:
+    intent_mapping ← LOAD_YAML(intent_mapping_path)
+  parse_arguments()
+
+  # Phase 4: Execute
+  INITIALIZE_STATE(workflow.initial_state)
+  EXECUTE_TRAVERSAL(workflow, state) UNTIL ENDING
+  RETURN ending.type
+```
+
+---
+
+## Execution Protocol (YAML)
+
+```yaml
+engine_protocol:
+  version: "{{engine_version}}"
+  lib_version: "{{lib_version}}"
+
+  prerequisites:
+    mandatory:
+      - tool: jq
+        check: "command -v jq"
+        purpose: "JSON processing"
+      - tool: yq
+        check: "command -v yq"
+        purpose: "YAML processing"
+    recommended:
+      - tool: gh
+        purpose: "GitHub API access (private repos)"
+
+  phases:
+    - id: bootstrap
+      purpose: "Extract library version before fetching"
+      steps:
+        - extract_version:
+            source: "{{paths.workflow_path}}"
+            query: ".definitions.version"
+            store: "_bootstrap.lib_version"
+
+    - id: fetch_semantics
+      purpose: "Load execution semantics from external library"
+      steps:
+        - fetch_bootstrap:
+            url: "repos/hiivmind/hiivmind-blueprint-lib/contents/resolution/execution-loader.yaml?ref=${_bootstrap.lib_version}"
+            query: "{phases: [.resolution.execution_loader.bootstrap.fetch_order.phases[].id], required_sections: [.resolution.execution_loader.section_registry.sections | to_entries[] | select(.value.required == true) | .key]}"
+            store: "_semantics.bootstrap"
+
+        - fetch_traversal:
+            url: "repos/hiivmind/hiivmind-blueprint-lib/contents/execution/engine_execution.yaml?ref=${_bootstrap.lib_version}"
+            query: "{phases: [.execution.traversal.phases[].id], node_types: [...]}"
+            store: "_semantics.traversal"
+
+        - verify:
+            checks:
+              - field: "_semantics.bootstrap.phases"
+                expect: "5 items ending with 'execute'"
+              - field: "_semantics.bootstrap.required_sections"
+                expect: "exactly 4 items"
+              - field: "_semantics.traversal.phases"
+                expect: '["initialize", "execute", "complete"]'
+
+    - id: load_local
+      purpose: "Load and validate local workflow files"
+      steps:
+        - load_workflow:
+            path: "{{paths.workflow_path}}"
+            validate: true
+        - load_intent_mapping:
+            path: "{{paths.intent_mapping_path}}"
+            optional: true
+        - parse_arguments:
+            from: "command_line"
+
+    - id: execute
+      purpose: "Execute workflow per traversal semantics"
+      steps:
+        - initialize:
+            action: "Setup state per _semantics"
+        - execute_loop:
+            start: "${workflow.start_node}"
+            dispatch: "per _semantics.traversal"
+        - complete:
+            action: "Handle completion and cleanup"
+```
+
+---
+
+## Phase 1: Bootstrap
+
+**Extract the library version before fetching anything else.**
+
+```bash
+LIB_VERSION=$(yq '.definitions.version' "{{paths.workflow_path}}")
+```
+
+Store in state: `_bootstrap.lib_version = "${LIB_VERSION}"`
+
+**Do NOT parse arguments or read intent-mapping.yaml yet.**
+
+---
+
+## Phase 2: Fetch Execution Semantics
+
+**MANDATORY:** Fetch execution semantics BEFORE loading local files. You cannot correctly interpret workflow.yaml without these semantics.
+
+**Fetching Protocol (try in order):**
+1. gh api (primary): `gh api repos/{owner}/{repo}/contents/{path}?ref={version} --jq '.content' | base64 -d`
+2. raw URL (fallback): `https://raw.githubusercontent.com/{owner}/{repo}/{version}/{path}`
+
+### Step 2.1: Fetch Bootstrap & Section Registry
+
+```bash
+gh api repos/hiivmind/hiivmind-blueprint-lib/contents/resolution/execution-loader.yaml?ref=${_bootstrap.lib_version} \
+  --jq '.content' | base64 -d | yq '{
+    "phases": [.resolution.execution_loader.bootstrap.fetch_order.phases[].id],
+    "required_sections": [.resolution.execution_loader.section_registry.sections | to_entries[] | select(.value.required == true) | .key]
+  }'
+```
+
+**Store in state:**
+- `_semantics.bootstrap.phases` = `["bootstrap", "execution_semantics", "types", "initialize", "execute"]`
+- `_semantics.bootstrap.required_sections` = `["traversal", "state", "precondition_dispatch", "consequence_dispatch"]`
+
+### Step 2.2: Fetch Traversal Entrypoints
+
+```bash
+gh api repos/hiivmind/hiivmind-blueprint-lib/contents/execution/engine_execution.yaml?ref=${_bootstrap.lib_version} \
+  --jq '.content' | base64 -d | yq '{
+    "phases": [.execution.traversal.phases[].id],
+    "node_types": ["action", "conditional", "user_prompt", "reference"]
+  }'
+```
+
+**Store in state:**
+- `_semantics.traversal.phases` = `["initialize", "execute", "complete"]`
+- `_semantics.traversal.node_types` = `["action", "conditional", "user_prompt", "reference"]`
+
+### Step 2.3: Verification Checkpoint
+
+**STOP AND VERIFY** before proceeding to Phase 3:
+
+| Field | Expected Value | If Wrong |
+|-------|----------------|----------|
+| `_semantics.bootstrap.phases` | 5 items ending with "execute" | Fetch failed - retry |
+| `_semantics.bootstrap.required_sections` | exactly 4 items | Fetch failed - retry |
+| `_semantics.traversal.phases` | `["initialize", "execute", "complete"]` | Fetch failed - retry |
+
+If verification fails, the fetch was skipped or returned incorrect data. Retry the fetch.
+
+---
+
+## Phase 3: Load Local Files
+
+**Now that semantics are available, load and validate local files.**
+
+1. Re-read workflow.yaml with validation per `_semantics`
+2. Read intent-mapping.yaml (if applicable - gateways only)
+3. Validate against fetched type definitions
+4. Parse command-line arguments and flags
+
+**Files to load:**
+- **Workflow:** `{{paths.workflow_path}}`
+- **Intent Mapping:** `{{paths.intent_mapping_path}}` (optional, gateway-specific)
+
+---
+
+## Phase 4: Execute Workflow per Traversal Semantics
+
+Follow the 3-phase model from `_semantics.traversal.phases`:
+
+### 4.1 Initialize
+
+Initialize state per the fetched execution semantics:
+
+1. Load workflow and types
+2. Load output config (defaults: `level: "normal"`, `batch_threshold: 3`, `use_icons: true`)
+3. Validate schema and types
+4. Check entry preconditions
+5. Initialize state structure
+6. Auto-inject init_log if logging enabled
+
+### 4.2 Execute Loop
+
+Start at `start_node` from workflow.yaml and execute each node per `execution.traversal` pseudocode.
+
+```
+LOOP:
+    node = workflow.nodes[state.current_node]
+
+    # Check for ending BEFORE dispatch
+    IF state.current_node IN workflow.endings:
+        flush_batch()
+        GOTO 4.3 Complete
+
+    # Flush batch before user_prompt nodes
+    IF node.type == "user_prompt":
+        flush_batch()
+
+    # Dispatch based on node type
+    outcome = dispatch_node(node)  # See "On-Demand Detail Fetching" if needed
+
+    # Handle awaiting_input (multi-turn pause)
+    IF outcome.awaiting_input:
+        PAUSE execution
+        RETURN
+
+    # Record history, update position
+    state.history.append({ node: state.current_node, outcome })
+    state.previous_node = state.current_node
+    state.current_node = outcome.next_node
+```
+
+**Gateway-Specific:** When `invoke_skill` consequence fires, use the Skill tool to invoke the matched skill.
+
+For `reference` nodes, load sub-workflows per `workflow-loader.yaml`.
+
+### 4.3 Complete
+
+Handle workflow completion and cleanup:
+
+1. Finalize and write log if logging enabled
+2. Display result to user (unless display disabled)
+3. Emit CI annotations if enabled
+
+---
+
+## On-Demand Detail Fetching
+
+When dispatching a node type for the first time, fetch its specific semantics:
+
+| Node Type | Fetch Command |
+|-----------|---------------|
+| `conditional` | `yq '.execution.traversal.dispatch.effect' engine_execution.yaml \| grep -A25 'CASE "conditional"'` |
+| `user_prompt` | Read `nodes/core/user_prompt.yaml` from hiivmind-blueprint-lib@{{lib_version}} |
+| `reference` | Read full `resolution/workflow-loader.yaml` for sub-workflow loading |
+
+Alternatively, check `resolution/entrypoints.yaml` for pre-composed detail queries.
+
+---
+
+## Fetching Protocol Guide
+
+### Primary: gh api with base64 decode
+
+```bash
+gh api repos/hiivmind/hiivmind-blueprint-lib/contents/{path}?ref={{lib_version}} \
+  --jq '.content' | base64 -d
+```
+
+### Fallback: Raw GitHub URL
+
+```bash
+curl -sL https://raw.githubusercontent.com/hiivmind/hiivmind-blueprint-lib/{{lib_version}}/{path}
+```
+
+### Error Handling
+
+- If `gh api` fails (rate limit, auth), fall back to raw URL
+- If raw URL fails (network), exit with error
+- If file not found (404), exit with error indicating version mismatch
+
+---
+
+## Version History
+
+| Version | Changes |
+|---------|---------|
+| 1.0.0 | Initial engine entrypoint protocol |
+
+---
