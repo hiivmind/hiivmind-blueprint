@@ -1,0 +1,302 @@
+name: blueprint-gateway
+version: "2.0.0"
+description: Gateway workflow for hiivmind-blueprint plugin
+# Routes to 15 bp-* skills via intent detection or interactive menu
+
+definitions:
+  source: "hiivmind/hiivmind-blueprint-lib"
+  version: "{computed.lib_version}"
+
+start_node: route_by_intent
+
+initial_state:
+  flags:
+    help_requested: false
+    verbose: false
+  computed:
+    matched_action: null
+    matched_skill: null
+  prompts:
+    mode: "interactive"
+    tabular:
+      match_strategy: "fuzzy"
+      fuzzy_threshold: 0.7
+      other_handler: "prompt"
+
+nodes:
+  route_by_intent:
+    type: conditional
+    description: "Check if intent was detected from user input"
+    condition:
+      type: state_check
+      field: computed.matched_action
+      operator: not_null
+    branches:
+      on_true: resolve_action
+      on_false: show_menu
+
+  resolve_action:
+    type: conditional
+    description: "Route help requests to help display, otherwise to skill dispatch"
+    condition:
+      type: state_check
+      field: computed.matched_action
+      operator: equals
+      value: "show_help"
+    branches:
+      on_true: display_help
+      on_false: check_menu_fallback
+
+  check_menu_fallback:
+    type: conditional
+    description: "Check if fallback triggered menu action"
+    condition:
+      type: state_check
+      field: computed.matched_action
+      operator: equals
+      value: "show_menu"
+    branches:
+      on_true: show_menu
+      on_false: dispatch_skill
+
+  dispatch_skill:
+    type: action
+    description: "Copy matched action to matched skill for dispatch"
+    actions:
+      - type: mutate_state
+        operation: set
+        field: computed.matched_skill
+        value: "${computed.matched_action}"
+    on_success: execute_skill
+    on_failure: error_skill_failed
+
+  show_menu:
+    type: user_prompt
+    description: "Display available skills menu"
+    prompt:
+      question: "What would you like to do?"
+      header: "Blueprint"
+      options:
+        # Skill Operations
+        - id: skill-create
+          label: "Create Skill"
+          description: "Create a new skill from scratch"
+        - id: skill-analyze
+          label: "Analyze Workflow"
+          description: "Analyze a workflow.yaml structure and quality"
+        - id: skill-validate
+          label: "Validate Workflow"
+          description: "Validate a workflow.yaml for errors"
+        - id: skill-refactor
+          label: "Refactor Workflow"
+          description: "Refactor or restructure a workflow"
+        - id: skill-upgrade
+          label: "Upgrade Workflow"
+          description: "Upgrade workflow schema version"
+        - id: visualize
+          label: "Visualize"
+          description: "Generate Mermaid diagram from workflow"
+        # Prose Conversion
+        - id: prose-analyze
+          label: "Analyze Prose"
+          description: "Analyze a prose SKILL.md before conversion"
+        - id: prose-migrate
+          label: "Migrate Prose"
+          description: "Convert a prose SKILL.md to workflow.yaml"
+        # Gateway & Intent
+        - id: gateway-create
+          label: "Create Gateway"
+          description: "Create a gateway command for multi-skill plugins"
+        - id: gateway-validate
+          label: "Validate Gateway"
+          description: "Validate gateway routing and structure"
+        - id: intent-create
+          label: "Create Intent"
+          description: "Create intent-mapping.yaml for a gateway"
+        - id: intent-validate
+          label: "Validate Intent"
+          description: "Validate intent mapping rules"
+        # Plugin Management
+        - id: plugin-discover
+          label: "Discover Skills"
+          description: "Discover and inventory skills in a plugin"
+        - id: plugin-analyze
+          label: "Analyze Plugin"
+          description: "Analyze plugin health and cross-skill metrics"
+        - id: plugin-batch
+          label: "Batch Operations"
+          description: "Run operations across all skills in a plugin"
+    on_response:
+      skill-create:
+        consequence:
+          - type: mutate_state
+            operation: set
+            field: computed.matched_skill
+            value: "bp-skill-create"
+        next_node: execute_skill
+      skill-analyze:
+        consequence:
+          - type: mutate_state
+            operation: set
+            field: computed.matched_skill
+            value: "bp-skill-analyze"
+        next_node: execute_skill
+      skill-validate:
+        consequence:
+          - type: mutate_state
+            operation: set
+            field: computed.matched_skill
+            value: "bp-skill-validate"
+        next_node: execute_skill
+      skill-refactor:
+        consequence:
+          - type: mutate_state
+            operation: set
+            field: computed.matched_skill
+            value: "bp-skill-refactor"
+        next_node: execute_skill
+      skill-upgrade:
+        consequence:
+          - type: mutate_state
+            operation: set
+            field: computed.matched_skill
+            value: "bp-skill-upgrade"
+        next_node: execute_skill
+      visualize:
+        consequence:
+          - type: mutate_state
+            operation: set
+            field: computed.matched_skill
+            value: "bp-visualize"
+        next_node: execute_skill
+      prose-analyze:
+        consequence:
+          - type: mutate_state
+            operation: set
+            field: computed.matched_skill
+            value: "bp-prose-analyze"
+        next_node: execute_skill
+      prose-migrate:
+        consequence:
+          - type: mutate_state
+            operation: set
+            field: computed.matched_skill
+            value: "bp-prose-migrate"
+        next_node: execute_skill
+      gateway-create:
+        consequence:
+          - type: mutate_state
+            operation: set
+            field: computed.matched_skill
+            value: "bp-gateway-create"
+        next_node: execute_skill
+      gateway-validate:
+        consequence:
+          - type: mutate_state
+            operation: set
+            field: computed.matched_skill
+            value: "bp-gateway-validate"
+        next_node: execute_skill
+      intent-create:
+        consequence:
+          - type: mutate_state
+            operation: set
+            field: computed.matched_skill
+            value: "bp-intent-create"
+        next_node: execute_skill
+      intent-validate:
+        consequence:
+          - type: mutate_state
+            operation: set
+            field: computed.matched_skill
+            value: "bp-intent-validate"
+        next_node: execute_skill
+      plugin-discover:
+        consequence:
+          - type: mutate_state
+            operation: set
+            field: computed.matched_skill
+            value: "bp-plugin-discover"
+        next_node: execute_skill
+      plugin-analyze:
+        consequence:
+          - type: mutate_state
+            operation: set
+            field: computed.matched_skill
+            value: "bp-plugin-analyze"
+        next_node: execute_skill
+      plugin-batch:
+        consequence:
+          - type: mutate_state
+            operation: set
+            field: computed.matched_skill
+            value: "bp-plugin-batch"
+        next_node: execute_skill
+
+  execute_skill:
+    type: action
+    description: "Execute the selected skill"
+    actions:
+      - type: invoke_skill
+        skill_path: "${CLAUDE_PLUGIN_ROOT}/skills/${computed.matched_skill}/SKILL.md"
+    on_success: success_completed
+    on_failure: error_skill_failed
+
+  display_help:
+    type: action
+    description: "Display gateway help information"
+    actions:
+      - type: display
+        content: |
+          # Blueprint - Authoring Tools
+
+          ## Skill Operations
+          | Command | Purpose |
+          |---------|---------|
+          | `skill-create` | Create a new skill from scratch |
+          | `skill-analyze` | Analyze a workflow.yaml structure and quality |
+          | `skill-validate` | Validate a workflow.yaml for errors |
+          | `skill-refactor` | Refactor or restructure a workflow |
+          | `skill-upgrade` | Upgrade workflow schema version |
+          | `visualize` | Generate Mermaid diagram from workflow |
+
+          ## Prose Conversion
+          | Command | Purpose |
+          |---------|---------|
+          | `prose-analyze` | Analyze a prose SKILL.md before conversion |
+          | `prose-migrate` | Convert a prose SKILL.md to workflow.yaml |
+
+          ## Gateway & Intent
+          | Command | Purpose |
+          |---------|---------|
+          | `gateway-create` | Create a gateway command for multi-skill plugins |
+          | `gateway-validate` | Validate gateway routing and structure |
+          | `intent-create` | Create intent-mapping.yaml for a gateway |
+          | `intent-validate` | Validate intent mapping rules |
+
+          ## Plugin Management
+          | Command | Purpose |
+          |---------|---------|
+          | `plugin-discover` | Discover and inventory skills in a plugin |
+          | `plugin-analyze` | Analyze plugin health and cross-skill metrics |
+          | `plugin-batch` | Run operations across all skills in a plugin |
+
+          ## Usage
+          ```
+          /blueprint                     # Show interactive menu
+          /blueprint [request]           # Route by natural language
+          /blueprint --help              # This help screen
+          ```
+    on_success: success_completed
+    on_failure: error_skill_failed
+
+endings:
+  success_completed:
+    type: success
+    message: "Operation completed successfully"
+
+  error_skill_failed:
+    type: error
+    message: "Skill execution failed: ${error.message}"
+    recovery:
+      suggestion: "Check the error message and try again"

@@ -1,0 +1,259 @@
+version: "2.0.0"
+description: Intent mapping for blueprint gateway
+# 15 skills with two-axis detection: target flags + action flags
+
+intent_flags:
+  # ═══════════════════════════════════════════════════════════
+  # HELP FLAGS
+  # ═══════════════════════════════════════════════════════════
+  has_help_flag:
+    keywords: ["--help", "-h", "-?"]
+    description: "Explicit help flag"
+  has_help:
+    keywords:
+      ["help", "how do i", "how to", "?", "explain", "guide", "what can"]
+    description: "Natural language help request"
+
+  # ═══════════════════════════════════════════════════════════
+  # TARGET FLAGS - what are they operating on
+  # ═══════════════════════════════════════════════════════════
+  has_gateway:
+    keywords: ["gateway", "entry point", "entrypoint", "command routing"]
+    description: "Gateway command operations"
+  has_intent:
+    keywords:
+      [
+        "intent",
+        "intent mapping",
+        "intent-mapping",
+        "keyword routing",
+        "routing rules",
+        "3VL",
+      ]
+    description: "Intent mapping operations"
+  has_plugin:
+    keywords:
+      ["plugin", "plugin-wide", "cross-skill", "health check", "entire plugin"]
+    description: "Plugin-level operations"
+  has_prose:
+    keywords: ["prose", "SKILL.md", "prose skill", "markdown skill"]
+    negative_keywords: ["workflow.yaml"]
+    description: "Prose SKILL.md operations"
+  has_workflow:
+    keywords:
+      ["workflow", "workflow.yaml", "nodes", "transitions", "yaml workflow"]
+    negative_keywords: ["prose"]
+    description: "Workflow/skill operations"
+
+  # ═══════════════════════════════════════════════════════════
+  # ACTION FLAGS - what do they want to do
+  # ═══════════════════════════════════════════════════════════
+  has_create:
+    keywords:
+      [
+        "create",
+        "new",
+        "scaffold",
+        "generate",
+        "initialize",
+        "init",
+        "setup",
+        "set up",
+      ]
+    description: "Create something new"
+  has_validate:
+    keywords: ["validate", "check", "verify", "lint", "errors", "test"]
+    description: "Validate for correctness"
+  has_analyze:
+    keywords:
+      [
+        "analyze",
+        "analyse",
+        "examine",
+        "assess",
+        "metrics",
+        "quality",
+        "complexity",
+        "review",
+        "inspect",
+      ]
+    description: "Analyze structure and quality"
+  has_migrate:
+    keywords: ["convert", "migrate", "transform", "translate", "migration"]
+    description: "Convert or migrate"
+  has_upgrade:
+    keywords: ["upgrade", "version", "schema", "modernize", "update version"]
+    description: "Upgrade schema version"
+  has_refactor:
+    keywords:
+      [
+        "refactor",
+        "restructure",
+        "extract",
+        "split",
+        "merge",
+        "inline",
+        "cleanup",
+      ]
+    description: "Refactor or restructure"
+  has_discover:
+    keywords:
+      ["discover", "find skills", "list skills", "inventory", "scan", "browse"]
+    description: "Discover or inventory"
+  has_batch:
+    keywords: ["batch", "all skills", "bulk", "apply to all", "every skill"]
+    description: "Batch operations"
+  has_visualize:
+    keywords:
+      [
+        "visualize",
+        "visualise",
+        "diagram",
+        "mermaid",
+        "graph",
+        "flow chart",
+        "render",
+        "draw",
+      ]
+    description: "Visualize as diagram"
+
+rules:
+  # ═══════════════════════════════════════════════════════════
+  # HELP RULES (highest priority)
+  # ═══════════════════════════════════════════════════════════
+  - name: explicit_help
+    conditions:
+      has_help_flag: T
+    action: show_help
+    priority: 100
+
+  - name: general_help
+    conditions:
+      has_help: T
+    action: show_help
+    priority: 90
+
+  # ═══════════════════════════════════════════════════════════
+  # COMPOUND RULES - target + action (high specificity)
+  # ═══════════════════════════════════════════════════════════
+
+  # Gateway operations
+  - name: gateway_create
+    conditions:
+      has_gateway: T
+      has_create: T
+    action: bp-gateway-create
+    priority: 20
+
+  - name: gateway_validate
+    conditions:
+      has_gateway: T
+      has_validate: T
+    action: bp-gateway-validate
+    priority: 20
+
+  # Intent operations
+  - name: intent_create
+    conditions:
+      has_intent: T
+      has_create: T
+    action: bp-intent-create
+    priority: 20
+
+  - name: intent_validate
+    conditions:
+      has_intent: T
+      has_validate: T
+    action: bp-intent-validate
+    priority: 20
+
+  # Plugin operations
+  - name: plugin_analyze
+    conditions:
+      has_plugin: T
+      has_analyze: T
+    action: bp-plugin-analyze
+    priority: 20
+
+  # Prose operations
+  - name: prose_analyze
+    conditions:
+      has_prose: T
+      has_analyze: T
+    action: bp-prose-analyze
+    priority: 20
+
+  - name: prose_migrate
+    conditions:
+      has_prose: T
+      has_migrate: T
+    action: bp-prose-migrate
+    priority: 20
+
+  # Workflow/skill operations
+  - name: skill_analyze
+    conditions:
+      has_workflow: T
+      has_analyze: T
+    action: bp-skill-analyze
+    priority: 20
+
+  - name: skill_validate
+    conditions:
+      has_workflow: T
+      has_validate: T
+    action: bp-skill-validate
+    priority: 20
+
+  # ═══════════════════════════════════════════════════════════
+  # SINGLE-ACTION RULES (lower priority, no target needed)
+  # ═══════════════════════════════════════════════════════════
+
+  - name: visualize
+    conditions:
+      has_visualize: T
+    action: bp-visualize
+    priority: 15
+
+  - name: refactor
+    conditions:
+      has_refactor: T
+    action: bp-skill-refactor
+    priority: 15
+
+  - name: upgrade
+    conditions:
+      has_upgrade: T
+    action: bp-skill-upgrade
+    priority: 15
+
+  - name: discover
+    conditions:
+      has_discover: T
+    action: bp-plugin-discover
+    priority: 15
+
+  - name: batch
+    conditions:
+      has_batch: T
+    action: bp-plugin-batch
+    priority: 15
+
+  - name: migrate_fallback
+    conditions:
+      has_migrate: T
+    action: bp-prose-migrate
+    priority: 10
+
+  - name: create_fallback
+    conditions:
+      has_create: T
+    action: bp-skill-create
+    priority: 10
+
+  # ═══════════════════════════════════════════════════════════
+  # DEFAULT FALLBACK
+  # ═══════════════════════════════════════════════════════════
+
+fallback:
+  action: show_menu
