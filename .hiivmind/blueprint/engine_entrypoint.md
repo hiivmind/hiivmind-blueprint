@@ -44,6 +44,10 @@ state:
 
   _bootstrap:
     lib_version: ""                      # Phase 2, Step 2.1
+    lib_ref: ""                          # Phase 2, Step 2.1
+    lib_raw_url: ""                      # Phase 2, Step 2.1
+    schema_version: ""                   # Phase 2, Step 2.1
+    engine_version: ""                   # Phase 2, Step 2.1
     output:                              # Phase 2, Step 2.2
       level: "normal"
       display_enabled: true
@@ -120,13 +124,25 @@ DETECT_PATHS(workflow_dir):
 
 **Extract the library version before fetching anything else.**
 
-### Step 2.1: Extract Version from Workflow
+### Step 2.1: Load Version from Config
 
-```bash
-LIB_VERSION=$(yq '.definitions.version' "${state._paths.workflow_path}")
+Load version information from the centralized config file. Fall back to workflow definitions if config is unavailable.
+
+```pseudocode
+LOAD_VERSION():
+  config_path ← ".hiivmind/blueprint/config.yaml"
+
+  IF file_exists(config_path):
+    config ← READ_YAML(config_path)
+    state._bootstrap.lib_version ← config.lib_version
+    state._bootstrap.lib_ref ← config.lib_ref
+    state._bootstrap.lib_raw_url ← config.lib_raw_url
+    state._bootstrap.schema_version ← config.schema_version
+    state._bootstrap.engine_version ← config.engine_version
+  ELSE:
+    # Fallback: extract from workflow.yaml definitions block
+    state._bootstrap.lib_version ← yq('.definitions.version', state._paths.workflow_path)
 ```
-
-Store in state: `state._bootstrap.lib_version = "${LIB_VERSION}"`
 
 **Do NOT parse arguments or read intent-mapping.yaml yet.**
 
@@ -194,7 +210,7 @@ EXTRACT_PROMPTS_CONFIG():
 
 | Field | Expected | Action if Wrong |
 |-------|----------|-----------------|
-| `state._bootstrap.lib_version` | Semantic version (e.g., `v3.0.0`) | Fail - version extraction failed |
+| `state._bootstrap.lib_version` | Semantic version (e.g., `v3.x.x`) | Fail - version extraction failed |
 | `state._bootstrap.output.level` | One of: silent/quiet/normal/verbose/debug | Use default "normal" |
 | `state._bootstrap.prompts.interface` | One of: auto/claude_code/web/api/agent | Use default "auto" |
 
