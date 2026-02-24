@@ -2,9 +2,8 @@
 #
 # This template generates the SKILL.md that executes a workflow.
 # Placeholders use {{placeholder}} syntax and are replaced at generation time.
-# {{lib_version}} comes from workflow.yaml definitions.source
 #
-# Execution semantics: https://github.com/hiivmind/hiivmind-blueprint-lib
+# Execution semantics: .hiivmind/blueprint/execution-guide.md
 
 ---
 name: {{skill_name}}
@@ -72,122 +71,29 @@ Flags modify workflow execution. Per-invocation only (reset for each call).
 ---
 {{/examples}}
 
-## Prerequisites
+## Execution
 
-**Check these dependencies before execution:**
+### Step 1: Read Definitions
 
-| Tool | Required | Check | Install |
-|------|----------|-------|---------|
-| `jq` | **Mandatory** | `command -v jq` | `brew install jq` / `apt install jq` |
-| `yq` | **Mandatory** | `command -v yq` | `brew install yq` / [github.com/mikefarah/yq](https://github.com/mikefarah/yq) |
-| `gh` | Recommended | `command -v gh` | `brew install gh` / `apt install gh` |
+Read `.hiivmind/blueprint/definitions.yaml` and build the type registry (nodes, consequences, preconditions).
 
-If mandatory tools are missing, exit with error listing the install commands above.
-
----
-
-## Initial State Schema
-
-All state variables initialized here. Comments indicate which Phase.Step populates them.
-
-```yaml
-state:
-  _paths:
-    workflow_path: ""                    # Phase 1, Step 1.1
-    workflow_available: false            # Phase 1, Step 1.1
-    intent_mapping_path: ""              # Phase 1, Step 1.1
-    intent_mapping_available: false      # Phase 1, Step 1.1
-
-  _bootstrap:
-    lib_version: ""                      # Phase 2, Step 2.1
-
-  _semantics:
-    bootstrap:
-      phases: []                         # Phase 3, Step 3.1
-      required_sections: []              # Phase 3, Step 3.1
-    traversal:
-      phases: []                         # Phase 3, Step 3.2
-      node_types: []                     # Phase 3, Step 3.2
-
-  _workflow:
-    loaded: false                        # Phase 4, Step 4.1
-    content: null                        # Phase 4, Step 4.1
-    intent_mapping: null                 # Phase 4, Step 4.2
-    arguments: {}                        # Phase 4, Step 4.3
-
-  _execution:
-    current_node: ""                     # Phase 5, Step 5.1
-    previous_node: ""                    # Phase 5, Step 5.2
-    history: []                          # Phase 5, Step 5.2
-    status: "pending"                    # Phase 5, Step 5.3
-```
-
----
-
-## Phase 1: Initialize Paths (Conditional)
-
-Skills may be invoked either via gateway (state already initialized) or directly (state not yet initialized).
-
-### Step 1.0: Check Initialization State
-
-```pseudocode
-CHECK_INITIALIZATION():
-  IF state._paths.workflow_available IS DEFINED AND state._paths.workflow_available == true:
-    # Already initialized (via gateway or previous invocation)
-    SKIP to Phase 2
-  ELSE:
-    # Direct invocation - run initialization
-    CONTINUE to Step 1.1
-```
-
-### Step 1.1: Detect Skill Files
+### Step 2: Detect Workflow
 
 ```pseudocode
 DETECT_PATHS():
   workflow_path ← "${CLAUDE_PLUGIN_ROOT}/skills/{{skill_directory}}/workflow.yaml"
   intent_mapping_path ← "${CLAUDE_PLUGIN_ROOT}/skills/{{skill_directory}}/intent-mapping.yaml"
 
-  IF file_exists(workflow_path):
-    state._paths.workflow_available ← true
-    state._paths.workflow_path ← workflow_path
-  ELSE:
+  IF NOT file_exists(workflow_path):
     FAIL "workflow.yaml is required"
-
-  IF file_exists(intent_mapping_path):
-    state._paths.intent_mapping_available ← true
-    state._paths.intent_mapping_path ← intent_mapping_path
-  ELSE:
-    state._paths.intent_mapping_available ← false
 ```
 
-### Step 1.V: Verify Phase 1 Complete
+### Step 3: Execute Workflow
 
-| Field | Expected | Action if Wrong |
-|-------|----------|-----------------|
-| `state._paths.workflow_available` | `true` | Fail - workflow.yaml is required |
-| `state._paths.workflow_path` | Non-empty string | Fail - path detection failed |
-
----
-
-## Phases 2-5: Execution Protocol
-
-> **Execution Protocol:** See [Engine Entrypoint v1.0.0](/.hiivmind/blueprint/engine_entrypoint.md)
-> Follow Phases 2-5 for bootstrap, fetch, load, and execute.
-
-### Quick Summary
-
-1. **Phase 2 - Bootstrap:** Extract `{{lib_version}}` from workflow.yaml
-2. **Phase 3 - Fetch Semantics:** Load execution rules from hiivmind-blueprint-lib@{{lib_version}}
-3. **Phase 4 - Load Local Files:** Read and validate workflow.yaml
-4. **Phase 5 - Execute:** Run workflow per traversal semantics (initialize → execute → complete)
-
-**Verification Checkpoint (Phase 3):**
-Before proceeding to Phase 4, verify:
-- `state._semantics.bootstrap.phases` has 5 items ending with "execute"
-- `state._semantics.bootstrap.required_sections` has exactly 4 items
-- `state._semantics.traversal.phases` equals `["initialize", "execute", "complete"]`
-
-If verification fails, retry fetch.
+Follow `.hiivmind/blueprint/execution-guide.md`:
+1. **Initialize** — Read workflow.yaml, validate types against definitions, initialize state, check entry preconditions
+2. **Execute** — Main loop: dispatch nodes until an ending is reached
+3. **Complete** — Display ending message and return result
 
 ---
 
@@ -204,7 +110,7 @@ If verification fails, retry fetch.
 {{#if_intent_detection}}
 ## Intent Detection
 
-This skill uses intent detection when `state._paths.intent_mapping_available = true`.
+This skill uses intent detection when an intent-mapping.yaml is present.
 
 | Value | Meaning | Example |
 |-------|---------|---------|
@@ -219,14 +125,14 @@ This skill uses intent detection when `state._paths.intent_mapping_available = t
 3. **Check for clear winner** (2+ point lead)
 4. **Route** to matched action or request disambiguation
 
-If `state._paths.intent_mapping_available = false`, skip intent detection and execute workflow directly.
-
 ---
 {{/if_intent_detection}}
 
 ## Reference Documentation
 
-- **Type Definitions:** [hiivmind-blueprint-lib](https://github.com/hiivmind/hiivmind-blueprint-lib/tree/{{lib_version}})
+- **Type Catalog:** [hiivmind-blueprint-lib](https://github.com/hiivmind/hiivmind-blueprint-lib)
+- **Authoring Guide:** [hiivmind-blueprint/patterns/authoring-guide.md](https://github.com/hiivmind/hiivmind-blueprint/blob/main/patterns/authoring-guide.md)
+- **Execution Guide:** `.hiivmind/blueprint/execution-guide.md`
 
 ---
 
