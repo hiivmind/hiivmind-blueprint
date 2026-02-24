@@ -2,7 +2,7 @@
 
 Examples of configuring workflow output (display + logging) using the unified `output` config.
 
-> **Schema:** `hiivmind/hiivmind-blueprint-lib@{computed.lib_version}/schema/config/output-config.json`
+> **Schema:** `hiivmind/hiivmind-blueprint-lib/schema/config/output-config.json`
 
 ---
 
@@ -121,8 +121,7 @@ initial_state:
 
 ```
 [DEBUG] Loading workflow: decision-maker
-[DEBUG] Resolved types from: hiivmind/hiivmind-blueprint-lib@{computed.lib_version}
-[DEBUG] Initialized state: { phase: "routing", flags: {}, computed: {} }
+[DEBUG] Resolved types from: hiivmind/hiivmind-blueprint-lib@[DEBUG] Initialized state: { phase: "routing", flags: {}, computed: {} }
 
 ● Full State Dump:
   workflow_name: "decision-maker"
@@ -329,7 +328,7 @@ Override output for a referenced sub-workflow:
 nodes:
   detect_intent:
     type: reference
-    workflow: hiivmind/hiivmind-blueprint-lib@{computed.lib_version}:intent-detection
+    workflow: hiivmind/hiivmind-blueprint-lib:intent-detection
     context:
       arguments: "${arguments}"
       output:
@@ -356,15 +355,15 @@ nodes:
 
 ```bash
 # Output config schema
-gh api repos/hiivmind/hiivmind-blueprint-lib/contents/schema/config/output-config.json?ref={computed.lib_version} \
+gh api repos/hiivmind/hiivmind-blueprint-lib/contents/schema/config/output-config.json \
   --jq '.content' | base64 -d
 
 # Schema properties
-gh api repos/hiivmind/hiivmind-blueprint-lib/contents/schema/config/output-config.json?ref={computed.lib_version} \
+gh api repos/hiivmind/hiivmind-blueprint-lib/contents/schema/config/output-config.json \
   --jq '.content' | base64 -d | jq '."$defs".outputConfig.properties'
 
 # Runtime flag mappings
-gh api repos/hiivmind/hiivmind-blueprint-lib/contents/schema/config/output-config.json?ref={computed.lib_version} \
+gh api repos/hiivmind/hiivmind-blueprint-lib/contents/schema/config/output-config.json \
   --jq '.content' | base64 -d | jq '.runtime_flags'
 ```
 

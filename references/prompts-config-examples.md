@@ -159,7 +159,8 @@ nodes:
         next_node: apply_full
       other:                              # Required when other_handler: "route"
         consequence:
-          - type: set_state
+          - type: mutate_state
+            operation: set
             field: custom_config
             value: "${user_responses.select_or_custom.text}"
         next_node: parse_custom_config
@@ -291,13 +292,15 @@ nodes:
     on_response:
       selected:
         consequence:
-          - type: set_state
+          - type: mutate_state
+            operation: set
             field: selected_match
             value: "${user_responses.show_matches.selected}"
         next_node: process_match
       other:
         consequence:
-          - type: set_state
+          - type: mutate_state
+            operation: set
             field: search_query
             value: "${user_responses.show_matches.text}"
         next_node: re_search

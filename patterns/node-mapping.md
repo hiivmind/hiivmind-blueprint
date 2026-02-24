@@ -101,7 +101,8 @@ validate_prerequisites:
   type: conditional
   description: "Validate prerequisites before proceeding"
   condition:
-    type: all_of
+    type: composite
+    operator: all
     conditions:
       - type: tool_check
         tool: git
@@ -200,15 +201,8 @@ clone_repository:
 ### core/logging
 | Type | Purpose |
 |------|---------|
-| `init_log` | Initialize log session |
 | `log_node` | Record node execution |
 | `log_entry` | Log event/warning/error (level: info/warning/error) |
-| `log_session_snapshot` | Capture state snapshot |
-| `finalize_log` | Complete log |
-| `write_log` | Write log to file |
-| `apply_log_retention` | Clean up old logs |
-| `output_ci_summary` | CI environment output |
-| `install_tool` | Install CLI tool |
 
 ### core/state
 | Type | Purpose | Operations |
@@ -220,7 +214,6 @@ clone_repository:
 | Type | Purpose |
 |------|---------|
 | `set_timestamp` | Store current timestamp |
-| `compute_hash` | Compute SHA-256 hash |
 
 ### core/intent
 | Type | Purpose |
@@ -228,7 +221,6 @@ clone_repository:
 | `evaluate_keywords` | Simple keyword matching |
 | `parse_intent_flags` | Parse 3VL flags |
 | `match_3vl_rules` | Match flags to rules |
-| `dynamic_route` | Set dynamic target |
 
 ### extensions/file-system
 | Type | Purpose | Operations |
@@ -255,6 +247,11 @@ clone_repository:
 |------|---------|
 | `install_tool` | Install CLI tool |
 
+### extensions/hashing
+| Type | Purpose |
+|------|---------|
+| `compute_hash` | Compute SHA-256 hash |
+
 ---
 
 ## Full Precondition Type Reference
@@ -262,10 +259,7 @@ clone_repository:
 ### core/composite
 | Type | Purpose |
 |------|---------|
-| `all_of` | All conditions true (AND) |
-| `any_of` | At least one true (OR) |
-| `none_of` | No conditions true (NOR) |
-| `xor_of` | Exactly one true (XOR) |
+| `composite` | Combine conditions (operator: all, any, none, xor) |
 
 ### core/expression
 | Type | Purpose |
@@ -277,33 +271,28 @@ clone_repository:
 |------|---------|-----------|
 | `state_check` | Check state field values | operator: equals, not_equals, null, not_null, true, false |
 
-### core/filesystems
+### extensions/filesystem
 | Type | Purpose | Checks |
 |------|---------|--------|
 | `path_check` | Check file/directory | check: exists, is_file, is_directory, contains_text |
 
-### core/logging
-| Type | Purpose | Aspects |
-|------|---------|---------|
-| `log_state` | Check logging state | aspect: initialized, finalized, level_enabled |
-
-### core/tools
+### extensions/tools
 | Type | Purpose | Capabilities |
 |------|---------|--------------|
-| `tool_check` | Check tool availability | capability: available, version_gte, authenticated, daemon_ready |
+| `tool_check` | Check tool availability | capability: available, version_gte |
 | `python_module_available` | Check Python module | - |
 
-### core/network
+### extensions/network
 | Type | Purpose |
 |------|---------|
 | `network_available` | Check connectivity |
 
-### core/git
+### extensions/git
 | Type | Purpose | Aspects |
 |------|---------|---------|
 | `source_check` | Check source repo | aspect: exists, cloned, has_updates |
 
-### core/web_fetch
+### extensions/web
 | Type | Purpose | Aspects |
 |------|---------|---------|
 | `fetch_check` | Check fetch result | aspect: succeeded, has_content |
@@ -430,5 +419,5 @@ nodes:
 
 - **Skill Analysis:** `lib/blueprint/patterns/skill-analysis.md`
 - **Workflow Generation:** `lib/blueprint/patterns/workflow-generation.md`
-- **Node Type Definitions:** `hiivmind/hiivmind-blueprint-lib@{computed.lib_version}/nodes/workflow_nodes.yaml`
+- **Node Type Definitions:** `hiivmind/hiivmind-blueprint-lib/nodes/workflow_nodes.yaml`
 - **Prompts Config:** `lib/workflow/prompts-config-loader.md`

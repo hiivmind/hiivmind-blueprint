@@ -1,9 +1,9 @@
 # Node Features Reference
 
-Complete reference for all 4 node types available in hiivmind-blueprint-lib {computed.lib_version}.
+Complete reference for all 4 node types available in hiivmind-blueprint-lib .
 
-> **Examples:** `hiivmind/hiivmind-blueprint-lib@{computed.lib_version}/examples/nodes.yaml`
-> **Definitions:** `hiivmind/hiivmind-blueprint-lib@{computed.lib_version}/nodes/workflow_nodes.yaml`
+> **Examples:** `hiivmind/hiivmind-blueprint-lib@/examples/nodes.yaml`
+> **Definitions:** `hiivmind/hiivmind-blueprint-lib@/nodes/workflow_nodes.yaml`
 
 ---
 
@@ -170,7 +170,7 @@ State is **shared** with parent workflow. Sub-workflow reads and writes directly
 ```yaml
 detect_intent:
   type: reference
-  workflow: hiivmind/hiivmind-blueprint-lib@{computed.lib_version}:intent-detection
+  workflow: hiivmind/hiivmind-blueprint-lib@:intent-detection
   context:
     arguments: "${arguments}"
     intent_flags: "${intent_flags}"
@@ -253,7 +253,7 @@ clone_repo:
 
 | Format | Example | Resolution |
 |--------|---------|------------|
-| Remote | `hiivmind/hiivmind-blueprint-lib@{computed.lib_version}:intent-detection` | GitHub raw URL |
+| Remote | `hiivmind/hiivmind-blueprint-lib@:intent-detection` | GitHub raw URL |
 | Local file | `./subflows/load-skill.yaml` | Direct path |
 | Local indexed | `./:validation-pipeline` | `workflows/index.yaml` |
 
@@ -330,19 +330,19 @@ Tool Call  Conditional  User Input
 
 ```bash
 # All node examples
-gh api repos/hiivmind/hiivmind-blueprint-lib/contents/examples/nodes.yaml?ref={computed.lib_version} \
+gh api repos/hiivmind/hiivmind-blueprint-lib/contents/examples/nodes.yaml?ref= \
   --jq '.content' | base64 -d
 
 # Node type definitions
-gh api repos/hiivmind/hiivmind-blueprint-lib/contents/nodes/workflow_nodes.yaml?ref={computed.lib_version} \
+gh api repos/hiivmind/hiivmind-blueprint-lib/contents/nodes/workflow_nodes.yaml?ref= \
   --jq '.content' | base64 -d
 
 # Execution engine semantics
-gh api repos/hiivmind/hiivmind-blueprint-lib/contents/execution/engine_execution.yaml?ref={computed.lib_version} \
+gh api repos/hiivmind/hiivmind-blueprint-lib/contents/execution/engine_execution.yaml?ref= \
   --jq '.content' | base64 -d
 
 # Examples for a specific node type
-gh api repos/hiivmind/hiivmind-blueprint-lib/contents/examples/nodes.yaml?ref={computed.lib_version} \
+gh api repos/hiivmind/hiivmind-blueprint-lib/contents/examples/nodes.yaml?ref= \
   --jq '.content' | base64 -d | yq '.examples.reference'
 ```
 
@@ -350,7 +350,7 @@ gh api repos/hiivmind/hiivmind-blueprint-lib/contents/examples/nodes.yaml?ref={c
 
 ## Related Documentation
 
-- **Examples:** `hiivmind/hiivmind-blueprint-lib@{computed.lib_version}/examples/nodes.yaml`
-- **Definitions:** `hiivmind/hiivmind-blueprint-lib@{computed.lib_version}/nodes/workflow_nodes.yaml`
+- **Examples:** `hiivmind/hiivmind-blueprint-lib@/examples/nodes.yaml`
+- **Definitions:** `hiivmind/hiivmind-blueprint-lib@/nodes/workflow_nodes.yaml`
 - **Node Mapping Pattern:** `lib/patterns/node-mapping.md`
 - **Prompt Modes:** `references/prompt-modes.md`

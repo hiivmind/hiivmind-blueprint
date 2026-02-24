@@ -1,31 +1,31 @@
 # Consequences Catalog
 
-Complete reference for all 31 consequence types available in hiivmind-blueprint-lib {computed.lib_version}.
+Complete reference for all 22 consequence types available in hiivmind-blueprint-lib.
 
-> **Examples:** `hiivmind/hiivmind-blueprint-lib@{computed.lib_version}/examples/consequences.yaml`
-> **Definitions:** `hiivmind/hiivmind-blueprint-lib@{computed.lib_version}/consequences/consequences.yaml`
-> **Migration Guide:** `hiivmind/hiivmind-blueprint-lib@{computed.lib_version}/docs/v3-migration.md`
+> **Examples:** `hiivmind/hiivmind-blueprint-lib/examples/consequences.yaml`
+> **Definitions:** `hiivmind/hiivmind-blueprint-lib/consequences/core.yaml`, `consequences/intent.yaml`, `consequences/extensions.yaml`
 
 ---
 
 ## Overview
 
-Consequences are actions executed when a node runs or a user responds. They are organized into 12 categories:
+Consequences are actions executed when a node runs or a user responds. They are organized into 10 categories:
 
 | Category | Count | Purpose |
 |----------|-------|---------|
 | core/control | 5 | Workflow control (checkpoints, rollback, spawn, inline, invoke_skill) |
 | core/evaluation | 2 | Expression and computation |
 | core/interaction | 1 | User-facing output |
-| core/logging | 8 | Logging and audit trail |
+| core/logging | 2 | Node tracking and event logging |
 | core/state | 2 | State manipulation |
-| core/utility | 2 | Timestamps, hashes |
-| core/intent | 4 | Intent detection and routing |
+| core/utility | 1 | Timestamps |
+| core/intent | 3 | Intent detection (3VL) |
 | extensions/file-system | 1 | File operations (consolidated) |
 | extensions/git | 1 | Git operations (consolidated) |
 | extensions/web | 1 | Web fetching (consolidated) |
 | extensions/scripting | 1 | Script execution (consolidated) |
 | extensions/package | 1 | Tool installation |
+| extensions/hashing | 1 | Content hashing |
 
 ---
 
@@ -78,14 +78,8 @@ Consequences are actions executed when a node runs or a user responds. They are 
 
 | Type | Purpose | Key Parameters |
 |------|---------|----------------|
-| `init_log` | Initialize log session | `workflow_name`, `workflow_version` |
 | `log_node` | Record node execution | `node`, `outcome`, `details` |
 | `log_entry` | Log event/warning/error | `level`, `message`, `context` |
-| `log_session_snapshot` | Record mid-session checkpoint | `description`, `write_intermediate` |
-| `finalize_log` | Complete log with outcome | `outcome`, `summary` |
-| `write_log` | Write log to file | `format`, `path` |
-| `apply_log_retention` | Clean up old logs | `path`, `strategy`, `count`/`days` |
-| `output_ci_summary` | Format for CI environments | `format`, `annotations` |
 
 **log_entry levels:** `debug`, `info`, `warning`, `error`
 
@@ -153,7 +147,6 @@ Consequences are actions executed when a node runs or a user responds. They are 
 | Type | Purpose | Key Parameters |
 |------|---------|----------------|
 | `set_timestamp` | Store current ISO timestamp | `store_as` |
-| `compute_hash` | Compute SHA-256 hash | `from`, `store_as` |
 
 ---
 
@@ -164,7 +157,6 @@ Consequences are actions executed when a node runs or a user responds. They are 
 | `evaluate_keywords` | Simple keyword matching | `input`, `keyword_sets`, `store_as` |
 | `parse_intent_flags` | Parse 3VL flags from input | `input`, `flag_definitions`, `store_as` |
 | `match_3vl_rules` | Match flags against rules | `flags`, `rules`, `store_as` |
-| `dynamic_route` | Set dynamic transition target | `action` |
 
 ---
 
@@ -300,6 +292,14 @@ Consequences are actions executed when a node runs or a user responds. They are 
 
 ---
 
+## extensions/hashing
+
+| Type | Purpose | Key Parameters |
+|------|---------|----------------|
+| `compute_hash` | Compute SHA-256 hash | `from`, `store_as` |
+
+---
+
 ## Quick Reference by Use Case
 
 | Need To... | Use This Consequence |
@@ -322,8 +322,8 @@ Consequences are actions executed when a node runs or a user responds. They are 
 | Log a warning | `log_entry` (level: warning) |
 | Log an error | `log_entry` (level: error) |
 | Detect intent | `parse_intent_flags`, `match_3vl_rules` |
-| Route dynamically | `dynamic_route` |
 | Call another skill | `invoke_skill` |
+| Compute a hash | `compute_hash` |
 
 ---
 
@@ -353,7 +353,7 @@ Use this table when converting prose skill descriptions to consequences:
 | "append", "add to list" | `mutate_state` | operation: append, field, value |
 | "clear", "reset" | `mutate_state` | operation: clear, field |
 | "calculate", "compute" | `evaluate`, `compute` | expression |
-| "route", "delegate" | `dynamic_route` | action |
+| "hash", "checksum" | `compute_hash` | from, store_as |
 | "invoke skill", "call skill" | `invoke_skill` | skill |
 
 ---
@@ -362,19 +362,19 @@ Use this table when converting prose skill descriptions to consequences:
 
 ```bash
 # All consequence examples
-gh api repos/hiivmind/hiivmind-blueprint-lib/contents/examples/consequences.yaml?ref={computed.lib_version} \
+gh api repos/hiivmind/hiivmind-blueprint-lib/contents/examples/consequences.yaml \
   --jq '.content' | base64 -d
 
 # Examples for a specific category
-gh api repos/hiivmind/hiivmind-blueprint-lib/contents/examples/consequences.yaml?ref={computed.lib_version} \
+gh api repos/hiivmind/hiivmind-blueprint-lib/contents/examples/consequences.yaml \
   --jq '.content' | base64 -d | yq '.examples["core/control"]'
 
 # Examples for a specific type
-gh api repos/hiivmind/hiivmind-blueprint-lib/contents/examples/consequences.yaml?ref={computed.lib_version} \
+gh api repos/hiivmind/hiivmind-blueprint-lib/contents/examples/consequences.yaml \
   --jq '.content' | base64 -d | yq '.examples["core/control"].create_checkpoint'
 
-# Canonical type definition
-gh api repos/hiivmind/hiivmind-blueprint-lib/contents/consequences/consequences.yaml?ref={computed.lib_version} \
+# Canonical type definition (core)
+gh api repos/hiivmind/hiivmind-blueprint-lib/contents/consequences/core.yaml \
   --jq '.content' | base64 -d | yq '.consequences.create_checkpoint'
 ```
 
@@ -382,8 +382,7 @@ gh api repos/hiivmind/hiivmind-blueprint-lib/contents/consequences/consequences.
 
 ## Related Documentation
 
-- **Examples:** `hiivmind/hiivmind-blueprint-lib@{computed.lib_version}/examples/consequences.yaml`
-- **Definitions:** `hiivmind/hiivmind-blueprint-lib@{computed.lib_version}/consequences/consequences.yaml`
-- **Migration Guide:** `hiivmind/hiivmind-blueprint-lib@{computed.lib_version}/docs/v3-migration.md`
+- **Examples:** `hiivmind/hiivmind-blueprint-lib/examples/consequences.yaml`
+- **Definitions:** `hiivmind/hiivmind-blueprint-lib/consequences/core.yaml`, `consequences/intent.yaml`, `consequences/extensions.yaml`
 - **Node Mapping Pattern:** `lib/patterns/node-mapping.md`
 - **Workflow Generation:** `lib/patterns/workflow-generation.md`

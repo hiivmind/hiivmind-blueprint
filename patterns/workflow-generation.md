@@ -74,7 +74,7 @@ initial_state:
 
 ### Logging Auto-Features
 
-When logging is enabled, these features inject consequences automatically:
+When logging is enabled, the engine auto-injects `log_node` and `log_entry` consequences:
 
 ```yaml
 initial_state:
@@ -82,10 +82,7 @@ initial_state:
     enabled: true
     level: "info"
     auto:
-      init: true           # Auto-call init_log at start
       node_tracking: true  # Auto-call log_node after each node
-      finalize: true       # Auto-call finalize_log at endings
-      write: true          # Auto-call write_log at endings
     output:
       format: "yaml"
       location: ".logs/"
@@ -95,9 +92,8 @@ initial_state:
 ```
 
 **With `logging.auto` enabled:**
-- No explicit `init_log` consequence needed at start
 - No explicit `log_node` consequences needed per node
-- No explicit `finalize_log` or `write_log` needed at endings
+- `log_entry` available for manual event/warning/error logging
 
 ---
 
@@ -210,7 +206,8 @@ For validation scenarios, use audit mode to collect all errors:
 validate_prerequisites:
   type: conditional
   condition:
-    type: all_of
+    type: composite
+    operator: all
     conditions:
       - type: tool_check
         tool: git
@@ -236,7 +233,7 @@ validate_prerequisites:
 
 ---
 
-## {computed.lib_version} Type Quick Reference
+## Type Quick Reference
 
 ### Consequences (consolidated)
 
@@ -247,7 +244,6 @@ validate_prerequisites:
 | `web_fetch`, `cache_web_content` | `web_ops` | fetch, cache |
 | `run_script`, `run_python`, `run_bash` | `run_command` | interpreter: auto/bash/python/node |
 | `set_state`, `append_state`, `clear_state`, `merge_state` | `mutate_state` | set, append, clear, merge |
-| `log_event`, `log_warning`, `log_error` | `log_entry` | level: info/warning/error |
 | `display_message`, `display_table` | `display` | format: text/table/json/markdown |
 
 ### Preconditions (consolidated)
@@ -256,9 +252,9 @@ validate_prerequisites:
 |-----------|----------|-----------|
 | `flag_set`, `flag_not_set`, `state_equals`, `state_not_null`, `state_is_null` | `state_check` | operator: true/false/equals/not_null/null |
 | `file_exists`, `directory_exists`, `config_exists`, `index_exists` | `path_check` | check: exists/is_file/is_directory/contains_text |
-| `tool_available`, `tool_version_gte`, `tool_authenticated`, `tool_daemon_ready` | `tool_check` | capability: available/version_gte/authenticated/daemon_ready |
+| `tool_available`, `tool_version_gte` | `tool_check` | capability: available/version_gte |
 | `source_exists`, `source_cloned`, `source_has_updates` | `source_check` | aspect: exists/cloned/has_updates |
-| `log_initialized`, `log_finalized`, `log_level_enabled` | `log_state` | aspect: initialized/finalized/level_enabled |
+| `all_of`, `any_of`, `none_of`, `xor_of` | `composite` | operator: all/any/none/xor |
 | `fetch_succeeded`, `fetch_returned_content` | `fetch_check` | aspect: succeeded/has_content |
 | `count_equals`, `count_above`, `count_below` | `evaluate_expression` | len(field) == N, len(field) > N, etc. |
 
@@ -335,7 +331,7 @@ See `resolution/entrypoints.yaml` in hiivmind-blueprint-lib for ready-to-use que
 
 ```bash
 # Bootstrap entrypoints
-gh api repos/hiivmind/hiivmind-blueprint-lib/contents/resolution/execution-loader.yaml?ref={computed.lib_version} \
+gh api repos/hiivmind/hiivmind-blueprint-lib/contents/resolution/execution-loader.yaml \
   --jq '.content' | base64 -d | yq '{
     "phases": [.resolution.execution_loader.bootstrap.fetch_order.phases[].id],
     "required_sections": [.resolution.execution_loader.section_registry.sections | to_entries[] | select(.value.required == true) | .key]

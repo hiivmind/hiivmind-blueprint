@@ -1,10 +1,9 @@
 # Preconditions Catalog
 
-Complete reference for all 14 precondition types available in hiivmind-blueprint-lib {computed.lib_version}.
+Complete reference for all 9 precondition types available in hiivmind-blueprint-lib.
 
-> **Examples:** `hiivmind/hiivmind-blueprint-lib@{computed.lib_version}/examples/preconditions.yaml`
-> **Definitions:** `hiivmind/hiivmind-blueprint-lib@{computed.lib_version}/preconditions/preconditions.yaml`
-> **Migration Guide:** `hiivmind/hiivmind-blueprint-lib@{computed.lib_version}/docs/v3-migration.md`
+> **Examples:** `hiivmind/hiivmind-blueprint-lib/examples/preconditions.yaml`
+> **Definitions:** `hiivmind/hiivmind-blueprint-lib/preconditions/core.yaml`, `preconditions/extensions.yaml`
 
 ---
 
@@ -15,20 +14,19 @@ Preconditions are boolean checks used in:
 - `conditional` nodes - Branch based on state
 - `audit` mode - Validate multiple conditions
 
-They are organized into 10 categories:
+They are organized into 8 categories:
 
 | Category | Count | Purpose |
 |----------|-------|---------|
-| core/composite | 4 | Logical combinators (AND, OR, NOR, XOR) |
+| core/composite | 1 | Logical combinators (all, any, none, xor) |
 | core/expression | 1 | Arbitrary expression evaluation |
-| core/filesystems | 1 | Path checks (consolidated) |
-| core/logging | 1 | Logging state checks (consolidated) |
 | core/state | 1 | State inspection (consolidated) |
-| core/tools | 1 | Tool availability (consolidated) |
-| core/python | 1 | Python module availability |
-| core/network | 1 | Network connectivity |
-| core/git | 1 | Source repository checks (consolidated) |
-| core/web_fetch | 1 | Web fetch result checks (consolidated) |
+| extensions/filesystem | 1 | Path checks (consolidated) |
+| extensions/tools | 1 | Tool availability (consolidated) |
+| extensions/python | 1 | Python module availability |
+| extensions/network | 1 | Network connectivity |
+| extensions/git | 1 | Source repository checks (consolidated) |
+| extensions/web | 1 | Web fetch result checks (consolidated) |
 
 ---
 
@@ -36,15 +34,63 @@ They are organized into 10 categories:
 
 | Type | Purpose | Key Parameters |
 |------|---------|----------------|
-| `all_of` | All conditions true (AND) | `conditions` |
-| `any_of` | At least one true (OR) | `conditions` |
-| `none_of` | No conditions true (NOR) | `conditions` |
-| `xor_of` | Exactly one true (XOR) | `conditions` |
+| `composite` | Combine conditions with logical operators | `operator`, `conditions` |
+
+**Operators:** `all` (AND), `any` (OR), `none` (NOR), `xor` (exactly one)
 
 **Short-circuit behavior:**
-- `all_of` stops on first false
-- `any_of` stops on first true
-- `none_of` and `xor_of` evaluate all conditions
+- `operator: all` stops on first false
+- `operator: any` stops on first true
+- `operator: none` and `operator: xor` evaluate all conditions
+
+```yaml
+# All conditions must be true (was: all_of)
+condition:
+  type: composite
+  operator: all
+  conditions:
+    - type: tool_check
+      tool: git
+      capability: available
+    - type: path_check
+      path: "data/config.yaml"
+      check: is_file
+
+# At least one condition true (was: any_of)
+condition:
+  type: composite
+  operator: any
+  conditions:
+    - type: state_check
+      field: source_type
+      operator: equals
+      value: git
+    - type: state_check
+      field: source_type
+      operator: equals
+      value: local
+
+# No conditions true (was: none_of)
+condition:
+  type: composite
+  operator: none
+  conditions:
+    - type: state_check
+      field: flags.error_occurred
+      operator: "true"
+
+# Exactly one true (was: xor_of)
+condition:
+  type: composite
+  operator: xor
+  conditions:
+    - type: state_check
+      field: flags.use_cache
+      operator: "true"
+    - type: state_check
+      field: flags.force_refresh
+      operator: "true"
+```
 
 ---
 
@@ -121,7 +167,7 @@ condition:
 
 ---
 
-## core/filesystems
+## extensions/filesystem
 
 | Type | Purpose | Key Parameters |
 |------|---------|----------------|
@@ -159,42 +205,13 @@ condition:
 
 ---
 
-## core/logging
+## extensions/tools
 
 | Type | Purpose | Key Parameters |
 |------|---------|----------------|
-| `log_state` | Check logging lifecycle state | `aspect`, `args` |
+| `tool_check` | Check tool availability and version | `tool`, `capability`, `args` |
 
-**Aspects:** `initialized`, `finalized`, `level_enabled`
-
-```yaml
-# Check if logging initialized (was: log_initialized)
-condition:
-  type: log_state
-  aspect: initialized
-
-# Check if logging finalized (was: log_finalized)
-condition:
-  type: log_state
-  aspect: finalized
-
-# Check if log level enabled (was: log_level_enabled)
-condition:
-  type: log_state
-  aspect: level_enabled
-  args:
-    level: debug
-```
-
----
-
-## core/tools
-
-| Type | Purpose | Key Parameters |
-|------|---------|----------------|
-| `tool_check` | Check tool availability and capabilities | `tool`, `capability`, `args` |
-
-**Capabilities:** `available`, `version_gte`, `authenticated`, `daemon_ready`
+**Capabilities:** `available`, `version_gte`
 
 ```yaml
 # Check tool in PATH (was: tool_available)
@@ -210,23 +227,11 @@ condition:
   capability: version_gte
   args:
     min_version: "18.0"
-
-# Check tool authenticated (was: tool_authenticated)
-condition:
-  type: tool_check
-  tool: gh
-  capability: authenticated
-
-# Check daemon running (was: tool_daemon_ready)
-condition:
-  type: tool_check
-  tool: docker
-  capability: daemon_ready
 ```
 
 ---
 
-## core/python
+## extensions/python
 
 | Type | Purpose | Key Parameters |
 |------|---------|----------------|
@@ -240,7 +245,7 @@ condition:
 
 ---
 
-## core/network
+## extensions/network
 
 | Type | Purpose | Key Parameters |
 |------|---------|----------------|
@@ -259,7 +264,7 @@ condition:
 
 ---
 
-## core/git
+## extensions/git
 
 | Type | Purpose | Key Parameters |
 |------|---------|----------------|
@@ -289,7 +294,7 @@ condition:
 
 ---
 
-## core/web_fetch
+## extensions/web
 
 | Type | Purpose | Key Parameters |
 |------|---------|----------------|
@@ -322,16 +327,14 @@ condition:
 | Config loaded | `path_check` (path: data/config.yaml) |
 | Tool installed | `tool_check` (capability: available) |
 | Tool version | `tool_check` (capability: version_gte) |
-| GitHub CLI authenticated | `tool_check` (tool: gh, capability: authenticated) |
-| Docker running | `tool_check` (tool: docker, capability: daemon_ready) |
 | Flag is set | `state_check` (operator: "true") |
 | Field has value | `state_check` (operator: not_null) |
 | Field equals X | `state_check` (operator: equals) |
 | Array is empty | `evaluate_expression` (len(field) == 0) |
 | Array has items | `evaluate_expression` (len(field) > 0) |
-| Multiple conditions | `all_of`, `any_of` |
-| Exclusion check | `none_of` |
-| Exactly one | `xor_of` |
+| Multiple conditions | `composite` (operator: all/any) |
+| Exclusion check | `composite` (operator: none) |
+| Exactly one | `composite` (operator: xor) |
 | Complex logic | `evaluate_expression` |
 
 ---
@@ -354,13 +357,11 @@ Use this table when converting prose skill descriptions to preconditions:
 | "if array is empty" | `evaluate_expression` | expression: "len(field) == 0" |
 | "requires [tool]" | `tool_check` | tool, capability: available |
 | "requires [tool] version X" | `tool_check` | tool, capability: version_gte, args.min_version |
-| "if logged in" | `tool_check` | tool, capability: authenticated |
-| "if daemon running" | `tool_check` | tool, capability: daemon_ready |
 | "if online" | `network_available` | target (optional) |
-| "if all of" | `all_of` | conditions |
-| "if any of" | `any_of` | conditions |
-| "if none of" | `none_of` | conditions |
-| "if exactly one" | `xor_of` | conditions |
+| "if all of" | `composite` | operator: all, conditions |
+| "if any of" | `composite` | operator: any, conditions |
+| "if none of" | `composite` | operator: none, conditions |
+| "if exactly one" | `composite` | operator: xor, conditions |
 | "if [complex condition]" | `evaluate_expression` | expression |
 
 ---
@@ -373,7 +374,8 @@ When using `conditional` nodes with `audit.enabled: true`, preconditions are eva
 validate_prerequisites:
   type: conditional
   condition:
-    type: all_of
+    type: composite
+    operator: all
     conditions:
       - type: tool_check
         tool: git
@@ -398,19 +400,19 @@ validate_prerequisites:
 
 ```bash
 # All precondition examples
-gh api repos/hiivmind/hiivmind-blueprint-lib/contents/examples/preconditions.yaml?ref={computed.lib_version} \
+gh api repos/hiivmind/hiivmind-blueprint-lib/contents/examples/preconditions.yaml \
   --jq '.content' | base64 -d
 
 # Examples for a specific category
-gh api repos/hiivmind/hiivmind-blueprint-lib/contents/examples/preconditions.yaml?ref={computed.lib_version} \
+gh api repos/hiivmind/hiivmind-blueprint-lib/contents/examples/preconditions.yaml \
   --jq '.content' | base64 -d | yq '.examples["core/state"]'
 
 # Examples for a specific type
-gh api repos/hiivmind/hiivmind-blueprint-lib/contents/examples/preconditions.yaml?ref={computed.lib_version} \
+gh api repos/hiivmind/hiivmind-blueprint-lib/contents/examples/preconditions.yaml \
   --jq '.content' | base64 -d | yq '.examples["core/state"].state_check'
 
-# Canonical type definition
-gh api repos/hiivmind/hiivmind-blueprint-lib/contents/preconditions/preconditions.yaml?ref={computed.lib_version} \
+# Canonical type definition (core)
+gh api repos/hiivmind/hiivmind-blueprint-lib/contents/preconditions/core.yaml \
   --jq '.content' | base64 -d | yq '.preconditions.state_check'
 ```
 
@@ -418,8 +420,7 @@ gh api repos/hiivmind/hiivmind-blueprint-lib/contents/preconditions/precondition
 
 ## Related Documentation
 
-- **Examples:** `hiivmind/hiivmind-blueprint-lib@{computed.lib_version}/examples/preconditions.yaml`
-- **Definitions:** `hiivmind/hiivmind-blueprint-lib@{computed.lib_version}/preconditions/preconditions.yaml`
-- **Migration Guide:** `hiivmind/hiivmind-blueprint-lib@{computed.lib_version}/docs/v3-migration.md`
+- **Examples:** `hiivmind/hiivmind-blueprint-lib/examples/preconditions.yaml`
+- **Definitions:** `hiivmind/hiivmind-blueprint-lib/preconditions/core.yaml`, `preconditions/extensions.yaml`
 - **Node Mapping Pattern:** `lib/patterns/node-mapping.md`
 - **Workflow Generation:** `lib/patterns/workflow-generation.md`

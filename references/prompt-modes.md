@@ -3,7 +3,7 @@
 Complete reference for the 5 prompt interface modes in hiivmind-blueprint-lib v2.4.0+.
 
 > **Configuration Examples:** `references/prompts-config-examples.md`
-> **Node Definition:** `hiivmind/hiivmind-blueprint-lib@{computed.lib_version}/nodes/workflow_nodes.yaml`
+> **Node Definition:** `hiivmind/hiivmind-blueprint-lib@/nodes/workflow_nodes.yaml`
 
 ---
 
@@ -330,15 +330,15 @@ initial_state:
 
 ```bash
 # Prompts config schema
-gh api repos/hiivmind/hiivmind-blueprint-lib/contents/schema/config/prompts-config.json?ref={computed.lib_version} \
+gh api repos/hiivmind/hiivmind-blueprint-lib/contents/schema/config/prompts-config.json?ref= \
   --jq '.content' | base64 -d
 
 # User prompt node definition
-gh api repos/hiivmind/hiivmind-blueprint-lib/contents/nodes/workflow_nodes.yaml?ref={computed.lib_version} \
+gh api repos/hiivmind/hiivmind-blueprint-lib/contents/nodes/workflow_nodes.yaml?ref= \
   --jq '.content' | base64 -d | yq '.nodes.user_prompt'
 
 # User prompt examples
-gh api repos/hiivmind/hiivmind-blueprint-lib/contents/examples/nodes.yaml?ref={computed.lib_version} \
+gh api repos/hiivmind/hiivmind-blueprint-lib/contents/examples/nodes.yaml?ref= \
   --jq '.content' | base64 -d | yq '.examples.user_prompt'
 ```
 
