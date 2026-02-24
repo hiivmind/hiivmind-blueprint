@@ -43,9 +43,8 @@ Scan the target plugin for all SKILL.md files:
 
 ```pseudocode
 DISCOVER_SKILLS():
-  # Search both skills/ and skills-prose/ directories
+  # Search skills/ directory
   skill_files = Glob(CLAUDE_PLUGIN_ROOT + "/skills/*/SKILL.md")
-  skill_files += Glob(CLAUDE_PLUGIN_ROOT + "/skills-prose/*/SKILL.md")
 
   computed.skills = []
 
@@ -68,7 +67,7 @@ DISCOVER_SKILLS():
 
 If `computed.skill_count == 0`, display a message and exit:
 
-> No SKILL.md files found. Verify the plugin directory contains a `skills/` or `skills-prose/`
+> No SKILL.md files found. Verify the plugin directory contains a `skills/`
 > subdirectory with at least one skill, then try again.
 
 ### Step 1.2: Extract Keywords
@@ -992,15 +991,15 @@ HANDLE_REFINEMENT(response):
 - **Gateway Command Template:** `${CLAUDE_PLUGIN_ROOT}/templates/gateway-command.md.template`
 - **Intent Mapping Template:** `${CLAUDE_PLUGIN_ROOT}/templates/intent-mapping.yaml.template`
 - **Workflow Template:** `${CLAUDE_PLUGIN_ROOT}/templates/workflow.yaml.template`
-- **Workflow Generation Pattern:** `${CLAUDE_PLUGIN_ROOT}/lib/patterns/workflow-generation.md`
+- **Workflow Generation Pattern:** `${CLAUDE_PLUGIN_ROOT}/patterns/authoring-guide.md`
 - **3VL Intent Detection:** See `docs/intent-detection-guide.md` for conceptual overview
 
 ---
 
 ## Related Skills
 
-- Plugin discovery: `${CLAUDE_PLUGIN_ROOT}/skills-prose/bp-plugin-discover/SKILL.md`
-- Gateway validation: `${CLAUDE_PLUGIN_ROOT}/skills-prose/bp-gateway-validate/SKILL.md`
-- Intent creation: `${CLAUDE_PLUGIN_ROOT}/skills-prose/bp-intent-create/SKILL.md`
-- Skill creation: `${CLAUDE_PLUGIN_ROOT}/skills-prose/bp-skill-create/SKILL.md`
-- Plugin analysis: `${CLAUDE_PLUGIN_ROOT}/skills-prose/bp-plugin-analyze/SKILL.md`
+- Plugin discovery: `${CLAUDE_PLUGIN_ROOT}/skills/bp-plugin-discover/SKILL.md`
+- Gateway validation: `${CLAUDE_PLUGIN_ROOT}/skills/bp-gateway-validate/SKILL.md`
+- Intent creation: `${CLAUDE_PLUGIN_ROOT}/skills/bp-intent-create/SKILL.md`
+- Skill creation: `${CLAUDE_PLUGIN_ROOT}/skills/bp-skill-create/SKILL.md`
+- Plugin analysis: `${CLAUDE_PLUGIN_ROOT}/skills/bp-plugin-analyze/SKILL.md`

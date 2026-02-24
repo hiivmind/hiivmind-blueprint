@@ -2,22 +2,34 @@
 name: bp-skill-create
 description: >
   This skill should be used when the user asks to "create a new skill", "scaffold skill",
-  "initialize skill", "new workflow skill", "start new skill", "add skill to plugin",
-  or needs to create a brand new skill with workflow support from scratch. Triggers on
+  "initialize skill", "new skill", "start new skill", "add skill to plugin",
+  or needs to create a brand new skill from scratch. Triggers on
   "create skill", "new skill", "scaffold", "init skill", "add skill", "start skill".
 allowed-tools: Read, Write, Glob, Bash, AskUserQuestion
+inputs:
+  - name: skill_name
+    type: string
+    required: false
+    description: Kebab-case skill name (prompted if not provided)
+outputs:
+  - name: skill_path
+    type: string
+    description: Path to the created skill directory
+  - name: files_created
+    type: array
+    description: List of all files created during scaffolding
 ---
 
 # Scaffold New Skill from Templates
 
-Create a brand new workflow-based skill from scratch using the blueprint templates.
-Unlike `bp-prose-migrate` (which converts existing prose), this skill generates
-all files from templates with no pre-existing content required.
+Create a brand new skill from scratch using the blueprint templates. A skill is a prose
+orchestrator (SKILL.md) that optionally delegates specific phases to workflow definitions
+in a `workflows/` subdirectory.
 
 > **Placeholder Catalog:** `patterns/scaffold-checklist.md`
-> **Workflow Generation Pattern:** `${CLAUDE_PLUGIN_ROOT}/lib/patterns/workflow-generation.md`
 > **SKILL.md Template:** `${CLAUDE_PLUGIN_ROOT}/templates/SKILL.md.template`
 > **workflow.yaml Template:** `${CLAUDE_PLUGIN_ROOT}/templates/workflow.yaml.template`
+> **Authoring Guide:** `${CLAUDE_PLUGIN_ROOT}/patterns/authoring-guide.md`
 
 ---
 
@@ -25,23 +37,33 @@ all files from templates with no pre-existing content required.
 
 This skill walks through a guided scaffolding process that:
 
-1. Gathers skill name, plugin structure type, and desired features from the user
-2. Detects existing infrastructure in the target directory (plugin manifest, engine entrypoint, etc.)
-3. Creates the directory structure for the new skill
-4. Generates a populated SKILL.md from the template
-5. Generates a starter workflow.yaml from the template
-6. Creates any missing plugin infrastructure files
-7. Validates all generated files and reports results
+1. Gathers skill name, description, inputs, and outputs from the user
+2. Designs the skill's phases — which are prose-only, which are workflow-backed
+3. Generates a populated SKILL.md with inputs/outputs/workflows frontmatter
+4. Generates workflow files in `workflows/` for each workflow-backed phase
+5. Creates any missing plugin infrastructure (plugin.json, definitions.yaml)
+6. Validates all generated files and reports results
 
 **Output artifacts:**
 
 | File | Location | Generated From |
 |------|----------|----------------|
-| SKILL.md | `skills/{skill-name}/SKILL.md` | `${CLAUDE_PLUGIN_ROOT}/templates/SKILL.md.template` |
-| workflow.yaml | `skills/{skill-name}/workflow.yaml` | `${CLAUDE_PLUGIN_ROOT}/templates/workflow.yaml.template` |
-| plugin.json | `.claude-plugin/plugin.json` | Inline JSON structure (if not exists) |
-| engine_entrypoint.md | `.hiivmind/blueprint/engine_entrypoint.md` | `${CLAUDE_PLUGIN_ROOT}/templates/engine-entrypoint.md.template` |
-| config.yaml | `.hiivmind/blueprint/config.yaml` | Generated from `${CLAUDE_PLUGIN_ROOT}/templates/config.yaml.template` |
+| SKILL.md | `skills/{name}/SKILL.md` | `${CLAUDE_PLUGIN_ROOT}/templates/SKILL.md.template` |
+| workflow(s) | `skills/{name}/workflows/*.yaml` | `${CLAUDE_PLUGIN_ROOT}/templates/workflow.yaml.template` |
+| plugin.json | `.claude-plugin/plugin.json` | Inline JSON (if not exists) |
+| definitions.yaml | `.hiivmind/blueprint/definitions.yaml` | Copied from blueprint-lib catalog (if not exists) |
+
+**Skill directory layout:**
+
+```
+skills/{skill-name}/
+├── SKILL.md                    # Prose orchestrator (always present)
+├── workflows/                  # Optional: workflow definitions
+│   ├── {phase-name}.yaml      # One per workflow-backed phase
+│   └── ...
+└── patterns/                   # Optional: supporting pattern files
+    └── *.md
+```
 
 ---
 
@@ -83,8 +105,6 @@ HANDLE_SKILL_NAME(response):
   computed.skill_directory = raw_name
 
   # Derive short name (last segment after final hyphen group)
-  # e.g., "bp-skill-create" -> "skill-create"
-  #        "my-plugin-analyze" -> "analyze"
   segments = split(raw_name, "-")
   IF len(segments) > 2:
     computed.skill_short_name = join(segments[-2:], "-")
@@ -97,7 +117,122 @@ HANDLE_SKILL_NAME(response):
 
 Store in `computed.skill_name`, `computed.skill_directory`, `computed.skill_short_name`, and `computed.title`.
 
-### Step 1.2: Get Plugin Structure
+### Step 1.2: Get Skill Description
+
+Ask for a one-line description of what the skill does:
+
+```json
+{
+  "questions": [{
+    "question": "Describe what this skill does in one sentence (used for the frontmatter description and trigger keyword matching).",
+    "header": "Description",
+    "multiSelect": false,
+    "options": [
+      {
+        "label": "Enter description",
+        "description": "One sentence describing what the skill does and when to use it"
+      }
+    ]
+  }]
+}
+```
+
+**Response handling:**
+
+```pseudocode
+HANDLE_DESCRIPTION(response):
+  raw_desc = response.trim()
+
+  # Build frontmatter description with trigger keywords
+  computed.description = "This skill should be used when the user asks to \""
+    + raw_desc + "\". Triggers on \""
+    + computed.skill_short_name + "\"."
+
+  # Validate length
+  IF len(computed.description) > 1024:
+    DISPLAY "Description too long (max 1024 chars). Please shorten."
+    RETRY Step 1.2
+```
+
+### Step 1.3: Get Inputs and Outputs
+
+Ask the user to define the skill's inputs (what it needs) and outputs (what it produces):
+
+```json
+{
+  "questions": [{
+    "question": "What inputs does this skill need? List each as 'name: description' (one per line), or type 'none' if the skill takes no inputs.",
+    "header": "Inputs",
+    "multiSelect": false,
+    "options": [
+      {
+        "label": "Enter inputs",
+        "description": "One input per line: 'name: description'"
+      },
+      {
+        "label": "No inputs",
+        "description": "This skill takes no explicit inputs"
+      }
+    ]
+  }]
+}
+```
+
+Then ask for outputs:
+
+```json
+{
+  "questions": [{
+    "question": "What outputs does this skill produce? List each as 'name: description' (one per line), or type 'none'.",
+    "header": "Outputs",
+    "multiSelect": false,
+    "options": [
+      {
+        "label": "Enter outputs",
+        "description": "One output per line: 'name: description'"
+      },
+      {
+        "label": "No outputs",
+        "description": "This skill produces no structured outputs"
+      }
+    ]
+  }]
+}
+```
+
+**Response handling:**
+
+```pseudocode
+HANDLE_INPUTS_OUTPUTS(input_response, output_response):
+  # Parse inputs
+  IF input_response == "No inputs":
+    computed.inputs = []
+  ELSE:
+    computed.inputs = []
+    FOR line IN split(input_response, "\n"):
+      parts = split(line, ":", max=2)
+      computed.inputs.append({
+        name: trim(parts[0]),
+        type: "string",           # Default; user can refine later
+        required: true,
+        description: trim(parts[1]) IF len(parts) > 1 ELSE ""
+      })
+
+  # Parse outputs
+  IF output_response == "No outputs":
+    computed.outputs = []
+  ELSE:
+    computed.outputs = []
+    FOR line IN split(output_response, "\n"):
+      parts = split(line, ":", max=2)
+      computed.outputs.append({
+        name: trim(parts[0]),
+        type: "string",
+        description: trim(parts[1]) IF len(parts) > 1 ELSE ""
+      })
+```
+
+### Step 1.4: Get Plugin Structure
 
 Ask the user what type of plugin this skill belongs to:
 
@@ -133,20 +268,15 @@ HANDLE_STRUCTURE(response):
     CASE "Single-skill plugin":
       computed.structure = "single"
       computed.needs_gateway = false
-      computed.needs_intent_mapping = false
     CASE "Multi-skill plugin":
       computed.structure = "multi"
       computed.needs_gateway = false
-      computed.needs_intent_mapping = false
     CASE "Multi-skill with gateway":
       computed.structure = "multi-gateway"
       computed.needs_gateway = true
-      computed.needs_intent_mapping = true
 ```
 
-Store in `computed.structure`, `computed.needs_gateway`, and `computed.needs_intent_mapping`.
-
-### Step 1.3: Get Feature Selections
+### Step 1.5: Get Feature Selections
 
 Ask the user which optional features the skill should include:
 
@@ -190,16 +320,117 @@ HANDLE_FEATURES(response):
   }
 ```
 
-Store in `computed.features`.
+---
+
+## Phase 2: Design Phases
+
+### Step 2.1: Define Skill Phases
+
+Ask the user to describe the major phases of their skill. Each phase is either prose
+(LLM follows instructions directly) or workflow-backed (delegates to a YAML workflow).
+
+```json
+{
+  "questions": [{
+    "question": "Describe the major phases of this skill. For each phase, indicate whether it's prose-driven or workflow-backed.\n\nExamples:\n- 'Gather: Read files and collect data (prose)'\n- 'Validate: Check all prerequisites (workflow)'\n- 'Report: Display results to user (prose)'",
+    "header": "Phases",
+    "multiSelect": false,
+    "options": [
+      {
+        "label": "Enter phases",
+        "description": "One phase per line: 'Name: Description (prose|workflow)'"
+      },
+      {
+        "label": "Simple skill",
+        "description": "Single prose phase — no workflow definitions needed"
+      }
+    ]
+  }]
+}
+```
+
+**Response handling:**
+
+```pseudocode
+HANDLE_PHASES(response):
+  IF response == "Simple skill":
+    computed.phases = [{
+      number: 1,
+      title: "Execute",
+      type: "prose",
+      prose_instructions: "TODO: Add execution instructions here."
+    }]
+    computed.workflow_phases = []
+    RETURN
+
+  computed.phases = []
+  computed.workflow_phases = []
+  phase_number = 1
+
+  FOR line IN split(response, "\n"):
+    # Parse "Name: Description (prose|workflow)"
+    match = regex(line, /^(.+?):\s*(.+?)\s*\((prose|workflow)\)\s*$/)
+    IF match:
+      phase = {
+        number: phase_number,
+        title: trim(match[1]),
+        type: match[3],                    # "prose" or "workflow"
+        description: trim(match[2])
+      }
+
+      IF phase.type == "prose":
+        phase.prose_instructions = "TODO: Add " + phase.title + " instructions here."
+      ELSE:
+        # Derive workflow filename from phase title
+        workflow_filename = kebab_case(phase.title) + ".yaml"
+        phase.workflow_file = workflow_filename
+        computed.workflow_phases.append({
+          filename: workflow_filename,
+          workflow_id: computed.skill_name + "-" + kebab_case(phase.title),
+          description: phase.description,
+          phase_title: phase.title
+        })
+
+      computed.phases.append(phase)
+      phase_number += 1
+```
+
+### Step 2.2: Display Phase Summary
+
+Present the designed phases for user confirmation:
+
+```
+## Phase Design
+
+| # | Phase | Type | Artifact |
+|---|-------|------|----------|
+{for phase in computed.phases}
+| {phase.number} | {phase.title} | {phase.type} | {phase.workflow_file OR "—"} |
+{/for}
+
+Coverage: {computed.coverage}
+Workflow files to generate: {len(computed.workflow_phases)}
+
+Proceed with this design? [Y/n]
+```
+
+```pseudocode
+COMPUTE_COVERAGE():
+  IF len(computed.workflow_phases) == 0:
+    computed.coverage = "none"
+  ELSE IF len(computed.workflow_phases) == len(computed.phases):
+    computed.coverage = "full"
+  ELSE:
+    computed.coverage = "partial"
+```
 
 ---
 
-## Phase 2: Detect Context
+## Phase 3: Generate SKILL.md
 
-### Step 2.1: Check Existing Infrastructure
+### Step 3.1: Detect Context
 
-Examine the current working directory (or user-specified target directory) for existing
-plugin infrastructure. Use Glob and Read to detect what already exists.
+Examine the current working directory for existing plugin infrastructure:
 
 ```pseudocode
 DETECT_CONTEXT():
@@ -215,16 +446,12 @@ DETECT_CONTEXT():
   existing_skills = Glob("skills/*/SKILL.md")
   computed.context.existing_skill_count = len(existing_skills)
 
-  # Check for engine entrypoint
-  entrypoint_files = Glob(".hiivmind/blueprint/engine_entrypoint.md")
-  computed.context.has_engine_entrypoint = len(entrypoint_files) > 0
-
-  # Check for config file
-  config_files = Glob(".hiivmind/blueprint/config.yaml")
-  computed.context.has_config_file = len(config_files) > 0
+  # Check for definitions file
+  definitions_files = Glob(".hiivmind/blueprint/definitions.yaml")
+  computed.context.has_definitions = len(definitions_files) > 0
 
   # Check for existing gateway command
-  gateway_files = Glob("commands/*/workflow.yaml")
+  gateway_files = Glob("commands/*/SKILL.md")
   computed.context.has_gateway = len(gateway_files) > 0
 
   # If plugin.json exists, extract parent plugin name
@@ -232,217 +459,132 @@ DETECT_CONTEXT():
     manifest = Read(".claude-plugin/plugin.json")
     computed.parent_plugin_name = extract_json(manifest, ".name")
   ELSE:
-    # Derive from directory name
     computed.parent_plugin_name = basename(cwd())
-
-  # If config file exists, read lib version
-  IF computed.context.has_config_file:
-    config_content = Read(".hiivmind/blueprint/config.yaml")
-    computed.lib_version = extract_yaml(config_content, ".lib_version")
-    computed.lib_ref = extract_yaml(config_content, ".lib_ref")
-  ELSE:
-    # Config file is required — will be created in Phase 6
-    computed.lib_version = null
-    computed.lib_ref = null
 ```
 
-### Step 2.2: Determine Required Actions
-
-Based on the detected context, determine which creation steps are needed:
-
-| Context Flag | Value | Action Needed |
-|-------------|-------|---------------|
-| `has_plugin_manifest` | `false` | Create `.claude-plugin/plugin.json` in Phase 6 |
-| `has_skills_dir` | `false` | Create `skills/` directory in Phase 3 |
-| `has_engine_entrypoint` | `false` | Create engine entrypoint in Phase 6 |
-| `has_config_file` | `false` | Create .hiivmind/blueprint/config.yaml in Phase 6 |
-| `has_gateway` | `false` AND `needs_gateway` is `true` | Note: gateway creation is a separate skill |
-
-```pseudocode
-DETERMINE_ACTIONS():
-  computed.actions = {
-    create_plugin_manifest:  NOT computed.context.has_plugin_manifest,
-    create_skills_dir:       NOT computed.context.has_skills_dir,
-    create_skill_dir:        true,   # Always needed for the new skill
-    create_engine_entrypoint: NOT computed.context.has_engine_entrypoint,
-    create_config_file:      NOT computed.context.has_config_file,
-    generate_skill_md:       true,   # Always needed
-    generate_workflow_yaml:  true,   # Always needed
-    note_gateway_needed:     computed.needs_gateway AND NOT computed.context.has_gateway
-  }
-
-  # Count actions for progress reporting
-  computed.actions.total = count_true_values(computed.actions)
-```
-
-Display a summary of detected context and planned actions:
-
-```
-## Context Detection
-
-| Infrastructure | Found | Action |
-|---------------|-------|--------|
-| Plugin manifest (.claude-plugin/plugin.json) | {yes/no} | {Create / Already exists} |
-| Skills directory (skills/) | {yes/no} | {Create / Already exists} |
-| Engine entrypoint (.hiivmind/blueprint/) | {yes/no} | {Create / Already exists} |
-| Library version file | {yes/no} | {Create / Already exists} |
-| Existing gateway | {yes/no} | {Note needed / Already exists / Not applicable} |
-
-**Planned:** {computed.actions.total} creation steps for skill **{computed.skill_name}**
-```
-
----
-
-## Phase 3: Create Directory Structure
-
-### Step 3.1: Create Directories
-
-Create the necessary directories based on the actions determined in Phase 2.
+### Step 3.2: Create Directories
 
 ```pseudocode
 CREATE_DIRECTORIES():
   # Create skills/ if needed
-  IF computed.actions.create_skills_dir:
+  IF NOT computed.context.has_skills_dir:
     Bash("mkdir -p skills/")
 
-  # Always create the skill directory
+  # Create skill directory
   skill_path = "skills/" + computed.skill_directory
   Bash("mkdir -p " + skill_path)
   computed.skill_path = skill_path
 
-  # Create .hiivmind/blueprint/ if engine entrypoint is needed
-  IF computed.actions.create_engine_entrypoint:
+  # Create workflows/ if any workflow-backed phases
+  IF len(computed.workflow_phases) > 0:
+    Bash("mkdir -p " + skill_path + "/workflows/")
+
+  # Create .hiivmind/blueprint/ if definitions needed
+  IF NOT computed.context.has_definitions:
     Bash("mkdir -p .hiivmind/blueprint/")
 
-  # Create .claude-plugin/ if plugin manifest is needed
-  IF computed.actions.create_plugin_manifest:
+  # Create .claude-plugin/ if plugin manifest needed
+  IF NOT computed.context.has_plugin_manifest:
     Bash("mkdir -p .claude-plugin/")
 ```
 
-Verify all directories were created:
+### Step 3.3: Load and Populate SKILL.md Template
+
+Read the SKILL.md template and substitute all placeholders:
 
 ```pseudocode
-VERIFY_DIRECTORIES():
-  expected_dirs = [computed.skill_path]
-  IF computed.actions.create_engine_entrypoint:
-    expected_dirs.append(".hiivmind/blueprint/")
-  IF computed.actions.create_plugin_manifest:
-    expected_dirs.append(".claude-plugin/")
-
-  FOR dir IN expected_dirs:
-    IF NOT directory_exists(dir):
-      FAIL "Failed to create directory: " + dir
-```
-
----
-
-## Phase 4: Generate SKILL.md
-
-### Step 4.1: Load Template
-
-Read the SKILL.md template from the plugin's template directory:
-
-```pseudocode
-LOAD_SKILL_TEMPLATE():
+GENERATE_SKILL_MD():
   template_path = "${CLAUDE_PLUGIN_ROOT}/templates/SKILL.md.template"
-  computed.skill_template = Read(template_path)
+  template = Read(template_path)
 
-  IF computed.skill_template IS EMPTY:
+  IF template IS EMPTY:
     FAIL "Could not read SKILL.md template at: " + template_path
-```
 
-### Step 4.2: Substitute Placeholders
-
-Replace all `{{placeholder}}` values in the template with computed values.
-Refer to `patterns/scaffold-checklist.md` for the complete placeholder catalog
-with sources, defaults, and descriptions.
-
-**Core placeholder substitutions:**
-
-| Placeholder | Source | Value |
-|------------|--------|-------|
-| `{{skill_name}}` | `computed.skill_name` | User input from Step 1.1 |
-| `{{description}}` | Generated | Auto-generated from skill name and features |
-| `{{allowed_tools}}` | Computed | Based on feature selections |
-| `{{title}}` | `computed.title` | Title-cased version of skill name |
-| `{{parent_plugin_name}}` | `computed.parent_plugin_name` | From plugin.json or directory name |
-| `{{skill_short_name}}` | `computed.skill_short_name` | Last segment(s) of skill name |
-| `{{skill_directory}}` | `computed.skill_directory` | Same as skill name |
-| `{{lib_version}}` | `computed.lib_version` | From `.hiivmind/blueprint/config.yaml` |
-| `{{lib_ref}}` | `computed.lib_ref` | From `.hiivmind/blueprint/config.yaml` |
-
-**Conditional section handling:**
-
-```pseudocode
-SUBSTITUTE_SKILL_PLACEHOLDERS(template):
   result = template
 
-  # Core substitutions
+  # ── Core substitutions ──
   result = replace(result, "{{skill_name}}", computed.skill_name)
-  result = replace(result, "{{description}}", generate_description())
+  result = replace(result, "{{description}}", computed.description)
   result = replace(result, "{{allowed_tools}}", compute_allowed_tools())
   result = replace(result, "{{title}}", computed.title)
   result = replace(result, "{{parent_plugin_name}}", computed.parent_plugin_name)
   result = replace(result, "{{skill_short_name}}", computed.skill_short_name)
   result = replace(result, "{{skill_directory}}", computed.skill_directory)
-  result = replace(result, "{{lib_version}}", computed.lib_version)
-  result = replace(result, "{{lib_ref}}", computed.lib_ref)
+  result = replace(result, "{{overview}}", computed.phases[0].description
+    OR "TODO: Add skill overview here.")
 
-  # Conditional sections: runtime flags
+  # ── Inputs/Outputs ──
+  result = populate_inputs_section(result, computed.inputs)
+  result = populate_outputs_section(result, computed.outputs)
+
+  # ── Workflows list ──
+  IF len(computed.workflow_phases) > 0:
+    result = enable_section(result, "if_workflows")
+    result = populate_workflows_list(result, computed.workflow_phases)
+  ELSE:
+    result = remove_section(result, "if_workflows")
+
+  # ── Phases ──
+  result = populate_phases(result, computed.phases)
+
+  # ── Conditional sections ──
   IF computed.features.runtime_flags:
     result = enable_section(result, "if_runtime_flags")
   ELSE:
     result = remove_section(result, "if_runtime_flags")
 
-  # Conditional sections: intent detection
   IF computed.features.intent_detection:
     result = enable_section(result, "if_intent_detection")
   ELSE:
     result = remove_section(result, "if_intent_detection")
 
-  # Conditional sections: workflow graph visualization
   IF computed.features.visualization:
     result = enable_section(result, "workflow_graph")
     result = replace(result, "{{graph_ascii}}", generate_starter_graph())
   ELSE:
     result = remove_section(result, "workflow_graph")
 
-  # Conditional sections: examples (include a starter example)
+  # ── Examples and related skills ──
   result = enable_section(result, "examples")
   result = populate_starter_examples(result)
-
-  # Related skills section
   result = enable_section(result, "related_skills")
   result = populate_related_skills(result)
 
   RETURN result
 ```
 
-**Helper: generate_description():**
+**Helper: populate_phases():**
 
 ```pseudocode
-function generate_description():
-  desc = "This skill should be used when the user asks to \""
-  desc += replace(computed.skill_short_name, "-", " ")
-  desc += "\". Triggers on \""
-  desc += computed.skill_short_name
-  desc += "\"."
-  RETURN desc
+function populate_phases(template, phases):
+  phases_content = ""
+
+  FOR phase IN phases:
+    phases_content += "### Phase " + str(phase.number) + ": " + phase.title + "\n\n"
+
+    IF phase.type == "prose":
+      phases_content += phase.prose_instructions + "\n\n"
+    ELSE:
+      phases_content += "Execute `workflows/" + phase.workflow_file
+        + "` following the execution guide:\n\n"
+      phases_content += "1. Read `.hiivmind/blueprint/definitions.yaml` — build type registry\n"
+      phases_content += "2. Read `${CLAUDE_PLUGIN_ROOT}/skills/"
+        + computed.skill_directory + "/workflows/" + phase.workflow_file + "`\n"
+      phases_content += "3. Follow `.hiivmind/blueprint/execution-guide.md` (Init → Execute → Complete)\n\n"
+
+  # Replace the {{#phases}} ... {{/phases}} block with generated content
+  RETURN replace_section(template, "phases", phases_content)
 ```
 
 **Helper: compute_allowed_tools():**
 
 ```pseudocode
 function compute_allowed_tools():
-  tools = ["Read", "Write", "Glob", "Bash"]
-  # All skills need AskUserQuestion for the execution protocol
-  tools.append("AskUserQuestion")
+  tools = ["Read", "Write", "Glob", "Bash", "AskUserQuestion"]
   RETURN join(tools, ", ")
 ```
 
-### Step 4.3: Write SKILL.md
-
-Write the populated template to the skill directory:
+### Step 3.4: Write SKILL.md
 
 ```pseudocode
 WRITE_SKILL_MD():
@@ -455,11 +597,11 @@ WRITE_SKILL_MD():
 
 ---
 
-## Phase 5: Generate workflow.yaml
+## Phase 4: Generate Workflow Files
 
-### Step 5.1: Load Template
+For each workflow-backed phase, generate a workflow YAML file in the `workflows/` subdirectory.
 
-Read the workflow.yaml template:
+### Step 4.1: Load Workflow Template
 
 ```pseudocode
 LOAD_WORKFLOW_TEMPLATE():
@@ -470,94 +612,52 @@ LOAD_WORKFLOW_TEMPLATE():
     FAIL "Could not read workflow.yaml template at: " + template_path
 ```
 
-### Step 5.2: Substitute Placeholders and Build Starter Nodes
+### Step 4.2: Generate Each Workflow File
 
-Replace placeholders and generate an initial set of workflow nodes based on the
-selected features.
-
-**Core placeholder substitutions:**
-
-| Placeholder | Source | Value |
-|------------|--------|-------|
-| `{{skill_id}}` | `computed.skill_name` | Same as skill name |
-| `{{description}}` | Generated | Same description as SKILL.md |
-| `{{lib_ref}}` | `computed.lib_ref` | Library reference string |
-| `{{state_variables}}` | Computed | Comma-separated list of initial state fields |
-| `{{start_node}}` | Computed | Name of the first node |
-| `{{success_message}}` | Computed | Derived from skill name |
+For each entry in `computed.workflow_phases`, substitute placeholders and generate starter nodes:
 
 ```pseudocode
-SUBSTITUTE_WORKFLOW_PLACEHOLDERS(template):
-  result = template
+GENERATE_WORKFLOWS():
+  FOR wf IN computed.workflow_phases:
+    result = computed.workflow_template
 
-  # Core substitutions
-  result = replace(result, "{{skill_id}}", computed.skill_name)
-  result = replace(result, "{{description}}", generate_description())
-  result = replace(result, "{{lib_ref}}", computed.lib_ref)
-  result = replace(result, "{{state_variables}}", "phase, flags, computed")
-  result = replace(result, "{{success_message}}", computed.title + " completed successfully")
+    # Core substitutions — note: {{workflow_id}} not {{skill_id}}
+    result = replace(result, "{{workflow_id}}", wf.workflow_id)
+    result = replace(result, "{{description}}", wf.description)
+    result = replace(result, "{{state_variables}}", "phase, flags, computed")
+    result = replace(result, "{{start_node}}", "start_" + kebab_to_snake(wf.phase_title))
+    result = replace(result, "{{success_message}}", wf.phase_title + " completed successfully")
 
-  # Determine start node based on features
-  IF computed.features.intent_detection:
-    result = replace(result, "{{start_node}}", "parse_intent")
-  ELSE:
-    result = replace(result, "{{start_node}}", "start_execution")
+    # Build starter nodes for this workflow
+    nodes = build_workflow_starter_nodes(wf)
+    result = replace_nodes_section(result, nodes)
 
-  # Build starter nodes
-  nodes = build_starter_nodes()
-  result = replace_nodes_section(result, nodes)
+    # Write to workflows/ subdirectory
+    output_path = computed.skill_path + "/workflows/" + wf.filename
+    Write(output_path, result)
+    computed.files_created.append(output_path)
 
-  RETURN result
+    DISPLAY "Created: " + output_path
 ```
 
-**Helper: build_starter_nodes():**
-
-Generate a minimal set of working nodes. The user will expand these after scaffolding.
+**Helper: build_workflow_starter_nodes():**
 
 ```pseudocode
-function build_starter_nodes():
+function build_workflow_starter_nodes(wf):
+  start_id = "start_" + kebab_to_snake(wf.phase_title)
   nodes = []
 
-  # If intent detection enabled, add intent parsing nodes
-  IF computed.features.intent_detection:
-    nodes.append({
-      id: "parse_intent",
-      type: "action",
-      description: "Parse user input for intent flags",
-      actions: [{ type: "mutate_state", operation: "set", field: "computed.intent_parsed", value: true }],
-      on_success: "route_intent",
-      on_failure: "error_intent"
-    })
-    nodes.append({
-      id: "route_intent",
-      type: "conditional",
-      description: "Route based on detected intent",
-      condition: { type: "state_check", field: "computed.intent_parsed", operator: "true" },
-      branches: { on_true: "start_execution", on_false: "ask_clarification" }
-    })
-    nodes.append({
-      id: "ask_clarification",
-      type: "user_prompt",
-      prompt: {
-        question: "What would you like to do?",
-        header: "Action",
-        options: [
-          { id: "proceed", label: "Proceed", description: "Continue with default action" },
-          { id: "cancel", label: "Cancel", description: "Cancel operation" }
-        ]
-      },
-      on_response: {
-        proceed: { next_node: "start_execution" },
-        cancel: { next_node: "cancelled" }
-      }
-    })
-
-  # Core execution node (always present)
+  # Start node
   nodes.append({
-    id: "start_execution",
+    id: start_id,
     type: "action",
-    description: "Begin main skill execution",
-    actions: [{ type: "mutate_state", operation: "set", field: "phase", value: "executing" }],
+    description: "Begin " + wf.phase_title,
+    actions: [{
+      type: "mutate_state",
+      operation: "set",
+      field: "phase",
+      value: wf.phase_title
+    }],
     on_success: "complete",
     on_failure: "error_execution"
   })
@@ -566,8 +666,12 @@ function build_starter_nodes():
   nodes.append({
     id: "complete",
     type: "action",
-    description: "Finalize and display results",
-    actions: [{ type: "display", format: "text", content: "Operation complete." }],
+    description: "Finalize " + wf.phase_title + " results",
+    actions: [{
+      type: "display",
+      format: "text",
+      content: wf.phase_title + " complete."
+    }],
     on_success: "success",
     on_failure: "error_execution"
   })
@@ -575,35 +679,42 @@ function build_starter_nodes():
   RETURN nodes
 ```
 
-### Step 5.3: Write workflow.yaml
-
-Write the populated workflow template to the skill directory:
+**If no workflow phases:** Skip this entire phase.
 
 ```pseudocode
-WRITE_WORKFLOW():
-  output_path = computed.skill_path + "/workflow.yaml"
-  Write(output_path, computed.populated_workflow_template)
-  computed.files_created.append(output_path)
-
-  DISPLAY "Created: " + output_path
+IF len(computed.workflow_phases) == 0:
+  DISPLAY "No workflow-backed phases — skipping workflow generation."
+  SKIP Phase 4
 ```
 
 ---
 
-## Phase 6: Create Plugin Infrastructure
+## Phase 5: Create Plugin Infrastructure
 
-Create any missing infrastructure files that the skill depends on.
+Create any missing infrastructure files.
 
-### Step 6.1: Create Plugin Manifest
+### Step 5.1: Create Plugin Manifest
 
 If `.claude-plugin/plugin.json` does not exist, create it:
 
 ```pseudocode
 CREATE_PLUGIN_MANIFEST():
-  IF NOT computed.actions.create_plugin_manifest:
-    SKIP "Plugin manifest already exists"
+  IF computed.context.has_plugin_manifest:
+    # Add skill to existing manifest if not already listed
+    manifest = Read(".claude-plugin/plugin.json")
+    parsed = json_parse(manifest)
+    skill_entry = find(parsed.skills, s => s.name == computed.skill_name)
+    IF skill_entry IS NULL:
+      parsed.skills.append({
+        "name": computed.skill_name,
+        "path": "skills/" + computed.skill_directory + "/SKILL.md"
+      })
+      Write(".claude-plugin/plugin.json", json_format(parsed, indent=2))
+      computed.files_updated.append(".claude-plugin/plugin.json")
+      DISPLAY "Updated: .claude-plugin/plugin.json (added skill entry)"
     RETURN
 
+  # Create new manifest
   manifest = {
     "name": computed.parent_plugin_name,
     "version": "1.0.0",
@@ -618,105 +729,157 @@ CREATE_PLUGIN_MANIFEST():
 
   Write(".claude-plugin/plugin.json", json_format(manifest, indent=2))
   computed.files_created.append(".claude-plugin/plugin.json")
-
   DISPLAY "Created: .claude-plugin/plugin.json"
 ```
 
-**JSON structure for new plugin.json:**
+### Step 5.2: Create Definitions File
 
-```json
-{
-  "name": "{computed.parent_plugin_name}",
-  "version": "1.0.0",
-  "description": "Plugin containing {computed.skill_name}",
-  "skills": [
-    {
-      "name": "{computed.skill_name}",
-      "path": "skills/{computed.skill_directory}/SKILL.md"
-    }
-  ]
-}
-```
-
-If the manifest already exists but the new skill is not listed, add it to the `skills` array:
+If `.hiivmind/blueprint/definitions.yaml` does not exist, create a starter definitions file
+with common types. The user should copy specific types from the hiivmind-blueprint-lib catalog
+as needed.
 
 ```pseudocode
-UPDATE_EXISTING_MANIFEST():
-  IF computed.context.has_plugin_manifest:
-    manifest = Read(".claude-plugin/plugin.json")
-    parsed = json_parse(manifest)
-
-    # Check if skill already registered
-    skill_entry = find(parsed.skills, s => s.name == computed.skill_name)
-    IF skill_entry IS NULL:
-      parsed.skills.append({
-        "name": computed.skill_name,
-        "path": "skills/" + computed.skill_directory + "/SKILL.md"
-      })
-      Write(".claude-plugin/plugin.json", json_format(parsed, indent=2))
-      computed.files_updated.append(".claude-plugin/plugin.json")
-      DISPLAY "Updated: .claude-plugin/plugin.json (added skill entry)"
-```
-
-### Step 6.2: Create Engine Entrypoint
-
-If `.hiivmind/blueprint/engine_entrypoint.md` does not exist, generate it from the template:
-
-```pseudocode
-CREATE_ENGINE_ENTRYPOINT():
-  IF NOT computed.actions.create_engine_entrypoint:
-    SKIP "Engine entrypoint already exists"
+CREATE_DEFINITIONS():
+  IF computed.context.has_definitions:
+    SKIP "Definitions file already exists"
     RETURN
-
-  template_path = "${CLAUDE_PLUGIN_ROOT}/templates/engine-entrypoint.md.template"
-  template = Read(template_path)
-
-  IF template IS EMPTY:
-    FAIL "Could not read engine entrypoint template at: " + template_path
-
-  # Substitute the engine version and lib version placeholders
-  result = replace(template, "{{engine_version}}", "1.0.0")
-  result = replace(result, "{{lib_version}}", computed.lib_version)
-
-  Write(".hiivmind/blueprint/engine_entrypoint.md", result)
-  computed.files_created.append(".hiivmind/blueprint/engine_entrypoint.md")
-
-  DISPLAY "Created: .hiivmind/blueprint/engine_entrypoint.md"
-```
-
-### Step 6.3: Create Blueprint Config
-
-If `.hiivmind/blueprint/config.yaml` does not exist, generate it from the template:
-
-```pseudocode
-CREATE_CONFIG_FILE():
-  IF NOT computed.actions.create_config_file:
-    SKIP "Config file already exists"
-    RETURN
-
-  # Generate from the config template
-  template_path = "${CLAUDE_PLUGIN_ROOT}/templates/config.yaml.template"
-  template_content = Read(template_path)
-
-  IF template_content IS EMPTY:
-    FAIL "Could not read config template at: " + template_path
-
-  # Substitute placeholders in template
-  rendered_content = replace(template_content, "{{lib_version}}", computed.lib_version)
-  rendered_content = replace(rendered_content, "{{lib_ref}}", computed.lib_ref)
 
   Bash("mkdir -p .hiivmind/blueprint/")
-  Write(".hiivmind/blueprint/config.yaml", rendered_content)
-  computed.files_created.append(".hiivmind/blueprint/config.yaml")
 
-  DISPLAY "Created: .hiivmind/blueprint/config.yaml"
+  starter_definitions = """
+# Type definitions for workflow execution
+# Copy needed types from hiivmind-blueprint-lib catalog
+# See: https://github.com/hiivmind/hiivmind-blueprint-lib
+
+nodes:
+  action:
+    description: "Execute consequences, route on success/failure"
+    execution:
+      effect: |
+        for action in node.actions:
+          result = dispatch_consequence(action, state)
+          if result.failed: return route_to(node.on_failure)
+        return route_to(node.on_success)
+
+  conditional:
+    description: "Evaluate precondition and branch"
+    execution:
+      effect: |
+        if audit.enabled:
+          results = evaluate_all(node.condition)
+          store(audit.output, results)
+          passed = results.passed
+        else:
+          passed = evaluate(node.condition)
+        return route_to(branches.on_true if passed else branches.on_false)
+
+  user_prompt:
+    description: "Present question to user, route by response"
+    execution:
+      effect: |
+        prompt = build_prompt(node.prompt, state)
+        response = present_and_await(prompt)
+        state.user_responses[node_id] = response
+        handler = node.on_response[response.selected_id]
+        if handler.consequence: execute_each(handler.consequence)
+        return route_to(handler.next_node)
+
+consequences:
+  mutate_state:
+    description: "Modify workflow state"
+    parameters:
+      - name: operation
+        type: string
+        required: true
+        enum: [set, append, clear, merge]
+      - name: field
+        type: string
+        required: true
+      - name: value
+        type: any
+        required: false
+    payload:
+      kind: state_mutation
+      effect: |
+        if operation == "set":    state[field] = value
+        if operation == "append": state[field].push(value)
+        if operation == "clear":  state[field] = null
+        if operation == "merge":  state[field] = merge(state[field], value)
+
+  set_flag:
+    description: "Set boolean flag in workflow state"
+    parameters:
+      - name: flag
+        type: string
+        required: true
+      - name: value
+        type: boolean
+        default: true
+    payload:
+      kind: state_mutation
+      effect: |
+        state.flags[params.flag] = params.value
+
+  display:
+    description: "Display content to user"
+    parameters:
+      - name: format
+        type: string
+        required: true
+        enum: [text, table, json, markdown]
+      - name: content
+        type: any
+        required: true
+    payload:
+      kind: side_effect
+      effect: |
+        render(params.content, format=params.format)
+
+preconditions:
+  state_check:
+    description: "Check state field against a condition"
+    parameters:
+      - name: field
+        type: string
+        required: true
+      - name: operator
+        type: string
+        required: true
+    evaluation:
+      effect: |
+        val = resolve_path(state, field)
+        if operator == "not_null": return val != null
+        if operator == "equals":   return val == value
+        if operator == "true":     return val == true
+
+  composite:
+    description: "Combine conditions with logical operators"
+    parameters:
+      - name: operator
+        type: string
+        required: true
+        enum: [all, any, none, xor]
+      - name: conditions
+        type: array
+        required: true
+    evaluation:
+      effect: |
+        if operator == "all":  return all(evaluate(c) for c in conditions)
+        if operator == "any":  return any(evaluate(c) for c in conditions)
+        if operator == "none": return not any(evaluate(c) for c in conditions)
+        if operator == "xor":  return sum(evaluate(c) for c in conditions) == 1
+"""
+
+  Write(".hiivmind/blueprint/definitions.yaml", starter_definitions)
+  computed.files_created.append(".hiivmind/blueprint/definitions.yaml")
+  DISPLAY "Created: .hiivmind/blueprint/definitions.yaml (starter types — add more from catalog as needed)"
 ```
 
 ---
 
-## Phase 7: Verify and Report
+## Phase 6: Validate and Report
 
-### Step 7.1: Validate Generated Files
+### Step 6.1: Validate Generated Files
 
 Check that all expected files exist and are non-empty:
 
@@ -725,16 +888,18 @@ VALIDATE_FILES():
   computed.validation = { passed: [], failed: [] }
 
   expected_files = [
-    computed.skill_path + "/SKILL.md",
-    computed.skill_path + "/workflow.yaml"
+    computed.skill_path + "/SKILL.md"
   ]
 
-  IF computed.actions.create_plugin_manifest:
+  # Add workflow files
+  FOR wf IN computed.workflow_phases:
+    expected_files.append(computed.skill_path + "/workflows/" + wf.filename)
+
+  # Add infrastructure files
+  IF ".claude-plugin/plugin.json" IN computed.files_created:
     expected_files.append(".claude-plugin/plugin.json")
-  IF computed.actions.create_engine_entrypoint:
-    expected_files.append(".hiivmind/blueprint/engine_entrypoint.md")
-  IF computed.actions.create_config_file:
-    expected_files.append(".hiivmind/blueprint/config.yaml")
+  IF ".hiivmind/blueprint/definitions.yaml" IN computed.files_created:
+    expected_files.append(".hiivmind/blueprint/definitions.yaml")
 
   FOR file IN expected_files:
     IF file_exists(file) AND file_size(file) > 0:
@@ -748,9 +913,7 @@ VALIDATE_FILES():
       DISPLAY "  - MISSING: " + file
 ```
 
-### Step 7.2: Display Summary
-
-Present a comprehensive summary of everything that was created:
+### Step 6.2: Display Summary
 
 ```
 ## Scaffold Complete: {computed.skill_name}
@@ -773,34 +936,41 @@ Present a comprehensive summary of everything that was created:
 │   └── plugin.json {new/existing}
 ├── .hiivmind/
 │   └── blueprint/
-│       ├── engine_entrypoint.md {new/existing}
-│       └── config.yaml {new/existing}
+│       └── definitions.yaml {new/existing}
 ├── skills/
 │   └── {computed.skill_directory}/
 │       ├── SKILL.md          ← NEW
-│       └── workflow.yaml     ← NEW
+{if len(computed.workflow_phases) > 0}
+│       └── workflows/
+{for wf in computed.workflow_phases}
+│           └── {wf.filename}  ← NEW
+{/for}
+{/if}
 
 ### Configuration
 
 - **Skill name:** {computed.skill_name}
 - **Plugin structure:** {computed.structure}
-- **Library version:** {computed.lib_version}
-- **Features:** {comma-separated list of enabled features}
+- **Coverage:** {computed.coverage}
+- **Phases:** {len(computed.phases)} ({len(computed.workflow_phases)} workflow-backed)
+- **Inputs:** {len(computed.inputs)}
+- **Outputs:** {len(computed.outputs)}
 
 ### Next Steps
 
-1. **Edit workflow.yaml** -- Add domain-specific nodes to `skills/{computed.skill_directory}/workflow.yaml`
-2. **Update SKILL.md description** -- Refine the auto-generated description with trigger keywords
-3. **Add entry preconditions** -- Define tool and file requirements in workflow.yaml
-{if computed.needs_gateway AND NOT computed.context.has_gateway}
-4. **Create gateway** -- Run `bp-gateway-create` to set up gateway routing
+1. **Fill in prose phases** — Replace TODO placeholders in SKILL.md with real instructions
+{if len(computed.workflow_phases) > 0}
+2. **Add workflow nodes** — Expand starter nodes in `workflows/*.yaml` with domain-specific logic
+3. **Add definitions** — Copy needed types from hiivmind-blueprint-lib catalog into definitions.yaml
 {/if}
-5. **Test the skill** -- Invoke with `Skill(skill: "{computed.skill_name}")`
+4. **Refine description** — Update frontmatter description with accurate trigger keywords
+{if computed.needs_gateway AND NOT computed.context.has_gateway}
+5. **Create gateway** — Run `bp-gateway-create` to set up gateway routing
+{/if}
+6. **Test the skill** — Invoke with `Skill(skill: "{computed.skill_name}")`
 ```
 
-### Step 7.3: Offer Next Actions
-
-Ask the user what they want to do next:
+### Step 6.3: Offer Next Actions
 
 ```json
 {
@@ -810,8 +980,12 @@ Ask the user what they want to do next:
     "multiSelect": false,
     "options": [
       {
-        "label": "Edit workflow",
-        "description": "Open the generated workflow.yaml to add nodes and logic"
+        "label": "Edit SKILL.md",
+        "description": "Open the generated SKILL.md to fill in prose phases"
+      },
+      {
+        "label": "Edit workflows",
+        "description": "Open the generated workflow files to add nodes"
       },
       {
         "label": "Add another skill",
@@ -831,19 +1005,24 @@ Ask the user what they want to do next:
 ```pseudocode
 HANDLE_NEXT_ACTION(response):
   SWITCH response:
-    CASE "Edit workflow":
-      workflow_path = computed.skill_path + "/workflow.yaml"
-      DISPLAY "Opening " + workflow_path + " for editing."
-      DISPLAY "The starter workflow contains placeholder nodes. Replace them with your skill's logic."
-      DISPLAY "See ${CLAUDE_PLUGIN_ROOT}/lib/patterns/workflow-generation.md for node patterns."
-      # Read and display the generated workflow for the user to review
-      content = Read(workflow_path)
+    CASE "Edit SKILL.md":
+      skill_path = computed.skill_path + "/SKILL.md"
+      DISPLAY "Opening " + skill_path + " for editing."
+      content = Read(skill_path)
       DISPLAY content
+      EXIT
+
+    CASE "Edit workflows":
+      FOR wf IN computed.workflow_phases:
+        wf_path = computed.skill_path + "/workflows/" + wf.filename
+        DISPLAY "---"
+        DISPLAY "### " + wf.filename
+        content = Read(wf_path)
+        DISPLAY content
       EXIT
 
     CASE "Add another skill":
       DISPLAY "Starting new skill scaffold..."
-      # Reset computed state for a fresh run
       computed.files_created = []
       computed.files_updated = []
       GOTO Phase 1, Step 1.1
@@ -858,20 +1037,19 @@ HANDLE_NEXT_ACTION(response):
 ## Reference Documentation
 
 - **Placeholder Catalog:** `patterns/scaffold-checklist.md` (local to this skill)
-- **Workflow Generation Pattern:** `${CLAUDE_PLUGIN_ROOT}/lib/patterns/workflow-generation.md`
-- **Node Mapping Pattern:** `${CLAUDE_PLUGIN_ROOT}/lib/patterns/node-mapping.md`
-- **Skill Analysis Pattern:** `${CLAUDE_PLUGIN_ROOT}/lib/patterns/skill-analysis.md`
+- **Authoring Guide:** `${CLAUDE_PLUGIN_ROOT}/patterns/authoring-guide.md`
+- **Execution Guide:** `${CLAUDE_PLUGIN_ROOT}/patterns/execution-guide.md`
+- **Node Mapping Pattern:** `${CLAUDE_PLUGIN_ROOT}/patterns/node-mapping.md`
+- **Skill Analysis Pattern:** `${CLAUDE_PLUGIN_ROOT}/patterns/skill-analysis.md`
 - **SKILL.md Template:** `${CLAUDE_PLUGIN_ROOT}/templates/SKILL.md.template`
 - **workflow.yaml Template:** `${CLAUDE_PLUGIN_ROOT}/templates/workflow.yaml.template`
-- **Engine Entrypoint Template:** `${CLAUDE_PLUGIN_ROOT}/templates/engine-entrypoint.md.template`
-- **Config Template:** `${CLAUDE_PLUGIN_ROOT}/templates/config.yaml.template`
 
 ---
 
 ## Related Skills
 
-- Plugin discovery and classification: `${CLAUDE_PLUGIN_ROOT}/skills-prose/bp-plugin-discover/SKILL.md`
-- Deep skill analysis: `${CLAUDE_PLUGIN_ROOT}/skills-prose/bp-skill-analyze/SKILL.md`
-- Prose-to-workflow migration: `${CLAUDE_PLUGIN_ROOT}/skills-prose/bp-prose-migrate/SKILL.md`
-- Gateway creation: `${CLAUDE_PLUGIN_ROOT}/skills-prose/bp-gateway-create/SKILL.md`
-- Skill validation: `${CLAUDE_PLUGIN_ROOT}/skills-prose/bp-skill-validate/SKILL.md`
+- Skill analysis (coverage, complexity, extraction candidates): `${CLAUDE_PLUGIN_ROOT}/skills/bp-skill-analyze/SKILL.md`
+- Workflow extraction from prose phases: `${CLAUDE_PLUGIN_ROOT}/skills/bp-workflow-extract/SKILL.md`
+- Skill validation: `${CLAUDE_PLUGIN_ROOT}/skills/bp-skill-validate/SKILL.md`
+- Gateway creation: `${CLAUDE_PLUGIN_ROOT}/skills/bp-gateway-create/SKILL.md`
+- Plugin discovery: `${CLAUDE_PLUGIN_ROOT}/skills/bp-plugin-discover/SKILL.md`

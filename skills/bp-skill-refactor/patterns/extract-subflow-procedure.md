@@ -1,5 +1,5 @@
 > **Used by:** `SKILL.md` Phase 3A
-> **Supplements:** `${CLAUDE_PLUGIN_ROOT}/lib/patterns/workflow-generation.md`
+> **Supplements:** `${CLAUDE_PLUGIN_ROOT}/patterns/authoring-guide.md`
 
 # Extract Subflow Procedure
 
@@ -423,7 +423,7 @@ endings:
 
 ## Related Documentation
 
-- **Refactoring Operations:** `${CLAUDE_PLUGIN_ROOT}/skills-prose/bp-skill-refactor/patterns/refactoring-operations.md`
-- **Workflow Generation Pattern:** `${CLAUDE_PLUGIN_ROOT}/lib/patterns/workflow-generation.md`
+- **Refactoring Operations:** `${CLAUDE_PLUGIN_ROOT}/skills/bp-skill-refactor/patterns/refactoring-operations.md`
+- **Workflow Generation Pattern:** `${CLAUDE_PLUGIN_ROOT}/patterns/authoring-guide.md`
 - **Node Mapping Pattern:** `${CLAUDE_PLUGIN_ROOT}/lib/patterns/node-mapping.md`
-- **Schema Validation Rules:** `${CLAUDE_PLUGIN_ROOT}/skills-prose/bp-skill-validate/patterns/schema-validation-rules.md`
+- **Schema Validation Rules:** `${CLAUDE_PLUGIN_ROOT}/skills/bp-skill-validate/patterns/schema-validation-rules.md`

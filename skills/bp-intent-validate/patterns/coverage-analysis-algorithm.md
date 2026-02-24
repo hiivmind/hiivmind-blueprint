@@ -435,4 +435,4 @@ Report that sampling was used instead of exhaustive enumeration, and note the co
 
 - **3VL Validation Rules:** `patterns/3vl-validation-rules.md`
 - **Intent Mapping Template:** `${CLAUDE_PLUGIN_ROOT}/templates/intent-mapping.yaml.template`
-- **Workflow Generation Pattern:** `${CLAUDE_PLUGIN_ROOT}/lib/patterns/workflow-generation.md`
+- **Workflow Generation Pattern:** `${CLAUDE_PLUGIN_ROOT}/patterns/authoring-guide.md`

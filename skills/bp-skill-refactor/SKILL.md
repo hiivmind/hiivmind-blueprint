@@ -108,9 +108,7 @@ computed.analysis = {
   ending_count:   len(computed.workflow.endings),
   node_types:     count_by_type(computed.workflow.nodes),    # {action: N, conditional: N, ...}
   branch_depth:   max_branch_depth(computed.workflow),
-  reference_nodes: [id for id, n in nodes if n.type == "reference"],
   action_counts:  {id: len(n.actions) for id, n in nodes if n.type == "action"},
-  has_subflows:   any(n.type == "reference" for n in nodes.values()),
   complexity:     "low" if node_count <= 8 else "medium" if node_count <= 20 else "high"
 }
 ```
@@ -490,49 +488,48 @@ for exit in computed.boundary.exits:
 
 Write the subflow file using Write tool.
 
-#### Step 3A.4: Replace Extracted Nodes with Reference in Parent
+#### Step 3A.4: Replace Extracted Nodes in Parent
 
-Remove the extracted nodes from the parent workflow and insert a reference node:
+Remove the extracted nodes from the parent workflow. Since `reference` nodes are no longer
+supported, extraction creates a separate workflow file that the skill's SKILL.md can
+delegate to via prose orchestration:
 
 ```pseudocode
 # Remove extracted nodes
 for node_id in computed.extract_nodes:
   del computed.workflow.nodes[node_id]
 
-# Insert reference node
-reference_node_id = "ref_" + computed.subflow_name
-computed.workflow.nodes[reference_node_id] = {
-  type: "reference",
-  doc: relative_path(computed.workflow_path, computed.subflow_path),
-  description: "Delegate to ${computed.subflow_name} subflow",
-  next_node: computed.boundary.exits[0].target  # Primary resume point
-}
-```
-
-#### Step 3A.5: Wire Parent Transitions
-
-Update all transitions in the parent that previously pointed to the subflow entry node to now point to the reference node:
-
-```pseudocode
+# Rewire transitions that pointed to the extracted entry node
+# to point to the first non-extracted node after the subflow,
+# or to a new ending if the subflow was terminal
+resume_target = computed.boundary.exits[0].target
 for node_id, node in computed.workflow.nodes:
-  update_transition_targets(node, computed.boundary.entry[0], reference_node_id)
+  update_transition_targets(node, computed.boundary.entry[0], resume_target)
 
 # If start_node was the entry node, update it
 if computed.workflow.start_node == computed.boundary.entry[0]:
-  computed.workflow.start_node = reference_node_id
+  computed.workflow.start_node = resume_target
 ```
 
 Write the updated parent workflow using Write tool.
 
+> **Note:** Since `reference` nodes were removed in v5.0.0, the extracted subflow
+> becomes a standalone workflow file in `workflows/`. The skill's SKILL.md should
+> be updated to delegate to the new workflow via prose orchestration.
+
 ---
 
-### Phase 3B: Inline Subflow
+### Phase 3B: Inline Subflow (Legacy)
+
+> **Note:** The `reference` node type was removed in v5.0.0. This operation applies
+> only to workflows from earlier versions that still contain `reference` nodes.
+> For current workflows, use "Split workflow" or "Extract subflow" instead.
 
 > **Detail:** See `patterns/refactoring-operations.md` for the complete inline procedure.
 
-#### Step 3B.1: Find Reference Node to Inline
+#### Step 3B.1: Find Legacy Reference Nodes
 
-If `computed.suggested_nodes` contains reference nodes, present them. Otherwise, list all reference nodes:
+Check if the workflow contains any legacy `reference` nodes:
 
 ```pseudocode
 computed.reference_nodes = [
@@ -544,7 +541,8 @@ computed.reference_nodes = [
 
 If no reference nodes exist, report:
 
-> No reference nodes found in this workflow. Inline operation requires a reference node pointing to a subflow.
+> No legacy reference nodes found. This operation only applies to workflows containing
+> deprecated `reference` nodes from pre-v5.0.0. Use "Extract subflow" or "Split workflow" instead.
 
 Then return to Phase 2 for a different operation.
 
@@ -1020,20 +1018,21 @@ Present a summary of what changed:
 
 ## Reference Documentation
 
-- **Extract Subflow Procedure:** `${CLAUDE_PLUGIN_ROOT}/skills-prose/bp-skill-refactor/patterns/extract-subflow-procedure.md`
-- **Refactoring Operations:** `${CLAUDE_PLUGIN_ROOT}/skills-prose/bp-skill-refactor/patterns/refactoring-operations.md`
-- **Workflow Generation Pattern:** `${CLAUDE_PLUGIN_ROOT}/lib/patterns/workflow-generation.md`
+- **Extract Subflow Procedure:** `${CLAUDE_PLUGIN_ROOT}/skills/bp-skill-refactor/patterns/extract-subflow-procedure.md`
+- **Refactoring Operations:** `${CLAUDE_PLUGIN_ROOT}/skills/bp-skill-refactor/patterns/refactoring-operations.md`
+- **Workflow Generation Pattern:** `${CLAUDE_PLUGIN_ROOT}/patterns/authoring-guide.md`
 - **Node Mapping Pattern:** `${CLAUDE_PLUGIN_ROOT}/lib/patterns/node-mapping.md`
 - **Skill Analysis Pattern:** `${CLAUDE_PLUGIN_ROOT}/lib/patterns/skill-analysis.md`
-- **Schema Validation Rules:** `${CLAUDE_PLUGIN_ROOT}/skills-prose/bp-skill-validate/patterns/schema-validation-rules.md`
-- **Graph Validation Algorithm:** `${CLAUDE_PLUGIN_ROOT}/skills-prose/bp-skill-validate/patterns/graph-validation-algorithm.md`
+- **Schema Validation Rules:** `${CLAUDE_PLUGIN_ROOT}/skills/bp-skill-validate/patterns/schema-validation-rules.md`
+- **Graph Validation Algorithm:** `${CLAUDE_PLUGIN_ROOT}/skills/bp-skill-validate/patterns/graph-validation-algorithm.md`
 
 ---
 
 ## Related Skills
 
-- **Validate workflow:** `${CLAUDE_PLUGIN_ROOT}/skills-prose/bp-skill-validate/SKILL.md`
-- **Analyze skill structure:** `${CLAUDE_PLUGIN_ROOT}/skills-prose/bp-skill-analyze/SKILL.md`
-- **Visualize workflow:** `${CLAUDE_PLUGIN_ROOT}/skills-prose/bp-visualize/SKILL.md`
-- **Create new skill:** `${CLAUDE_PLUGIN_ROOT}/skills-prose/bp-skill-create/SKILL.md`
-- **Upgrade skills:** `${CLAUDE_PLUGIN_ROOT}/skills-prose/bp-skill-upgrade/SKILL.md`
+- **Validate workflow:** `${CLAUDE_PLUGIN_ROOT}/skills/bp-skill-validate/SKILL.md`
+- **Analyze skill structure:** `${CLAUDE_PLUGIN_ROOT}/skills/bp-skill-analyze/SKILL.md`
+- **Extract workflow from phase:** `${CLAUDE_PLUGIN_ROOT}/skills/bp-workflow-extract/SKILL.md`
+- **Visualize workflow:** `${CLAUDE_PLUGIN_ROOT}/skills/bp-visualize/SKILL.md`
+- **Create new skill:** `${CLAUDE_PLUGIN_ROOT}/skills/bp-skill-create/SKILL.md`
+- **Upgrade skills:** `${CLAUDE_PLUGIN_ROOT}/skills/bp-skill-upgrade/SKILL.md`

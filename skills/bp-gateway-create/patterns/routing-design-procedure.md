@@ -1,7 +1,7 @@
 # Routing Design Procedure
 
 > **Used by:** `SKILL.md` Phase 3, Step 3.3
-> **Supplements:** `${CLAUDE_PLUGIN_ROOT}/lib/patterns/workflow-generation.md`
+> **Supplements:** `${CLAUDE_PLUGIN_ROOT}/patterns/authoring-guide.md`
 
 This document describes how to design the routing workflow nodes for a gateway command.
 It defines the fixed topology, node interconnections, edge case handling, and the
@@ -375,6 +375,6 @@ BUILD_WORKFLOW_NODES():
 
 - **SKILL.md Phase 3:** `../SKILL.md` -- Generation steps that invoke this procedure
 - **Gateway File Generation:** `gateway-file-generation.md` -- Placeholder catalog
-- **Workflow Generation Pattern:** `${CLAUDE_PLUGIN_ROOT}/lib/patterns/workflow-generation.md`
+- **Workflow Generation Pattern:** `${CLAUDE_PLUGIN_ROOT}/patterns/authoring-guide.md`
 - **Node Mapping Pattern:** `${CLAUDE_PLUGIN_ROOT}/lib/patterns/node-mapping.md`
 - **Workflow Template:** `${CLAUDE_PLUGIN_ROOT}/templates/workflow.yaml.template`

@@ -1,5 +1,5 @@
 > **Used by:** `SKILL.md` Phases 3B-3E
-> **Supplements:** `${CLAUDE_PLUGIN_ROOT}/lib/patterns/workflow-generation.md`
+> **Supplements:** `${CLAUDE_PLUGIN_ROOT}/patterns/authoring-guide.md`
 
 # Refactoring Operations
 
@@ -639,7 +639,7 @@ function rename_all_nodes(workflow, transform_fn):
 
 ## Related Documentation
 
-- **Extract Subflow Procedure:** `${CLAUDE_PLUGIN_ROOT}/skills-prose/bp-skill-refactor/patterns/extract-subflow-procedure.md`
-- **Workflow Generation Pattern:** `${CLAUDE_PLUGIN_ROOT}/lib/patterns/workflow-generation.md`
+- **Extract Subflow Procedure:** `${CLAUDE_PLUGIN_ROOT}/skills/bp-skill-refactor/patterns/extract-subflow-procedure.md`
+- **Workflow Generation Pattern:** `${CLAUDE_PLUGIN_ROOT}/patterns/authoring-guide.md`
 - **Node Mapping Pattern:** `${CLAUDE_PLUGIN_ROOT}/lib/patterns/node-mapping.md`
-- **Graph Validation Algorithm:** `${CLAUDE_PLUGIN_ROOT}/skills-prose/bp-skill-validate/patterns/graph-validation-algorithm.md`
+- **Graph Validation Algorithm:** `${CLAUDE_PLUGIN_ROOT}/skills/bp-skill-validate/patterns/graph-validation-algorithm.md`

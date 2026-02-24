@@ -1,5 +1,5 @@
 > **Used by:** `SKILL.md` Phase 5
-> **Supplements:** `${CLAUDE_PLUGIN_ROOT}/lib/patterns/workflow-generation.md`
+> **Supplements:** `${CLAUDE_PLUGIN_ROOT}/patterns/authoring-guide.md`
 
 # 3VL Validation Rules
 
@@ -303,6 +303,6 @@ intent_flags:
 
 ## Related Documentation
 
-- **Workflow Generation Pattern:** `${CLAUDE_PLUGIN_ROOT}/lib/patterns/workflow-generation.md`
+- **Workflow Generation Pattern:** `${CLAUDE_PLUGIN_ROOT}/patterns/authoring-guide.md`
 - **Intent Mapping Template:** `${CLAUDE_PLUGIN_ROOT}/templates/intent-mapping.yaml.template`
 - **Coverage Analysis Algorithm:** `patterns/coverage-analysis-algorithm.md`

@@ -123,18 +123,6 @@ validate_prerequisites:
 
 Audit mode evaluates ALL conditions (no short-circuit) and collects detailed results in `computed.validation_errors`.
 
-### Reference Node
-
-```yaml
-clone_repository:
-  type: reference
-  doc: "lib/corpus/patterns/sources/git.md"
-  section: "Clone Repository"
-  context:
-    repo_url: "${source_url}"
-  next_node: verify_clone
-```
-
 ---
 
 ## Condition Type Selection
@@ -299,24 +287,57 @@ clone_repository:
 
 ---
 
-## Remote Workflow References
+## Multi-Workflow Composition Patterns
 
-Use `reference` nodes with `workflow` parameter for remote workflows:
+Skills can orchestrate multiple workflows through prose phases. Each workflow is a self-contained unit in the skill's `workflows/` directory.
 
-```yaml
-detect_intent:
-  type: reference
-  workflow: {computed.lib_ref}:intent-detection
-  context:
-    arguments: "${arguments}"
-    intent_flags: "${intent_flags}"
-    intent_rules: "${intent_rules}"
-  next_node: "${computed.dynamic_target}"
+### Pattern: Skill-Level Prose Orchestrating Multiple Workflows
+
+```markdown
+## Execution
+
+### Phase 1: Gather (prose)
+Read files, detect structure, populate computed.target_data.
+
+### Phase 2: Validate (workflow)
+Execute `workflows/validate.yaml` following the execution guide.
+Reads: computed.target_data
+Writes: computed.validation_results
+
+### Phase 3: Transform (workflow)
+Execute `workflows/transform.yaml` following the execution guide.
+Reads: computed.validation_results, computed.target_data
+Writes: computed.transformed_output
+
+### Phase 4: Report (prose)
+Display computed.transformed_output, offer next steps.
 ```
 
-**Key differences from `invoke_skill`:**
-- `reference` shares state with parent (recommended for sub-workflows)
-- `invoke_skill` isolates state (new conversation)
+### When to Split vs. One Large Workflow
+
+| One Workflow | Multiple Workflows |
+|-------------|-------------------|
+| Phases are tightly coupled with shared branching | Phases are logically independent |
+| State flows linearly through all nodes | State handoff has clear boundaries |
+| < 15 nodes total | > 15 nodes if kept together |
+| Single concern | Multiple distinct concerns |
+| Phases share error handling | Each phase has independent error handling |
+
+### State Handoff Conventions
+
+Between workflows, use `computed.*` as the interface:
+
+```yaml
+# First workflow (validate.yaml) writes:
+#   computed.validation_results = { passed: true, errors: [] }
+#   computed.validated_items = [...]
+
+# Second workflow (transform.yaml) reads:
+#   ${computed.validation_results.passed}
+#   ${computed.validated_items}
+```
+
+Document the expected state interface in each workflow's description field.
 
 ---
 

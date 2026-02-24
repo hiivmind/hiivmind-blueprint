@@ -295,5 +295,5 @@ indicate tight coupling that should be refactored.
 ## Related Documentation
 
 - **Health Scoring Algorithm:** `patterns/health-scoring-algorithm.md`
-- **Classification Algorithm:** `${CLAUDE_PLUGIN_ROOT}/skills-prose/bp-plugin-discover/patterns/classification-algorithm.md`
-- **Graph Validation Algorithm:** `${CLAUDE_PLUGIN_ROOT}/skills-prose/bp-skill-validate/patterns/graph-validation-algorithm.md`
+- **Classification Algorithm:** `${CLAUDE_PLUGIN_ROOT}/skills/bp-plugin-discover/patterns/classification-algorithm.md`
+- **Graph Validation Algorithm:** `${CLAUDE_PLUGIN_ROOT}/skills/bp-skill-validate/patterns/graph-validation-algorithm.md`

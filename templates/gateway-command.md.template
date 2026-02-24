@@ -14,6 +14,15 @@ arguments:
   - name: request
     description: What you want to do (optional - shows menu if omitted)
     required: false
+inputs:
+  - name: request
+    type: string
+    required: false
+    description: Natural language request describing the desired operation
+outputs:
+  - name: result
+    type: object
+    description: Result from the dispatched skill execution
 ---
 
 ## Usage

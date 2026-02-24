@@ -15,7 +15,7 @@ Comprehensive read-only validation of a gateway command across 4 dimensions: rou
 > **Validation Checklist:** `patterns/gateway-validation-checklist.md`
 > **Gateway Template:** `${CLAUDE_PLUGIN_ROOT}/templates/gateway-command.md.template`
 > **Intent Mapping Template:** `${CLAUDE_PLUGIN_ROOT}/templates/intent-mapping.yaml.template`
-> **Workflow Generation Pattern:** `${CLAUDE_PLUGIN_ROOT}/lib/patterns/workflow-generation.md`
+> **Workflow Generation Pattern:** `${CLAUDE_PLUGIN_ROOT}/patterns/authoring-guide.md`
 
 ---
 
@@ -1222,18 +1222,18 @@ HANDLE_NEXT_ACTION(response):
 
 ## Reference Documentation
 
-- **Validation Checklist:** `${CLAUDE_PLUGIN_ROOT}/skills-prose/bp-gateway-validate/patterns/gateway-validation-checklist.md`
+- **Validation Checklist:** `${CLAUDE_PLUGIN_ROOT}/skills/bp-gateway-validate/patterns/gateway-validation-checklist.md`
 - **Gateway Command Template:** `${CLAUDE_PLUGIN_ROOT}/templates/gateway-command.md.template`
 - **Intent Mapping Template:** `${CLAUDE_PLUGIN_ROOT}/templates/intent-mapping.yaml.template`
-- **Workflow Generation Pattern:** `${CLAUDE_PLUGIN_ROOT}/lib/patterns/workflow-generation.md`
+- **Workflow Generation Pattern:** `${CLAUDE_PLUGIN_ROOT}/patterns/authoring-guide.md`
 - **Node Mapping Pattern:** `${CLAUDE_PLUGIN_ROOT}/lib/patterns/node-mapping.md`
-- **Schema Validation Rules:** `${CLAUDE_PLUGIN_ROOT}/skills-prose/bp-skill-validate/patterns/schema-validation-rules.md`
+- **Schema Validation Rules:** `${CLAUDE_PLUGIN_ROOT}/skills/bp-skill-validate/patterns/schema-validation-rules.md`
 
 ---
 
 ## Related Skills
 
-- Gateway creation: `${CLAUDE_PLUGIN_ROOT}/skills-prose/bp-gateway-create/SKILL.md`
-- Intent mapping validation: `${CLAUDE_PLUGIN_ROOT}/skills-prose/bp-intent-validate/SKILL.md`
-- Workflow validation: `${CLAUDE_PLUGIN_ROOT}/skills-prose/bp-skill-validate/SKILL.md`
-- Plugin discovery: `${CLAUDE_PLUGIN_ROOT}/skills-prose/bp-plugin-discover/SKILL.md`
+- Gateway creation: `${CLAUDE_PLUGIN_ROOT}/skills/bp-gateway-create/SKILL.md`
+- Intent mapping validation: `${CLAUDE_PLUGIN_ROOT}/skills/bp-intent-validate/SKILL.md`
+- Workflow validation: `${CLAUDE_PLUGIN_ROOT}/skills/bp-skill-validate/SKILL.md`
+- Plugin discovery: `${CLAUDE_PLUGIN_ROOT}/skills/bp-plugin-discover/SKILL.md`

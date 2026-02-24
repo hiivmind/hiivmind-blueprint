@@ -1,19 +1,22 @@
-# Workflow Template
+# Workflow Definition Template
 #
-# This template is used by hiivmind-blueprint to generate workflow.yaml files.
+# This template generates individual workflow definitions within a skill.
+# Each workflow is a self-contained unit that a skill's SKILL.md orchestrates.
+# A skill may have one or many workflow files in its workflows/ subdirectory.
+#
 # Placeholders use {{placeholder}} syntax and are replaced at generation time.
 #
 # Schema: https://raw.githubusercontent.com/hiivmind/hiivmind-blueprint-lib/main/schema/authoring/workflow.json
 # Version: 3.0 (local definitions, no remote loading)
 #
 # Type definitions are resolved from .hiivmind/blueprint/definitions.yaml
-# Authoring-time reference: see hiivmind-blueprint/patterns/authoring-guide.md for setup instructions.
+# Authoring-time reference: see hiivmind-blueprint/patterns/authoring-guide.md (Part 2) for workflow authoring.
 
 # ============================================================================
 # WORKFLOW IDENTITY
 # ============================================================================
 
-name: "{{skill_id}}"
+name: "{{workflow_id}}"
 version: "1.0.0"
 description: >
   {{description}}

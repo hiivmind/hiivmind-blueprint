@@ -1,20 +1,41 @@
 # SKILL.md Template
 #
-# This template generates the SKILL.md that executes a workflow.
+# This template generates the SKILL.md that orchestrates a skill's execution.
+# A skill is a prose orchestrator that optionally delegates phases to workflow definitions.
 # Placeholders use {{placeholder}} syntax and are replaced at generation time.
 #
-# Execution semantics: .hiivmind/blueprint/execution-guide.md
+# Authoring guide: patterns/authoring-guide.md
+# Execution guide: patterns/execution-guide.md
 
 ---
 name: {{skill_name}}
 description: >
   {{description}}
 allowed-tools: {{allowed_tools}}
+inputs:
+  {{#inputs}}
+  - name: {{name}}
+    type: {{type}}
+    required: {{required}}
+    description: {{description}}
+  {{/inputs}}
+outputs:
+  {{#outputs}}
+  - name: {{name}}
+    type: {{type}}
+    description: {{description}}
+  {{/outputs}}
+{{#if_workflows}}
+workflows:
+  {{#workflows}}
+  - workflows/{{filename}}
+  {{/workflows}}
+{{/if_workflows}}
 ---
 
 # {{title}}
 
-Execute this workflow deterministically. State persists in conversation context.
+{{overview}}
 
 ---
 
@@ -48,11 +69,11 @@ For gateway help: `/{{parent_plugin_name}} help {{skill_short_name}}`
 {{#if_runtime_flags}}
 ## Runtime Flags
 
-Flags modify workflow execution. Per-invocation only (reset for each call).
+Flags modify execution. Per-invocation only (reset for each call).
 
 | Flag | Effect |
 |------|--------|
-| `--verbose`, `-v` | Show all node details (level: verbose) |
+| `--verbose`, `-v` | Show all details (level: verbose) |
 | `--quiet`, `-q` | Only prompts and final result (level: quiet) |
 | `--debug` | Full state dumps (level: debug) |
 | `--no-log` | Disable file logging |
@@ -73,27 +94,30 @@ Flags modify workflow execution. Per-invocation only (reset for each call).
 
 ## Execution
 
-### Step 1: Read Definitions
+{{#phases}}
+### Phase {{number}}: {{title}}
 
-Read `.hiivmind/blueprint/definitions.yaml` and build the type registry (nodes, consequences, preconditions).
+{{#if_prose_phase}}
+{{prose_instructions}}
+{{/if_prose_phase}}
 
-### Step 2: Detect Workflow
+{{#if_workflow_phase}}
+Execute `workflows/{{workflow_file}}` following the execution guide:
 
-```pseudocode
-DETECT_PATHS():
-  workflow_path ← "${CLAUDE_PLUGIN_ROOT}/skills/{{skill_directory}}/workflow.yaml"
-  intent_mapping_path ← "${CLAUDE_PLUGIN_ROOT}/skills/{{skill_directory}}/intent-mapping.yaml"
+1. Read `.hiivmind/blueprint/definitions.yaml` — build type registry
+2. Read `${CLAUDE_PLUGIN_ROOT}/skills/{{skill_directory}}/workflows/{{workflow_file}}`
+3. Follow `.hiivmind/blueprint/execution-guide.md` (Init → Execute → Complete)
 
-  IF NOT file_exists(workflow_path):
-    FAIL "workflow.yaml is required"
-```
+{{#pre_workflow_prose}}
+**Before workflow:** {{pre_workflow_prose}}
+{{/pre_workflow_prose}}
 
-### Step 3: Execute Workflow
+{{#post_workflow_prose}}
+**After workflow:** {{post_workflow_prose}}
+{{/post_workflow_prose}}
+{{/if_workflow_phase}}
 
-Follow `.hiivmind/blueprint/execution-guide.md`:
-1. **Initialize** — Read workflow.yaml, validate types against definitions, initialize state, check entry preconditions
-2. **Execute** — Main loop: dispatch nodes until an ending is reached
-3. **Complete** — Display ending message and return result
+{{/phases}}
 
 ---
 

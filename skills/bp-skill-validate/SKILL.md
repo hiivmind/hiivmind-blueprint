@@ -172,7 +172,7 @@ computed.validation.state_issues = []
 
 ## Phase 3: Schema Validation
 
-> **Pattern reference:** `${CLAUDE_PLUGIN_ROOT}/skills-prose/bp-skill-validate/patterns/schema-validation-rules.md`
+> **Pattern reference:** `${CLAUDE_PLUGIN_ROOT}/skills/bp-skill-validate/patterns/schema-validation-rules.md`
 
 ### Step 3.1: Required Sections
 
@@ -210,7 +210,7 @@ For each node in `computed.workflow.nodes`, verify:
 3. If `type` is missing or invalid, record an error.
 
 ```pseudocode
-VALID_NODE_TYPES = ["action", "conditional", "user_prompt", "reference"]
+VALID_NODE_TYPES = ["action", "conditional", "user_prompt"]
 
 for node_id, node in computed.workflow.nodes:
     if "type" not in node:
@@ -236,12 +236,7 @@ Each node type requires specific transition fields. Validate per the rules in th
 - `on_response` must have at least 1 handler
 - Each handler must have `next_node`
 
-**reference nodes:**
-- Required: one of (`doc` or `workflow`), `next_node`
-- If `doc`, value should be a string path
-- If `workflow`, format should be `owner/repo@version:workflow-name`
-
-For every transition target (on_success, on_failure, branches.on_true, branches.on_false, on_response.*.next_node, next_node), verify it references a key in `nodes` or `endings`:
+For every transition target (on_success, on_failure, branches.on_true, branches.on_false, on_response.*.next_node), verify it references a key in `nodes` or `endings`:
 
 ```pseudocode
 function validate_target(target, node_id, field_name):
@@ -276,7 +271,7 @@ Store all issues in `computed.validation.schema_issues`.
 
 ## Phase 4: Graph Validation
 
-> **Pattern reference:** `${CLAUDE_PLUGIN_ROOT}/skills-prose/bp-skill-validate/patterns/graph-validation-algorithm.md`
+> **Pattern reference:** `${CLAUDE_PLUGIN_ROOT}/skills/bp-skill-validate/patterns/graph-validation-algorithm.md`
 
 ### Step 4.1: BFS Reachability from Start
 
@@ -284,7 +279,6 @@ BFS from `start_node` through all transition targets. Extract targets per node t
 - action: `[on_success, on_failure]`
 - conditional: `[branches.on_true, branches.on_false]`
 - user_prompt: `[on_response.*.next_node]`
-- reference: `[next_node]`
 
 Skip dynamic targets (`${...}` interpolation) -- log as info, cannot validate statically.
 
@@ -344,7 +338,7 @@ Store all issues in `computed.validation.graph_issues`.
 
 ## Phase 5: Type Validation
 
-> **Pattern reference:** `${CLAUDE_PLUGIN_ROOT}/skills-prose/bp-skill-validate/patterns/type-validation-rules.md`
+> **Pattern reference:** `${CLAUDE_PLUGIN_ROOT}/skills/bp-skill-validate/patterns/type-validation-rules.md`
 
 ### Step 5.1: Precondition Type Validation
 
@@ -401,7 +395,7 @@ Cross-reference against the full migration tables in the type-validation-rules p
 | `tool_available`, `tool_version_gte`, etc. | `tool_check` | Add `capability` param |
 | `validation_gate` (node type) | `conditional` + `audit` | Add `audit.enabled: true` |
 
-Full deprecated type lookup tables: `${CLAUDE_PLUGIN_ROOT}/skills-prose/bp-skill-validate/patterns/type-validation-rules.md`
+Full deprecated type lookup tables: `${CLAUDE_PLUGIN_ROOT}/skills/bp-skill-validate/patterns/type-validation-rules.md`
 
 Store all issues in `computed.validation.type_issues`.
 
@@ -502,7 +496,7 @@ Display each issue grouped by dimension, then by severity (errors first). Format
 | Missing `on_success` / `on_failure` | Add the missing transition field |
 | Unknown target | Add target to nodes/endings, or fix the reference |
 | Deprecated type | Replace with {computed.lib_version} equivalent (see type-validation-rules pattern) |
-| Invalid node type | Use one of: action, conditional, user_prompt, reference |
+| Invalid node type | Use one of: action, conditional, user_prompt |
 | No path to ending | Ensure at least one transition path reaches an ending |
 | Undefined variable | Add to initial_state or ensure it is set before use |
 
@@ -510,19 +504,20 @@ Display each issue grouped by dimension, then by severity (errors first). Format
 
 ## Reference Documentation
 
-- **Workflow Generation Pattern:** `${CLAUDE_PLUGIN_ROOT}/lib/patterns/workflow-generation.md`
+- **Workflow Generation Pattern:** `${CLAUDE_PLUGIN_ROOT}/patterns/authoring-guide.md`
 - **Node Mapping Pattern:** `${CLAUDE_PLUGIN_ROOT}/lib/patterns/node-mapping.md`
 - **Consequences Catalog:** `${CLAUDE_PLUGIN_ROOT}/references/consequences-catalog.md`
 - **Preconditions Catalog:** `${CLAUDE_PLUGIN_ROOT}/references/preconditions-catalog.md`
 - **Node Features:** `${CLAUDE_PLUGIN_ROOT}/references/node-features.md`
-- **Schema Validation Rules:** `${CLAUDE_PLUGIN_ROOT}/skills-prose/bp-skill-validate/patterns/schema-validation-rules.md`
-- **Graph Validation Algorithm:** `${CLAUDE_PLUGIN_ROOT}/skills-prose/bp-skill-validate/patterns/graph-validation-algorithm.md`
-- **Type Validation Rules:** `${CLAUDE_PLUGIN_ROOT}/skills-prose/bp-skill-validate/patterns/type-validation-rules.md`
+- **Schema Validation Rules:** `${CLAUDE_PLUGIN_ROOT}/skills/bp-skill-validate/patterns/schema-validation-rules.md`
+- **Graph Validation Algorithm:** `${CLAUDE_PLUGIN_ROOT}/skills/bp-skill-validate/patterns/graph-validation-algorithm.md`
+- **Type Validation Rules:** `${CLAUDE_PLUGIN_ROOT}/skills/bp-skill-validate/patterns/type-validation-rules.md`
 
 ---
 
 ## Related Skills
 
-- **Visualize workflow:** `${CLAUDE_PLUGIN_ROOT}/skills/hiivmind-blueprint-author-visualize/SKILL.md`
-- **Convert skill to workflow:** `${CLAUDE_PLUGIN_ROOT}/skills/hiivmind-blueprint-author-convert/SKILL.md`
-- **Regenerate SKILL.md from workflow:** `${CLAUDE_PLUGIN_ROOT}/skills/hiivmind-blueprint-author-regenerate/SKILL.md`
+- **Visualize workflow:** `${CLAUDE_PLUGIN_ROOT}/skills/bp-visualize/SKILL.md`
+- **Analyze skill:** `${CLAUDE_PLUGIN_ROOT}/skills/bp-skill-analyze/SKILL.md`
+- **Extract workflow from phase:** `${CLAUDE_PLUGIN_ROOT}/skills/bp-workflow-extract/SKILL.md`
+- **Refactor workflow:** `${CLAUDE_PLUGIN_ROOT}/skills/bp-skill-refactor/SKILL.md`

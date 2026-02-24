@@ -139,7 +139,7 @@ Locate all skills the mapping should route to. Use Glob to find SKILL.md files i
 ```pseudocode
 # Search for skills in the same plugin
 skill_files = Glob("${CLAUDE_PLUGIN_ROOT}/skills/*/SKILL.md")
-skill_files += Glob("${CLAUDE_PLUGIN_ROOT}/skills-prose/*/SKILL.md")
+skill_files += Glob("${CLAUDE_PLUGIN_ROOT}/skills/*/SKILL.md")
 ```
 
 For each discovered SKILL.md, extract the `name` from the YAML frontmatter:
@@ -816,14 +816,14 @@ elif user_choice == "Done":
 
 - **3VL Validation Rules:** `patterns/3vl-validation-rules.md` (local to this skill)
 - **Coverage Analysis Algorithm:** `patterns/coverage-analysis-algorithm.md` (local to this skill)
-- **Workflow Generation Pattern:** `${CLAUDE_PLUGIN_ROOT}/lib/patterns/workflow-generation.md`
+- **Workflow Generation Pattern:** `${CLAUDE_PLUGIN_ROOT}/patterns/authoring-guide.md`
 - **Intent Mapping Template:** `${CLAUDE_PLUGIN_ROOT}/templates/intent-mapping.yaml.template`
 
 ---
 
 ## Related Skills
 
-- **Create intent mapping:** `${CLAUDE_PLUGIN_ROOT}/skills-prose/bp-intent-create/SKILL.md`
-- **Validate workflow:** `${CLAUDE_PLUGIN_ROOT}/skills-prose/bp-skill-validate/SKILL.md`
-- **Validate gateway command:** `${CLAUDE_PLUGIN_ROOT}/skills-prose/bp-gateway-validate/SKILL.md`
-- **Discover plugin skills:** `${CLAUDE_PLUGIN_ROOT}/skills-prose/bp-plugin-discover/SKILL.md`
+- **Create intent mapping:** `${CLAUDE_PLUGIN_ROOT}/skills/bp-intent-create/SKILL.md`
+- **Validate workflow:** `${CLAUDE_PLUGIN_ROOT}/skills/bp-skill-validate/SKILL.md`
+- **Validate gateway command:** `${CLAUDE_PLUGIN_ROOT}/skills/bp-gateway-validate/SKILL.md`
+- **Discover plugin skills:** `${CLAUDE_PLUGIN_ROOT}/skills/bp-plugin-discover/SKILL.md`

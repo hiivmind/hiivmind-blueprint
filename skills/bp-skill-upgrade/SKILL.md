@@ -16,7 +16,7 @@ plan, applies migrations in order with backup and idempotency, and verifies the 
 
 > **Migration Table:** `patterns/migration-table.md`
 > **Idempotency Guards:** `patterns/idempotency-guards.md`
-> **Workflow Generation Pattern:** `${CLAUDE_PLUGIN_ROOT}/lib/patterns/workflow-generation.md`
+> **Workflow Generation Pattern:** `${CLAUDE_PLUGIN_ROOT}/patterns/authoring-guide.md`
 
 ---
 
@@ -59,7 +59,7 @@ If no path was provided, use AskUserQuestion to determine the target:
     "options": [
       {"label": "Provide path", "description": "I'll give you the workflow.yaml path"},
       {"label": "Search current directory", "description": "Find workflow.yaml files in this repo"},
-      {"label": "Search plugin skills", "description": "Look in skills/ and skills-prose/ directories"}
+      {"label": "Search plugin skills", "description": "Look in skills/ directory"}
     ]
   }]
 }
@@ -82,7 +82,7 @@ HANDLE_PATH_RESPONSE(response):
       computed.workflow_path = selected_file
     CASE "Search plugin skills":
       files = Glob("${CLAUDE_PLUGIN_ROOT}/skills/*/workflow.yaml")
-      files += Glob("${CLAUDE_PLUGIN_ROOT}/skills-prose/*/workflow.yaml")
+      files += Glob("${CLAUDE_PLUGIN_ROOT}/skills/*/workflows/*.yaml")
       # Present numbered list to user via AskUserQuestion
       computed.workflow_path = selected_file
 ```
@@ -841,7 +841,7 @@ computed.target_version     computed.apply_mode           computed.original_hash
 
 - **Migration Table:** `patterns/migration-table.md` (local to this skill)
 - **Idempotency Guards:** `patterns/idempotency-guards.md` (local to this skill)
-- **Workflow Generation Pattern:** `${CLAUDE_PLUGIN_ROOT}/lib/patterns/workflow-generation.md`
+- **Workflow Generation Pattern:** `${CLAUDE_PLUGIN_ROOT}/patterns/authoring-guide.md`
 - **Workflow Template:** `${CLAUDE_PLUGIN_ROOT}/templates/workflow.yaml.template`
 - **Type Definitions:** [hiivmind-blueprint-lib](https://github.com/hiivmind/hiivmind-blueprint-lib/tree/{computed.lib_version})
 - **Blueprint Config:** `.hiivmind/blueprint/config.yaml`
@@ -850,8 +850,8 @@ computed.target_version     computed.apply_mode           computed.original_hash
 
 ## Related Skills
 
-- **Validate workflow:** `${CLAUDE_PLUGIN_ROOT}/skills-prose/bp-skill-validate/SKILL.md`
-- **Create new skill:** `${CLAUDE_PLUGIN_ROOT}/skills-prose/bp-skill-create/SKILL.md`
-- **Analyze skill:** `${CLAUDE_PLUGIN_ROOT}/skills-prose/bp-skill-analyze/SKILL.md`
-- **Refactor skill:** `${CLAUDE_PLUGIN_ROOT}/skills-prose/bp-skill-refactor/SKILL.md`
-- **Discover plugin skills:** `${CLAUDE_PLUGIN_ROOT}/skills-prose/bp-plugin-discover/SKILL.md`
+- **Validate workflow:** `${CLAUDE_PLUGIN_ROOT}/skills/bp-skill-validate/SKILL.md`
+- **Create new skill:** `${CLAUDE_PLUGIN_ROOT}/skills/bp-skill-create/SKILL.md`
+- **Analyze skill:** `${CLAUDE_PLUGIN_ROOT}/skills/bp-skill-analyze/SKILL.md`
+- **Refactor skill:** `${CLAUDE_PLUGIN_ROOT}/skills/bp-skill-refactor/SKILL.md`
+- **Discover plugin skills:** `${CLAUDE_PLUGIN_ROOT}/skills/bp-plugin-discover/SKILL.md`

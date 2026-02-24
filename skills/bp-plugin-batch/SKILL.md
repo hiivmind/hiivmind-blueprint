@@ -16,7 +16,7 @@ lets the user filter and select an error-handling mode, then executes the operat
 skill with progress tracking and produces an aggregated report.
 
 > **Batch Execution Protocol:** `patterns/batch-execution-protocol.md`
-> **Classification Algorithm:** `${CLAUDE_PLUGIN_ROOT}/skills-prose/bp-plugin-discover/patterns/classification-algorithm.md`
+> **Classification Algorithm:** `${CLAUDE_PLUGIN_ROOT}/skills/bp-plugin-discover/patterns/classification-algorithm.md`
 
 ---
 
@@ -27,11 +27,11 @@ individual skills one at a time, the user can batch-apply any of the following o
 
 | Operation | What It Does | Applicable To |
 |-----------|-------------|---------------|
-| Validate | Run schema/graph/type/state checks on each workflow.yaml | `workflow`, `hybrid` |
-| Upgrade | Detect version, apply schema migrations to each workflow.yaml | `workflow`, `hybrid` |
-| Analyze | Compute quality metrics and complexity scores on each skill | `prose`, `hybrid` |
-| Visualize | Generate Mermaid diagrams for each workflow.yaml | `workflow`, `hybrid` |
-| Migrate | Convert prose skills to workflow format (analyze then migrate) | `prose` |
+| Validate | Run schema/graph/type/state checks on each workflow file | `partial`, `full` |
+| Upgrade | Detect version, apply schema migrations to each workflow | `partial`, `full` |
+| Analyze | Compute quality metrics and extraction scores on each skill | `none`, `partial` |
+| Visualize | Generate Mermaid diagrams for each workflow | `partial`, `full` |
+| Extract | Extract prose phases into workflow definitions | `none`, `partial` |
 
 **Downstream skills invoked per-item:**
 
@@ -39,9 +39,9 @@ individual skills one at a time, the user can batch-apply any of the following o
 |-----------|----------------|
 | Validate | `bp-skill-validate` |
 | Upgrade | `bp-skill-upgrade` |
-| Analyze | `bp-skill-analyze` / `bp-prose-analyze` |
+| Analyze | `bp-skill-analyze` |
 | Visualize | `bp-visualize` |
-| Migrate | `bp-prose-analyze` then `bp-prose-migrate` |
+| Extract | `bp-skill-analyze` then `bp-workflow-extract` |
 
 ---
 
@@ -52,12 +52,11 @@ as `bp-plugin-discover`.
 
 ### Step 1.1: Get Skill Inventory
 
-Locate all SKILL.md files across `skills/` and `skills-prose/` directories:
+Locate all SKILL.md files in the `skills/` directory:
 
 ```pseudocode
 DISCOVER_SKILLS():
   skill_files = Glob("${CLAUDE_PLUGIN_ROOT}/skills/*/SKILL.md")
-  skill_files += Glob("${CLAUDE_PLUGIN_ROOT}/skills-prose/*/SKILL.md")
 
   computed.inventory = []
 
@@ -66,17 +65,20 @@ DISCOVER_SKILLS():
     name = basename(directory)
     content = Read(file.path)
 
-    has_workflow = file_exists(directory + "/workflow.yaml")
-    classification = classify_skill(content, has_workflow)
-    # Classification uses the algorithm from:
-    # ${CLAUDE_PLUGIN_ROOT}/skills-prose/bp-plugin-discover/patterns/classification-algorithm.md
+    workflow_files = Glob(directory + "/workflows/*.yaml")
+    has_workflows_dir = len(workflow_files) > 0
+    has_legacy_workflow = file_exists(directory + "/workflow.yaml")
+    coverage = classify_coverage(content, has_workflows_dir, has_legacy_workflow)
+    # Coverage uses the algorithm from:
+    # ${CLAUDE_PLUGIN_ROOT}/skills/bp-plugin-discover/patterns/classification-algorithm.md
 
     computed.inventory.append({
       name: name,
       path: file.path,
       directory: directory,
-      classification: classification,
-      has_workflow: has_workflow,
+      coverage: coverage,
+      has_workflows_dir: has_workflows_dir,
+      has_legacy_workflow: has_legacy_workflow,
       line_count: count_lines(content)
     })
 ```
@@ -88,12 +90,11 @@ Present a grouped summary so the user can see what they are working with:
 ```
 ## Plugin Skill Inventory
 
-| Classification | Count | Skills |
-|----------------|-------|--------|
-| workflow | {count_workflow} | {comma_separated_names} |
-| prose | {count_prose} | {comma_separated_names} |
-| hybrid | {count_hybrid} | {comma_separated_names} |
-| simple | {count_simple} | {comma_separated_names} |
+| Coverage | Count | Skills |
+|----------|-------|--------|
+| full | {count_full} | {comma_separated_names} |
+| partial | {count_partial} | {comma_separated_names} |
+| none | {count_none} | {comma_separated_names} |
 | **Total** | **{total}** | |
 ```
 
@@ -101,10 +102,9 @@ Store the grouped counts in `computed.summary`:
 
 ```pseudocode
 computed.summary = {
-  workflow: [s for s in computed.inventory if s.classification == "workflow"],
-  prose:    [s for s in computed.inventory if s.classification == "prose"],
-  hybrid:   [s for s in computed.inventory if s.classification == "hybrid"],
-  simple:   [s for s in computed.inventory if s.classification == "simple"]
+  full:    [s for s in computed.inventory if s.coverage == "full"],
+  partial: [s for s in computed.inventory if s.coverage == "partial"],
+  none:    [s for s in computed.inventory if s.coverage == "none"]
 }
 ```
 
@@ -125,9 +125,9 @@ Present the user with available operations via AskUserQuestion:
     "options": [
       {"label": "Validate (Recommended)", "description": "Run workflow validation on each skill"},
       {"label": "Upgrade", "description": "Upgrade each workflow to latest schema version"},
-      {"label": "Analyze", "description": "Run quality analysis on each workflow"},
+      {"label": "Analyze", "description": "Run quality analysis on each skill"},
       {"label": "Visualize", "description": "Generate Mermaid diagrams for each workflow"},
-      {"label": "Migrate", "description": "Convert prose skills to workflow format"}
+      {"label": "Extract", "description": "Extract prose phases into workflow definitions"}
     ]
   }]
 }
@@ -140,23 +140,23 @@ HANDLE_OPERATION(response):
   SWITCH response:
     CASE "Validate (Recommended)":
       computed.selected_operation = "validate"
-      computed.applicable_classifications = ["workflow", "hybrid"]
+      computed.applicable_coverage = ["partial", "full"]
     CASE "Upgrade":
       computed.selected_operation = "upgrade"
-      computed.applicable_classifications = ["workflow", "hybrid"]
+      computed.applicable_coverage = ["partial", "full"]
     CASE "Analyze":
       computed.selected_operation = "analyze"
-      computed.applicable_classifications = ["prose", "hybrid"]
+      computed.applicable_coverage = ["none", "partial"]
     CASE "Visualize":
       computed.selected_operation = "visualize"
-      computed.applicable_classifications = ["workflow", "hybrid"]
-    CASE "Migrate":
-      computed.selected_operation = "migrate"
-      computed.applicable_classifications = ["prose"]
+      computed.applicable_coverage = ["partial", "full"]
+    CASE "Extract":
+      computed.selected_operation = "extract"
+      computed.applicable_coverage = ["none", "partial"]
 ```
 
 Store the selection in `computed.selected_operation` and the applicable classifications
-in `computed.applicable_classifications`.
+in `computed.applicable_coverage`.
 
 ### Step 2.2: Choose Error Handling Mode
 
@@ -234,7 +234,7 @@ classifications that are applicable to the selected operation:
 ```pseudocode
 BUILD_CLASSIFICATION_OPTIONS():
   options = []
-  FOR classification IN computed.applicable_classifications:
+  FOR classification IN computed.applicable_coverage:
     count = len(computed.summary[classification])
     IF count > 0:
       options.append({
@@ -267,7 +267,7 @@ Apply the filter:
 APPLY_CLASSIFICATION_FILTER(selected_classifications):
   computed.filtered_skills = [
     s for s in computed.inventory
-    if s.classification in selected_classifications
+    if s.coverage in selected_classifications
   ]
 ```
 
@@ -281,7 +281,7 @@ BUILD_SKILL_OPTIONS():
   FOR skill IN computed.inventory:
     options.append({
       label: skill.name,
-      description: "{skill.classification} | {skill.line_count} lines | {skill.directory}"
+      description: "{skill.coverage} | {skill.line_count} lines | {skill.directory}"
     })
 ```
 
@@ -325,14 +325,14 @@ Display the filtered count and list, then confirm before proceeding:
 | # | Skill | Classification |
 |---|-------|----------------|
 {for i, skill in enumerate(computed.filtered_skills)}
-| {i+1} | {skill.name} | {skill.classification} |
+| {i+1} | {skill.name} | {skill.coverage} |
 {/for}
 ```
 
 If `len(computed.filtered_skills) == 0`:
 
 > No skills match the selected filter and operation combination. The **{computed.selected_operation}**
-> operation applies to skills classified as **{computed.applicable_classifications}**, but no skills
+> operation applies to skills classified as **{computed.applicable_coverage}**, but no skills
 > in the inventory have those classifications.
 
 Then offer to return to Phase 2 to select a different operation, or Phase 3 to select a
@@ -375,11 +375,11 @@ EXECUTE_BATCH():
     DISPLAY "### [{i+1}/{computed.batch.total}] ({progress_pct:.0f}%) Processing: {skill.name}"
 
     # ---- Check applicability ----
-    IF skill.classification NOT IN computed.applicable_classifications:
+    IF skill.coverage NOT IN computed.applicable_coverage:
       computed.batch.results.append({
         skill: skill.name,
         status: "skip",
-        details: "Classification '{skill.classification}' not applicable to '{computed.selected_operation}'"
+        details: "Classification '{skill.coverage}' not applicable to '{computed.selected_operation}'"
       })
       computed.batch.skipped += 1
       computed.batch.completed += 1
@@ -453,7 +453,7 @@ function execute_operation("validate", skill):
 ```
 
 For the full validation procedure, refer to:
-`${CLAUDE_PLUGIN_ROOT}/skills-prose/bp-skill-validate/SKILL.md`
+`${CLAUDE_PLUGIN_ROOT}/skills/bp-skill-validate/SKILL.md`
 
 **Upgrade:**
 
@@ -479,7 +479,7 @@ function execute_operation("upgrade", skill):
 ```
 
 For the full upgrade procedure, refer to:
-`${CLAUDE_PLUGIN_ROOT}/skills-prose/bp-skill-upgrade/SKILL.md`
+`${CLAUDE_PLUGIN_ROOT}/skills/bp-skill-upgrade/SKILL.md`
 
 **Analyze:**
 
@@ -499,7 +499,7 @@ function execute_operation("analyze", skill):
 ```
 
 For the full analysis procedure, refer to:
-`${CLAUDE_PLUGIN_ROOT}/skills-prose/bp-prose-analyze/SKILL.md`
+`${CLAUDE_PLUGIN_ROOT}/skills/bp-skill-analyze/SKILL.md`
 
 **Visualize:**
 
@@ -520,27 +520,32 @@ function execute_operation("visualize", skill):
   return { success: true, summary: summary }
 ```
 
-**Migrate:**
+**Extract:**
 
 ```pseudocode
-function execute_operation("migrate", skill):
-  # Step 1: Run prose-analyze to extract structure
+function execute_operation("extract", skill):
+  # Step 1: Run skill-analyze to identify extraction candidates
   content = Read(skill.path)
-  analysis = run_prose_analysis(content)
+  analysis = run_skill_analysis(content)
 
-  # Step 2: Run prose-migrate using the analysis output
-  migration_result = run_prose_migration(analysis, skill.directory)
+  # Step 2: For each extraction candidate, run workflow-extract
+  extracted_count = 0
+  FOR phase IN analysis.extraction_candidates:
+    IF phase.extraction_score >= 3:
+      result = run_workflow_extraction(analysis, skill.directory, phase)
+      IF result.success:
+        extracted_count += 1
 
-  success = migration_result.workflow_generated
-  summary = "Generated workflow.yaml with {migration_result.node_count} nodes" IF success
-            ELSE "Migration failed: {migration_result.error}"
+  success = extracted_count > 0
+  summary = "Extracted {extracted_count} phase(s) into workflow files" IF success
+            ELSE "No phases met extraction threshold (score >= 3)"
 
-  return { success: success, summary: summary, issues: migration_result.errors }
+  return { success: success, summary: summary }
 ```
 
-For the full migration procedure, refer to:
-- `${CLAUDE_PLUGIN_ROOT}/skills-prose/bp-prose-analyze/SKILL.md`
-- `${CLAUDE_PLUGIN_ROOT}/skills-prose/bp-prose-migrate/SKILL.md`
+For the full extraction procedure, refer to:
+- `${CLAUDE_PLUGIN_ROOT}/skills/bp-skill-analyze/SKILL.md`
+- `${CLAUDE_PLUGIN_ROOT}/skills/bp-workflow-extract/SKILL.md`
 
 ---
 
@@ -663,8 +668,8 @@ HANDLE_NEXT(response):
       # For each selected skill, describe the handoff:
       #   - Validate failures -> invoke bp-skill-validate on the specific skill
       #   - Upgrade failures -> invoke bp-skill-upgrade on the specific skill
-      #   - Analyze failures -> invoke bp-prose-analyze on the specific skill
-      #   - Migrate failures -> invoke bp-prose-analyze then bp-prose-migrate
+      #   - Analyze failures -> invoke bp-skill-analyze on the specific skill
+      #   - Migrate failures -> invoke bp-skill-analyze then bp-workflow-extract
       DISPLAY "Select a failed skill to address. The appropriate skill will be invoked:"
       FOR skill_name IN failed_skills:
         skill = lookup(computed.inventory, skill_name)
@@ -696,19 +701,18 @@ computed.summary       computed.applicable_cls    _skills               .total  
 ## Reference Documentation
 
 - **Batch Execution Protocol:** `patterns/batch-execution-protocol.md` (local to this skill)
-- **Classification Algorithm:** `${CLAUDE_PLUGIN_ROOT}/skills-prose/bp-plugin-discover/patterns/classification-algorithm.md`
+- **Classification Algorithm:** `${CLAUDE_PLUGIN_ROOT}/skills/bp-plugin-discover/patterns/classification-algorithm.md`
 - **Skill Analysis Pattern:** `${CLAUDE_PLUGIN_ROOT}/lib/patterns/skill-analysis.md`
-- **Workflow Generation Pattern:** `${CLAUDE_PLUGIN_ROOT}/lib/patterns/workflow-generation.md`
+- **Workflow Generation Pattern:** `${CLAUDE_PLUGIN_ROOT}/patterns/authoring-guide.md`
 - **Node Mapping Pattern:** `${CLAUDE_PLUGIN_ROOT}/lib/patterns/node-mapping.md`
 
 ---
 
 ## Related Skills
 
-- **Discover skills:** `${CLAUDE_PLUGIN_ROOT}/skills-prose/bp-plugin-discover/SKILL.md`
-- **Validate workflow:** `${CLAUDE_PLUGIN_ROOT}/skills-prose/bp-skill-validate/SKILL.md`
-- **Upgrade workflow:** `${CLAUDE_PLUGIN_ROOT}/skills-prose/bp-skill-upgrade/SKILL.md`
-- **Analyze prose skill:** `${CLAUDE_PLUGIN_ROOT}/skills-prose/bp-prose-analyze/SKILL.md`
-- **Migrate prose skill:** `${CLAUDE_PLUGIN_ROOT}/skills-prose/bp-prose-migrate/SKILL.md`
-- **Analyze workflow skill:** `${CLAUDE_PLUGIN_ROOT}/skills-prose/bp-skill-analyze/SKILL.md`
-- **Visualize workflow:** `${CLAUDE_PLUGIN_ROOT}/skills-prose/bp-visualize/SKILL.md`
+- **Discover skills:** `${CLAUDE_PLUGIN_ROOT}/skills/bp-plugin-discover/SKILL.md`
+- **Validate workflow:** `${CLAUDE_PLUGIN_ROOT}/skills/bp-skill-validate/SKILL.md`
+- **Upgrade workflow:** `${CLAUDE_PLUGIN_ROOT}/skills/bp-skill-upgrade/SKILL.md`
+- **Analyze skill:** `${CLAUDE_PLUGIN_ROOT}/skills/bp-skill-analyze/SKILL.md`
+- **Extract workflows:** `${CLAUDE_PLUGIN_ROOT}/skills/bp-workflow-extract/SKILL.md`
+- **Visualize workflow:** `${CLAUDE_PLUGIN_ROOT}/skills/bp-visualize/SKILL.md`

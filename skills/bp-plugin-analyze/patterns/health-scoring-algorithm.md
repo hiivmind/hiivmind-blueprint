@@ -227,5 +227,5 @@ run updates this file, enabling longitudinal tracking of plugin health.
 ## Related Documentation
 
 - **Cross-Skill Metrics:** `patterns/cross-skill-metrics.md`
-- **Classification Algorithm:** `${CLAUDE_PLUGIN_ROOT}/skills-prose/bp-plugin-discover/patterns/classification-algorithm.md`
-- **Complexity Scoring (single skill):** `${CLAUDE_PLUGIN_ROOT}/skills-prose/bp-prose-analyze/patterns/complexity-scoring.md`
+- **Classification Algorithm:** `${CLAUDE_PLUGIN_ROOT}/skills/bp-plugin-discover/patterns/classification-algorithm.md`
+- **Complexity Scoring (single skill):** `${CLAUDE_PLUGIN_ROOT}/skills/bp-skill-analyze/patterns/complexity-scoring.md`

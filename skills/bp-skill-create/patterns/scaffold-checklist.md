@@ -1,6 +1,6 @@
 # Scaffold Placeholder Checklist
 
-> **Used by:** `SKILL.md` Phase 4, Step 4.2 and Phase 5, Step 5.2
+> **Used by:** `SKILL.md` Phase 3 and Phase 4
 > **Supplements:** `${CLAUDE_PLUGIN_ROOT}/templates/SKILL.md.template`
 > **Supplements:** `${CLAUDE_PLUGIN_ROOT}/templates/workflow.yaml.template`
 
@@ -18,7 +18,7 @@ Placeholders fall into three categories:
 |----------|---------|---------|
 | **User input** | Provided directly by the user during Phase 1 | `{{skill_name}}` |
 | **Computed** | Derived from user input or detected context | `{{skill_short_name}}` |
-| **Default** | Static value unless overridden | `{{lib_version}}` |
+| **Default** | Static value unless overridden | `{{allowed_tools}}` |
 
 ---
 
@@ -31,14 +31,49 @@ These placeholders appear in `${CLAUDE_PLUGIN_ROOT}/templates/SKILL.md.template`
 | Placeholder | Source | Default | Description |
 |------------|--------|---------|-------------|
 | `{{skill_name}}` | User input | -- | The full kebab-case skill name. Used in frontmatter `name:` field and all invocation examples. Example: `bp-skill-create` |
-| `{{description}}` | Computed | -- | Frontmatter `description:` field. Auto-generated from skill name and features, or provided by user. Must include trigger keywords for Claude's skill matching. Max 1024 characters. Example: `This skill should be used when the user asks to "create a new skill"...` |
-| `{{allowed_tools}}` | Computed | `Read, Write, Glob, Bash, AskUserQuestion` | Comma-separated list of tools the skill may use. Base set is always included; additional tools added based on features. |
-| `{{title}}` | Computed | -- | Human-readable title for the `# Heading` of the SKILL.md. Derived from skill name via title-casing. Example: `Bp Author Skill Create` |
-| `{{parent_plugin_name}}` | Computed | Directory name | The name of the parent plugin. Extracted from `.claude-plugin/plugin.json` if present, otherwise derived from the current directory basename. Used in gateway invocation examples. Example: `hiivmind-blueprint-author` |
-| `{{skill_short_name}}` | Computed | Last segment(s) | Short form used in help command examples. Derived from the last one or two segments of the skill name. Example: `skill-create` from `bp-skill-create` |
-| `{{skill_directory}}` | Computed | Same as `skill_name` | Directory name under `skills/` where this skill's files live. Typically identical to `skill_name`. Example: `bp-skill-create` |
-| `{{lib_version}}` | Default / Detected | `{computed.lib_version}` | Version tag of hiivmind-blueprint-lib. Read from `BLUEPRINT_LIB_VERSION.yaml` if it exists, otherwise defaults to `{computed.lib_version}`. Used in documentation links and Phase 2 bootstrap reference. Example: `{computed.lib_version}` |
-| `{{lib_ref}}` | Default / Detected | `hiivmind/hiivmind-blueprint-lib@{computed.lib_version}` | Full GitHub reference string in `owner/repo@version` format. Read from `BLUEPRINT_LIB_VERSION.yaml` if it exists. Used in the template's `definitions.source` reference comment. |
+| `{{description}}` | Computed | -- | Frontmatter `description:` field. Auto-generated from skill name and features, or provided by user. Must include trigger keywords for Claude's skill matching. Max 1024 characters. |
+| `{{allowed_tools}}` | Computed | `Read, Write, Glob, Bash, AskUserQuestion` | Comma-separated list of tools the skill may use. |
+| `{{title}}` | Computed | -- | Human-readable title for the `# Heading` of the SKILL.md. Derived from skill name via title-casing. |
+| `{{parent_plugin_name}}` | Computed | Directory name | The name of the parent plugin. Extracted from `.claude-plugin/plugin.json` if present, otherwise derived from the current directory basename. |
+| `{{skill_short_name}}` | Computed | Last segment(s) | Short form used in help command examples. Derived from the last one or two segments of the skill name. |
+| `{{skill_directory}}` | Computed | Same as `skill_name` | Directory name under `skills/` where this skill's files live. |
+| `{{overview}}` | User input / Computed | -- | One-paragraph overview of what the skill does. Placed after the `# Title` heading. |
+
+### Inputs/Outputs Placeholders
+
+| Placeholder | Source | Description |
+|------------|--------|-------------|
+| `{{#inputs}}` ... `{{/inputs}}` | User input | Loop over declared input parameters |
+| `{{name}}` (within inputs) | User input | Parameter name |
+| `{{type}}` (within inputs) | Computed | Parameter type (string, number, boolean, object, array) |
+| `{{required}}` (within inputs) | Computed | Whether parameter is required (true/false) |
+| `{{description}}` (within inputs) | User input | Parameter description |
+| `{{#outputs}}` ... `{{/outputs}}` | User input | Loop over declared output values |
+| `{{name}}` (within outputs) | User input | Output name |
+| `{{type}}` (within outputs) | Computed | Output type |
+| `{{description}}` (within outputs) | User input | Output description |
+
+### Workflows List Placeholders
+
+| Placeholder | Source | Description |
+|------------|--------|-------------|
+| `{{#if_workflows}}` ... `{{/if_workflows}}` | Computed | Section included only when workflow-backed phases exist |
+| `{{#workflows}}` ... `{{/workflows}}` | Computed | Loop over workflow file references |
+| `{{filename}}` (within workflows) | Computed | Workflow filename (e.g., `validate.yaml`) |
+
+### Phase Placeholders
+
+| Placeholder | Source | Description |
+|------------|--------|-------------|
+| `{{#phases}}` ... `{{/phases}}` | Computed | Loop over all skill phases |
+| `{{number}}` (within phases) | Computed | Phase number (1-based) |
+| `{{title}}` (within phases) | User input | Phase title (e.g., "Gather", "Validate") |
+| `{{#if_prose_phase}}` ... `{{/if_prose_phase}}` | Computed | Block included for prose phases |
+| `{{prose_instructions}}` (within prose phase) | Computed | Prose instructions (initially TODO placeholder) |
+| `{{#if_workflow_phase}}` ... `{{/if_workflow_phase}}` | Computed | Block included for workflow-backed phases |
+| `{{workflow_file}}` (within workflow phase) | Computed | Workflow filename to execute |
+| `{{#pre_workflow_prose}}` ... `{{/pre_workflow_prose}}` | User input | Optional prose before workflow execution |
+| `{{#post_workflow_prose}}` ... `{{/post_workflow_prose}}` | User input | Optional prose after workflow execution |
 
 ### Conditional Section Placeholders
 
@@ -46,12 +81,12 @@ These control whether entire sections of the SKILL.md template are included or r
 
 | Placeholder | Source | Default | Description |
 |------------|--------|---------|-------------|
-| `{{#if_runtime_flags}}` ... `{{/if_runtime_flags}}` | `computed.features.runtime_flags` | Excluded | When enabled, includes the Runtime Flags section with `--verbose`, `--quiet`, `--debug`, `--no-log`, `--no-display` flag documentation. |
-| `{{#if_intent_detection}}` ... `{{/if_intent_detection}}` | `computed.features.intent_detection` | Excluded | When enabled, includes the Intent Detection section documenting T/F/U flag semantics and resolution flow. |
-| `{{#workflow_graph}}` ... `{{/workflow_graph}}` | `computed.features.visualization` | Excluded | When enabled, includes an ASCII art workflow graph overview. Requires `{{graph_ascii}}` to be populated with the graph content. |
-| `{{graph_ascii}}` | Computed | -- | ASCII art representation of the workflow graph. Only needed when the `workflow_graph` section is enabled. Generated from the starter nodes. |
-| `{{#examples}}` ... `{{/examples}}` | Always enabled | Included | Quick Examples section. Contains `{{#items}}` loop for individual examples. |
-| `{{#related_skills}}` ... `{{/related_skills}}` | Always enabled | Included | Related Skills section. Contains `{{#skills}}` loop for skill links. |
+| `{{#if_runtime_flags}}` ... `{{/if_runtime_flags}}` | `computed.features.runtime_flags` | Excluded | Runtime Flags section with `--verbose`, `--quiet`, `--debug`, `--no-log`, `--no-display` flags. |
+| `{{#if_intent_detection}}` ... `{{/if_intent_detection}}` | `computed.features.intent_detection` | Excluded | Intent Detection section with T/F/U flag semantics. |
+| `{{#workflow_graph}}` ... `{{/workflow_graph}}` | `computed.features.visualization` | Excluded | ASCII art workflow graph overview. Requires `{{graph_ascii}}`. |
+| `{{graph_ascii}}` | Computed | -- | ASCII art representation of the workflow graph. Only needed when `workflow_graph` section is enabled. |
+| `{{#examples}}` ... `{{/examples}}` | Always enabled | Included | Quick Examples section. Contains `{{#items}}` loop. |
+| `{{#related_skills}}` ... `{{/related_skills}}` | Always enabled | Included | Related Skills section. Contains `{{#skills}}` loop. |
 
 ---
 
@@ -63,22 +98,21 @@ These placeholders appear in `${CLAUDE_PLUGIN_ROOT}/templates/workflow.yaml.temp
 
 | Placeholder | Source | Default | Description |
 |------------|--------|---------|-------------|
-| `{{skill_id}}` | Computed | Same as `skill_name` | The workflow identity name. Used in the `name:` field at the top of workflow.yaml. Must match the skill name for consistency. Example: `bp-skill-create` |
-| `{{description}}` | Computed | -- | Workflow description. Same value as the SKILL.md description, used in the workflow `description:` field. |
-| `{{lib_ref}}` | Default / Detected | `hiivmind/hiivmind-blueprint-lib@{computed.lib_version}` | Library reference in `owner/repo@version` format. Used in `definitions.source:`. This is the primary version pin for type definitions and execution semantics. |
-| `{{state_variables}}` | Computed | `phase, flags, computed` | Comma-separated list documenting which state fields the workflow uses. Appears in the `initial_state` comment. For scaffolded skills, the default set is always `phase, flags, computed`. Additional fields are added based on features. |
-| `{{start_node}}` | Computed | `start_execution` | The name of the first node to execute. If intent detection is enabled, this becomes `parse_intent`. Otherwise defaults to `start_execution`. |
-| `{{success_message}}` | Computed | `{Title} completed successfully` | Message displayed when the workflow reaches its success ending. Derived from the title-cased skill name. Example: `Bp Author Skill Create completed successfully` |
+| `{{workflow_id}}` | Computed | `{skill_name}-{phase_title}` | The workflow identity name. Used in the `name:` field. Each workflow has its own ID distinct from the skill name. Example: `bp-skill-create-validate` |
+| `{{description}}` | Computed | -- | Workflow description. Describes what this specific workflow phase does. |
+| `{{state_variables}}` | Computed | `phase, flags, computed` | Comma-separated list documenting which state fields the workflow uses. |
+| `{{start_node}}` | Computed | `start_{phase_title}` | The name of the first node to execute. Derived from phase title. |
+| `{{success_message}}` | Computed | `{Phase title} completed successfully` | Message displayed when the workflow reaches its success ending. |
 
 ### Node Template Placeholders
 
 These appear within the `{{#nodes}}` ... `{{/nodes}}` loop and are populated per-node
-from the starter node definitions built in Phase 5, Step 5.2.
+from the starter node definitions built in Phase 4.
 
 | Placeholder | Source | Description |
 |------------|--------|-------------|
-| `{{id}}` | Computed | Node identifier in snake_case. Example: `parse_intent`, `start_execution` |
-| `{{type}}` | Computed | Node type: `action`, `conditional`, `user_prompt`, or `reference` |
+| `{{id}}` | Computed | Node identifier in snake_case. Example: `start_validate` |
+| `{{type}}` | Computed | Node type: `action`, `conditional`, or `user_prompt` |
 | `{{description}}` | Computed | Human-readable description of what the node does |
 | `{{#if_action}}` | Computed | Block included only for `type: action` nodes |
 | `{{#actions}}` | Computed | Loop over the node's action list |
@@ -94,10 +128,7 @@ from the starter node definitions built in Phase 5, Step 5.2.
 | `{{header}}` | Computed | User prompt header (max 12 characters) |
 | `{{#options}}` | Computed | Loop over prompt options |
 | `{{#responses}}` | Computed | Loop over response handlers |
-| `{{#if_reference}}` | Computed | Block included only for `type: reference` nodes |
-| `{{doc}}` | Computed | Path to the referenced document |
-| `{{section}}` | Computed | Optional section heading within the referenced document |
-| `{{next_node}}` | Computed | Next node after reference processing completes |
+| `{{#if_conditional_audit}}` | Computed | Block included only for conditional + audit mode nodes |
 
 ### Ending Placeholders
 
@@ -115,7 +146,7 @@ from the starter node definitions built in Phase 5, Step 5.2.
 | Placeholder | Source | Description |
 |------------|--------|-------------|
 | `{{#entry_preconditions}}` | Computed | Loop over entry preconditions |
-| `{{type}}` | Computed | Precondition type (e.g., `tool_available`, `path_check`) |
+| `{{type}}` | Computed | Precondition type (e.g., `tool_check`, `path_check`) |
 | `{{#params}}` | Computed | Loop over precondition parameters |
 
 ---
@@ -126,20 +157,25 @@ Placeholders must be resolved in a specific order because some depend on others:
 
 ```
 1. User input (Phase 1):
-   skill_name  -->  skill_directory, skill_short_name, title, skill_id
-   structure   -->  needs_gateway, needs_intent_mapping
-   features    -->  conditional section flags
+   skill_name  -->  skill_directory, skill_short_name, title, workflow_id
+   description -->  frontmatter description
+   inputs/outputs --> frontmatter arrays
+   structure   -->  needs_gateway
 
-2. Context detection (Phase 2):
-   has_plugin_manifest   -->  parent_plugin_name
-   has_version_file      -->  lib_version, lib_ref
+2. Phase design (Phase 2):
+   phases      -->  workflow_phases, coverage
+   phases      -->  workflow filenames, workflow IDs
 
-3. Derived values (Phase 4/5):
-   skill_name + features  -->  description
-   features               -->  allowed_tools
-   features               -->  start_node, state_variables
-   skill_name             -->  success_message
-   start_node + features  -->  nodes (starter set)
+3. Context detection (Phase 3):
+   has_plugin_manifest  -->  parent_plugin_name
+   has_definitions      -->  whether to create definitions.yaml
+
+4. Derived values (Phase 3/4):
+   skill_name + features  -->  description (if auto-generated)
+   features               -->  allowed_tools, conditional sections
+   phases                 -->  phase content blocks
+   workflow_phases        -->  start_node, state_variables per workflow
+   skill_name + phase     -->  success_message per workflow
    nodes                  -->  graph_ascii (if visualization enabled)
 ```
 
@@ -157,13 +193,14 @@ After substitution, verify these conditions before writing files:
 | header values are under 12 chars | All `{{header}}` values `<= 12` chars | Header exceeds AskUserQuestion limit |
 | start_node references valid node | `start_node IN nodes` | Start node not found in node list |
 | All transitions reference valid targets | Every `on_success`, `on_failure`, `branches.*`, `next_node` points to a node or ending | Broken transition reference |
-| lib_version is semver with v prefix | Matches `/^v\d+\.\d+\.\d+$/` | Invalid library version format |
+| workflow_id is unique per file | Each workflow file has a distinct workflow_id | Duplicate workflow identity |
+| inputs have valid types | All input types are: string, number, boolean, object, array | Invalid input type |
 
 ---
 
 ## Examples
 
-### Minimal Skill (no optional features)
+### Prose-Only Skill (no workflows, coverage: none)
 
 ```
 skill_name:          "my-tool-run"
@@ -173,17 +210,17 @@ title:               "My Tool Run"
 parent_plugin_name:  "my-tool"
 description:         "This skill should be used when the user asks to \"run\". Triggers on \"run\"."
 allowed_tools:       "Read, Write, Glob, Bash, AskUserQuestion"
-lib_version:         "{computed.lib_version}"
-lib_ref:             "hiivmind/hiivmind-blueprint-lib@{computed.lib_version}"
-skill_id:            "my-tool-run"
-start_node:          "start_execution"
-state_variables:     "phase, flags, computed"
-success_message:     "My Tool Run completed successfully"
+inputs:              [{ name: "target", type: "string", required: true }]
+outputs:             [{ name: "result", type: "object" }]
+coverage:            "none"
+phases:              [{ number: 1, title: "Execute", type: "prose" }]
+workflow_phases:     []
 ```
 
-Conditional sections removed: `if_runtime_flags`, `if_intent_detection`, `workflow_graph`.
+Generated files:
+- `skills/my-tool-run/SKILL.md`
 
-### Full-Featured Skill (all features enabled)
+### Hybrid Skill (coverage: partial)
 
 ```
 skill_name:          "data-pipeline-setup"
@@ -191,14 +228,40 @@ skill_directory:     "data-pipeline-setup"
 skill_short_name:    "setup"
 title:               "Data Pipeline Setup"
 parent_plugin_name:  "data-pipeline"
-description:         "This skill should be used when the user asks to \"setup\", \"initialize pipeline\"... Triggers on \"setup\", \"init\"."
-allowed_tools:       "Read, Write, Glob, Bash, AskUserQuestion"
-lib_version:         "{computed.lib_version}"
-lib_ref:             "hiivmind/hiivmind-blueprint-lib@{computed.lib_version}"
-skill_id:            "data-pipeline-setup"
-start_node:          "parse_intent"
-state_variables:     "phase, flags, computed, intent_flags, intent_matches"
-success_message:     "Data Pipeline Setup completed successfully"
+coverage:            "partial"
+phases:
+  - { number: 1, title: "Gather", type: "prose" }
+  - { number: 2, title: "Validate", type: "workflow", workflow_file: "validate.yaml" }
+  - { number: 3, title: "Transform", type: "workflow", workflow_file: "transform.yaml" }
+  - { number: 4, title: "Report", type: "prose" }
+workflow_phases:
+  - { filename: "validate.yaml", workflow_id: "data-pipeline-setup-validate" }
+  - { filename: "transform.yaml", workflow_id: "data-pipeline-setup-transform" }
 ```
 
-Conditional sections included: `if_runtime_flags`, `if_intent_detection`, `workflow_graph`, `examples`.
+Generated files:
+- `skills/data-pipeline-setup/SKILL.md`
+- `skills/data-pipeline-setup/workflows/validate.yaml`
+- `skills/data-pipeline-setup/workflows/transform.yaml`
+
+### Full-Workflow Skill (coverage: full)
+
+```
+skill_name:          "repo-audit"
+skill_directory:     "repo-audit"
+skill_short_name:    "audit"
+title:               "Repo Audit"
+parent_plugin_name:  "repo-tools"
+coverage:            "full"
+phases:
+  - { number: 1, title: "Scan", type: "workflow", workflow_file: "scan.yaml" }
+  - { number: 2, title: "Report", type: "workflow", workflow_file: "report.yaml" }
+workflow_phases:
+  - { filename: "scan.yaml", workflow_id: "repo-audit-scan" }
+  - { filename: "report.yaml", workflow_id: "repo-audit-report" }
+```
+
+Generated files:
+- `skills/repo-audit/SKILL.md`
+- `skills/repo-audit/workflows/scan.yaml`
+- `skills/repo-audit/workflows/report.yaml`

@@ -1,6 +1,6 @@
 # Node Features Reference
 
-Complete reference for all 4 node types available in hiivmind-blueprint-lib .
+Complete reference for all 3 node types available in hiivmind-blueprint-lib.
 
 > **Examples:** `hiivmind/hiivmind-blueprint-lib@/examples/nodes.yaml`
 > **Definitions:** `hiivmind/hiivmind-blueprint-lib@/nodes/workflow_nodes.yaml`
@@ -9,14 +9,13 @@ Complete reference for all 4 node types available in hiivmind-blueprint-lib .
 
 ## Overview
 
-Workflows are composed of 4 node types:
+Workflows are composed of 3 node types:
 
 | Type | Purpose | Key Fields |
 |------|---------|------------|
 | `action` | Execute operations | `actions`, `on_success`, `on_failure` |
 | `conditional` | Branch on conditions | `condition`, `branches`, `audit` |
 | `user_prompt` | Get user input | `prompt`, `on_response` |
-| `reference` | Delegate to doc/workflow | `doc`/`workflow`, `mode`, `transitions`/`next_node` |
 
 ---
 
@@ -133,133 +132,6 @@ on_response:
 | `other` | Custom text entered | `user_responses.{node}.text` |
 
 ---
-
-## reference
-
-Delegate to a local document or remote workflow with configurable state isolation.
-
-### Fields
-
-| Field | Required | Description |
-|-------|----------|-------------|
-| `type` | Yes | `"reference"` |
-| `doc` | Yes* | Local document path |
-| `workflow` | Yes* | Workflow reference (local/remote) |
-| `section` | No | Section heading (doc only) |
-| `mode` | No | `"inline"` (default) or `"spawn"` |
-| `context` / `input` | No | Variables for sub-execution |
-| `next_node` | Yes** | Node after completion (inline) |
-| `transitions` | Yes** | `on_success` / `on_failure` (spawn) |
-| `output_mapping` | No | State mapping for spawn mode |
-| `error_mapping` | No | Error-specific routing for spawn mode |
-
-*One of `doc` or `workflow` required.
-**One of `next_node` or `transitions` required. Use `transitions` for spawn mode.
-
-### Execution Modes
-
-| Mode | State Handling | Routing | Use When |
-|------|---------------|---------|----------|
-| `inline` (default) | Shared with parent | `next_node` or `transitions` | Simple delegation, state sharing needed |
-| `spawn` | Copied, isolated | `transitions` required | Safe failure handling, clean boundaries |
-
-### Inline Mode (Default)
-
-State is **shared** with parent workflow. Sub-workflow reads and writes directly to parent state.
-
-```yaml
-detect_intent:
-  type: reference
-  workflow: hiivmind/hiivmind-blueprint-lib@:intent-detection
-  context:
-    arguments: "${arguments}"
-    intent_flags: "${intent_flags}"
-    intent_rules: "${intent_rules}"
-  next_node: "${computed.dynamic_target}"
-```
-
-### Spawn Mode (v3.1.0+)
-
-State is **copied** at invocation. Sub-workflow executes in isolation. Only values specified in `output_mapping` merge back on success. On failure, parent state is **unchanged**.
-
-```yaml
-load_skill:
-  type: reference
-  mode: spawn
-  workflow: ./subflows/load-skill.yaml
-  input:
-    skill_path: "${args.path}"
-  output_mapping:
-    state.loaded.content: output.skill_content
-    state.loaded.name: output.skill_name
-  transitions:
-    on_success: analyze_structure
-    on_failure: error_load
-```
-
-### Error Mapping
-
-Route to specific recovery nodes based on which error ending the sub-workflow reached:
-
-```yaml
-load_skill:
-  type: reference
-  mode: spawn
-  workflow: ./subflows/load-skill.yaml
-  input:
-    skill_path: "${args.path}"
-  output_mapping:
-    state.loaded.content: output.skill_content
-  transitions:
-    on_success: analyze_structure
-    on_failure: error_generic
-  error_mapping:
-    error_prereqs: error_prerequisites
-    error_locate: ask_user_for_path
-    error_parse: error_invalid_yaml
-```
-
-### Subflow Contracts
-
-Subflows can define `input_schema` and `output_schema` for validation:
-
-```yaml
-# subflows/load-skill.yaml
-name: load-skill
-input_schema:
-  skill_path:
-    type: string
-    required: false
-output_schema:
-  skill_content:
-    type: string
-  skill_name:
-    type: string
-```
-
-### Local Document Reference
-
-```yaml
-clone_repo:
-  type: reference
-  doc: "lib/patterns/git.md"
-  section: "Clone Repository"
-  context:
-    repo_url: "${computed.repo_url}"
-  next_node: verify_clone
-```
-
-### Workflow Reference Formats
-
-| Format | Example | Resolution |
-|--------|---------|------------|
-| Remote | `hiivmind/hiivmind-blueprint-lib@:intent-detection` | GitHub raw URL |
-| Local file | `./subflows/load-skill.yaml` | Direct path |
-| Local indexed | `./:validation-pipeline` | `workflows/index.yaml` |
-
-**Key Differences from `invoke_skill`:**
-- `reference` shares state with parent workflow (inline mode)
-- `invoke_skill` isolates state (new conversation)
 
 ---
 

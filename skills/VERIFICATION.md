@@ -1,16 +1,16 @@
-# Skills-Prose Verification Checklist
+# Skills Verification Checklist
 
-Automated and manual checks for validating prose-based meta-skills in `skills-prose/`. These checks ensure structural consistency, prevent dogfooding (workflow execution patterns leaking into prose skills), and enforce the handoff contracts between skills.
+Automated and manual checks for validating skills in `skills/`. These checks ensure structural consistency, verify frontmatter completeness, validate workflow references, and enforce the handoff contracts between skills.
 
-Run from the `skills-prose/` directory.
+Run from the `skills/` directory.
 
 ---
 
 ## Quick Run (All Automated Checks)
 
 ```bash
-# From skills-prose/ directory
-checks_passed=0; checks_total=11
+# From skills/ directory
+checks_passed=0; checks_total=13
 for check in 1 2 3 4 5 6 7 8 9 10 11; do
   # (see individual check scripts below)
 done
@@ -200,22 +200,28 @@ done
 
 ---
 
-## Check 7: No workflow.yaml (No Dogfooding)
+## Check 7: Workflow Files in workflows/ Subdirectory
 
-Zero `workflow.yaml` files must exist anywhere in `skills-prose/`.
+Workflow YAML files must reside in `workflows/` subdirectories within their skill directory, not as bare siblings of SKILL.md. A bare `workflow.yaml` next to SKILL.md indicates legacy layout.
 
-**Why:** Prose skills are procedural guides for Claude, not workflow-engine-executed skills. The presence of a workflow.yaml indicates the skill was incorrectly structured as a dogfooded workflow skill.
+**Why:** The new convention places workflow definitions in `skills/my-skill/workflows/*.yaml`. A bare `workflow.yaml` at the skill root is legacy layout that should be migrated.
 
 **Automated:**
 ```bash
-count=$(find . -name "workflow.yaml" -type f | wc -l)
-if [ "$count" -eq 0 ]; then
-  echo "PASS: 0 workflow.yaml files"
-else
-  echo "FAIL: $count workflow.yaml files found"
-  find . -name "workflow.yaml" -type f
-fi
+for dir in */; do
+  skill="${dir%/}"; f="$skill/SKILL.md"
+  [ -f "$f" ] || continue
+  legacy=$([ -f "$skill/workflow.yaml" ] && echo 1 || echo 0)
+  proper=$(find "$skill/workflows" -name "*.yaml" -type f 2>/dev/null | wc -l)
+  if [ "$legacy" -eq 0 ]; then
+    echo "PASS: $skill (workflows_dir:$proper)"
+  else
+    echo "WARN: $skill has legacy workflow.yaml at root (migrate to workflows/ subdirectory)"
+  fi
+done
 ```
+
+**Migration:** Use `bp-skill-refactor` to migrate from bare `workflow.yaml` to `workflows/workflow.yaml`.
 
 ---
 
@@ -223,7 +229,7 @@ fi
 
 No SKILL.md may contain `## Execution Protocol` or `## Initial State Schema` as section headings.
 
-**Why:** These sections belong to workflow-executed skills (produced by `templates/SKILL.md.template`), not prose meta-skills. Their presence indicates the skill was incorrectly modeled after the thin-loader template.
+**Why:** These sections indicate the skill was incorrectly modeled after an old thin-loader template. Skills are prose orchestrators; workflow execution details belong in `workflows/*.yaml` files.
 
 **Automated:**
 ```bash
@@ -293,37 +299,93 @@ done
 
 ---
 
-## Check 11: Handoff Documentation (prose-analyze <-> prose-migrate)
+## Check 11: Handoff Documentation (skill-analyze <-> workflow-extract)
 
-`bp-prose-analyze` and `bp-prose-migrate` must reference each other, documenting the `computed.analysis` handoff contract.
+`bp-skill-analyze` and `bp-workflow-extract` must reference each other, documenting the `computed.analysis` handoff contract.
 
 **Why:** These two skills form a pipeline. The analysis output schema must be documented in both directions so either skill can be updated independently without breaking the contract.
 
 **Automated:**
 ```bash
-pa=$(grep -c "prose-migrate" bp-prose-analyze/SKILL.md 2>/dev/null || echo 0)
-pm=$(grep -c "prose-analyze" bp-prose-migrate/SKILL.md 2>/dev/null || echo 0)
-echo "prose-analyze references prose-migrate: $pa times"
-echo "prose-migrate references prose-analyze: $pm times"
-if [ "$pa" -ge 1 ] && [ "$pm" -ge 1 ]; then
+sa=$(grep -c "workflow-extract" bp-skill-analyze/SKILL.md 2>/dev/null || echo 0)
+we=$(grep -c "skill-analyze" bp-workflow-extract/SKILL.md 2>/dev/null || echo 0)
+echo "skill-analyze references workflow-extract: $sa times"
+echo "workflow-extract references skill-analyze: $we times"
+if [ "$sa" -ge 1 ] && [ "$we" -ge 1 ]; then
   echo "PASS"
 else
   echo "FAIL"
 fi
 ```
 
-**Deeper validation (manual):** Check that `bp-prose-analyze/patterns/analysis-output-schema.md` defines the exact fields that `bp-prose-migrate` Phase 1 expects.
+**Deeper validation (manual):** Check that `bp-skill-analyze/patterns/analysis-output-schema.md` defines the exact fields that `bp-workflow-extract` Phase 1 expects.
 
 ---
 
-## Check 12: End-to-End Quality Read (Manual)
+## Check 12: Frontmatter Completeness (inputs/outputs)
+
+SKILL.md frontmatter should define `inputs:` and `outputs:` arrays when the skill accepts parameters or produces structured results.
+
+**Why:** Explicit inputs/outputs make skills composable and self-documenting. Missing declarations force callers to read the full SKILL.md to understand the interface.
+
+**Automated:**
+```bash
+for dir in */; do
+  skill="${dir%/}"; f="$skill/SKILL.md"
+  [ -f "$f" ] || continue
+  has_inputs=$(head -30 "$f" | grep -c "^inputs:")
+  has_outputs=$(head -30 "$f" | grep -c "^outputs:")
+  if [ "$has_inputs" -ge 1 ] && [ "$has_outputs" -ge 1 ]; then
+    echo "PASS: $skill (inputs:yes outputs:yes)"
+  elif [ "$has_inputs" -ge 1 ] || [ "$has_outputs" -ge 1 ]; then
+    echo "WARN: $skill (inputs:$has_inputs outputs:$has_outputs) — partial declaration"
+  else
+    echo "INFO: $skill (no inputs/outputs declared)"
+  fi
+done
+```
+
+**Note:** Not all skills require explicit inputs/outputs (e.g., discovery skills that interactively gather context). This check reports INFO, not FAIL, for missing declarations.
+
+---
+
+## Check 13: Declared Workflows Exist on Disk
+
+Any `workflows:` entries in SKILL.md frontmatter must have corresponding files on disk.
+
+**Why:** A declared workflow that doesn't exist will cause execution failures when the skill tries to load it.
+
+**Automated:**
+```bash
+for dir in */; do
+  skill="${dir%/}"; f="$skill/SKILL.md"
+  [ -f "$f" ] || continue
+  # Extract workflows: entries from frontmatter
+  workflows=$(sed -n '/^---$/,/^---$/p' "$f" | grep -oE 'workflows/[a-z0-9_-]+\.yaml')
+  if [ -z "$workflows" ]; then
+    continue  # No workflows declared
+  fi
+  ok=1
+  for wf in $workflows; do
+    if [ ! -f "$skill/$wf" ]; then
+      echo "FAIL: $skill/$wf declared but not found"
+      ok=0
+    fi
+  done
+  [ "$ok" -eq 1 ] && echo "PASS: $skill (all declared workflows exist)"
+done
+```
+
+---
+
+## Check 14: End-to-End Quality Read (Manual)
 
 Read 3 representative skills end-to-end and verify prose quality matches `skills_old/` exemplars.
 
 **Recommended skills:**
-1. `bp-prose-analyze` — the core analysis skill, should match `skills_old/hiivmind-blueprint-author-analyze/SKILL.md` quality
-2. `bp-gateway-create` — the most complex gateway skill, should match `skills_old/hiivmind-blueprint-author-gateway/SKILL.md` quality
-3. `bp-plugin-discover` — the discovery skill, should match `skills_old/hiivmind-blueprint-author-discover/SKILL.md` quality
+1. `bp-skill-analyze` — the core analysis skill
+2. `bp-gateway-create` — the most complex gateway skill
+3. `bp-plugin-discover` — the discovery skill with coverage classification
 
 **Quality criteria:**
 - Phases flow logically (gathering → analysis → execution → reporting)
@@ -340,7 +402,7 @@ Read 3 representative skills end-to-end and verify prose quality matches `skills
 
 To add a new verification check:
 
-1. **Define the invariant** — what must always be true for valid prose skills
+1. **Define the invariant** — what must always be true for valid skills
 2. **Write the shell script** — single-file iteration pattern:
    ```bash
    for dir in */; do
@@ -390,3 +452,4 @@ b_refs_a=$(grep -c "skill-a" skill-b/SKILL.md)
 | Date | Result | Notes |
 |------|--------|-------|
 | 2026-02-06 | 11/11 automated PASS, 15 skills, 26 patterns, 41 .md total | Initial creation + fixes applied |
+| 2026-02-24 | Updated for skill/workflow separation refactor | Checks 12-13 added, check 7 updated, skill renames applied |

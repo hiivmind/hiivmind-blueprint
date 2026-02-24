@@ -89,7 +89,7 @@ computed.plugin_name = plugin_manifest.name
 
 ### Step 1.2: Glob for All SKILL.md Files
 
-Search the plugin for SKILL.md files in both `skills/` and `skills-prose/` directories:
+Search the plugin for SKILL.md files in both `skills/` and `skills/` directories:
 
 ```pseudocode
 FIND_SKILLS():
@@ -99,8 +99,8 @@ FIND_SKILLS():
   files = Glob(computed.plugin_root + "/skills/*/SKILL.md")
   computed.skill_files += files
 
-  # Search skills-prose/ directory (prose-based skills)
-  files = Glob(computed.plugin_root + "/skills-prose/*/SKILL.md")
+  # Search skills/ directory (prose-based skills)
+  files = Glob(computed.plugin_root + "/skills/*/SKILL.md")
   computed.skill_files += files
 
   # Deduplicate by absolute path
@@ -110,7 +110,7 @@ FIND_SKILLS():
 If `computed.skill_files` is empty:
 
 > No SKILL.md files found in this plugin. Verify the plugin has skills in `skills/` or
-> `skills-prose/` directories.
+> `skills/` directories.
 
 Then offer to retry with a different path or exit.
 
@@ -898,14 +898,14 @@ computed.skill_flags       .priority                 output_path
 - **Keyword Extraction Algorithm:** `patterns/keyword-extraction-algorithm.md` (local to this skill)
 - **Flag Generation Rules:** `patterns/flag-generation-rules.md` (local to this skill)
 - **Intent Mapping Template:** `${CLAUDE_PLUGIN_ROOT}/templates/intent-mapping.yaml.template`
-- **Workflow Generation Pattern:** `${CLAUDE_PLUGIN_ROOT}/lib/patterns/workflow-generation.md`
+- **Workflow Generation Pattern:** `${CLAUDE_PLUGIN_ROOT}/patterns/authoring-guide.md`
 - **Node Mapping Pattern:** `${CLAUDE_PLUGIN_ROOT}/lib/patterns/node-mapping.md`
 
 ---
 
 ## Related Skills
 
-- **Gateway command generation:** `${CLAUDE_PLUGIN_ROOT}/skills-prose/bp-gateway-create/SKILL.md`
-- **Plugin discovery and classification:** `${CLAUDE_PLUGIN_ROOT}/skills-prose/bp-plugin-discover/SKILL.md`
-- **Workflow validation:** `${CLAUDE_PLUGIN_ROOT}/skills-prose/bp-skill-validate/SKILL.md`
-- **Prose skill analysis:** `${CLAUDE_PLUGIN_ROOT}/skills-prose/bp-prose-analyze/SKILL.md`
+- **Gateway command generation:** `${CLAUDE_PLUGIN_ROOT}/skills/bp-gateway-create/SKILL.md`
+- **Plugin discovery and classification:** `${CLAUDE_PLUGIN_ROOT}/skills/bp-plugin-discover/SKILL.md`
+- **Workflow validation:** `${CLAUDE_PLUGIN_ROOT}/skills/bp-skill-validate/SKILL.md`
+- **Prose skill analysis:** `${CLAUDE_PLUGIN_ROOT}/skills/bp-skill-analyze/SKILL.md`

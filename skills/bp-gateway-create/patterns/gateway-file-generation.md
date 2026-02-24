@@ -160,6 +160,6 @@ SUBSTITUTE_TEMPLATE(template, context):
 
 - **SKILL.md Phase 3:** `../SKILL.md` -- Generation steps that invoke this procedure
 - **Routing Design Procedure:** `routing-design-procedure.md` -- Node interconnection design
-- **Workflow Generation Pattern:** `${CLAUDE_PLUGIN_ROOT}/lib/patterns/workflow-generation.md`
+- **Workflow Generation Pattern:** `${CLAUDE_PLUGIN_ROOT}/patterns/authoring-guide.md`
 - **Intent Mapping Template:** `${CLAUDE_PLUGIN_ROOT}/templates/intent-mapping.yaml.template`
 - **Gateway Command Template:** `${CLAUDE_PLUGIN_ROOT}/templates/gateway-command.md.template`

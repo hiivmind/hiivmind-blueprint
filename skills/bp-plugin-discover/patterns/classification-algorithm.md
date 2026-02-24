@@ -1,168 +1,180 @@
 # Classification Algorithm
 
 > **Used by:** `SKILL.md` Phase 2, Step 2.2
-> **Supplements:** `${CLAUDE_PLUGIN_ROOT}/lib/patterns/skill-analysis.md`
+> **Supplements:** `${CLAUDE_PLUGIN_ROOT}/patterns/skill-analysis.md`
 
-This document defines the full classification algorithm for determining whether a SKILL.md
-file is prose-based, workflow-based, hybrid, or too simple for workflow conversion.
-
----
-
-## Indicator Scoring
-
-Each SKILL.md file is scored across two dimensions: **workflow affinity** and **prose density**.
-The balance between these scores, combined with the presence or absence of a sibling
-`workflow.yaml`, determines the classification.
-
-### Workflow Indicators
-
-Patterns that suggest the skill is already converted to workflow execution:
-
-| Indicator | Regex / Detection | Weight | Rationale |
-|-----------|-------------------|--------|-----------|
-| `workflow.yaml` reference | `/workflow\.yaml/` | 2 | Direct reference to workflow file |
-| "Execute this workflow" | `/Execute this workflow/i` | 2 | Thin-loader boilerplate phrase |
-| "Execution Protocol" section | `/## Execution Protocol/` | 3 | Standard section in workflow-backed skills |
-| "Initial State Schema" section | `/## Initial State Schema/` | 3 | Workflow state declaration block |
-| `lib/workflow/` reference | `/lib\/workflow\//` | 1 | Reference to workflow library patterns |
-| `hiivmind-blueprint-lib` reference | `/hiivmind-blueprint-lib/` | 1 | Reference to external type library |
-| Workflow graph section | `/## Workflow Graph Overview/` | 2 | ASCII graph of node topology |
-
-**Workflow score formula:**
-
-```pseudocode
-workflow_score =
-    count("workflow.yaml") * 2
-  + count("Execute this workflow") * 2
-  + count("Execution Protocol") * 3
-  + count("Initial State Schema") * 3
-  + count("lib/workflow/") * 1
-  + count("hiivmind-blueprint-lib") * 1
-  + count("Workflow Graph Overview") * 2
-```
-
-### Prose Indicators
-
-Patterns that suggest the skill contains procedural instructions meant for LLM execution:
-
-| Indicator | Regex / Detection | Weight | Rationale |
-|-----------|-------------------|--------|-----------|
-| Phase/Step headings | `/^## (Phase\|Step) \d/m` | 2 | Numbered procedural phases |
-| Conditional language | `/\b(if\|when\|otherwise\|based on\|depending on)\b/i` | 1 | Branching logic in prose |
-| AskUserQuestion JSON blocks | `/"questions"\s*:\s*\[/` | 2 | Inline JSON for user interaction |
-| AskUserQuestion text refs | `/AskUserQuestion\|ask user\|prompt user/i` | 1 | Prose references to user prompts |
-| Pseudocode blocks | `/```pseudocode/` | 1 | Inline pseudocode procedures |
-| Computed state references | `/computed\.\w+/` | 1 | State management in prose |
-| Tool invocation prose | `/\b(Read|Write|Glob|Grep|Bash)\b.*file\|content/i` | 1 | Prose describing tool calls |
-
-**Prose score formula:**
-
-```pseudocode
-prose_score =
-    count_phase_headings * 2
-  + count_conditionals * 1
-  + count_ask_user_json * 2
-  + count_ask_user_text * 1
-  + count_pseudocode_blocks * 1
-  + count_computed_refs * 1
-  + count_tool_prose * 1
-```
+This document defines the full classification algorithm for determining a skill's
+workflow coverage level: `none`, `partial`, or `full`.
 
 ---
 
-## Decision Algorithm
+## Coverage Model
+
+Every skill is classified by how much of its execution is backed by workflow definitions:
+
+| Coverage | Meaning | Criteria |
+|----------|---------|----------|
+| `none` | All phases are prose instructions | No `workflows/` directory, no workflow files referenced |
+| `partial` | Some phases delegate to workflows | At least one phase references a workflow file, but not all |
+| `full` | All phases delegate to workflows | Every phase in the skill references a workflow file |
+
+---
+
+## Phase Detection
+
+Before classifying coverage, we must identify all phases in a SKILL.md.
+
+### Phase Heading Patterns
+
+Phases are identified by numbered headings in the body (after frontmatter):
+
+```pseudocode
+function detect_phases(content):
+  phases = []
+
+  # Match numbered phase headings: ## Phase N: Title, ### Phase N: Title
+  phase_headings = find_all_matches(content, /^##+ Phase (\d+)[:\s]+(.+)$/m)
+
+  FOR match IN phase_headings:
+    phase = {
+      number:    int(match.group(1)),
+      title:     match.group(2).strip(),
+      line:      match.line_number,
+      content:   get_section_content(content, match.line_number)
+    }
+    phases.append(phase)
+
+  return phases
+```
+
+### Workflow-Backed Phase Detection
+
+A phase is workflow-backed if its content delegates to a workflow file:
+
+```pseudocode
+function is_workflow_backed(phase_content):
+  # Pattern 1: Explicit workflow execution instruction
+  IF matches(phase_content, /Execute\s+`workflows\/[\w-]+\.yaml`/):
+    return true
+
+  # Pattern 2: Workflow file reference in the phase
+  IF matches(phase_content, /workflows\/[\w-]+\.yaml/):
+    return true
+
+  # Pattern 3: "Follow the execution guide" delegation
+  IF matches(phase_content, /execution-guide\.md/) AND matches(phase_content, /workflows\//):
+    return true
+
+  return false
+
+function count_workflow_backed_phases(content, skill):
+  phases = detect_phases(content)
+  count = 0
+  FOR phase IN phases:
+    IF is_workflow_backed(phase.content):
+      count += 1
+  return count
+```
+
+---
+
+## Coverage Classification Algorithm
 
 ### Full Decision Tree
 
 ```pseudocode
-function classify_skill(skill):
-  content = Read(skill.path)
+function classify_coverage(skill, content):
+  phases = detect_phases(content)
+  total_phases = len(phases)
 
-  # ---- Gather raw counts ----
-  workflow_refs      = count_matches(content, /workflow\.yaml/)
-  execute_workflow   = count_matches(content, /Execute this workflow/i)
-  execution_protocol = count_matches(content, /## Execution Protocol/)
-  initial_state      = count_matches(content, /## Initial State Schema/)
-  lib_workflow       = count_matches(content, /lib\/workflow\//)
-  blueprint_lib      = count_matches(content, /hiivmind-blueprint-lib/)
-  graph_section      = count_matches(content, /## Workflow Graph Overview/)
+  # ---- Edge case: no phases detected ----
+  IF total_phases == 0:
+    line_count = count_lines(content)
+    IF line_count < 30:
+      return "none"    # Very simple skill, no formal phases
+    ELSE:
+      # Has content but no numbered phases — treat as single implicit prose phase
+      return "none"
 
-  phase_headings     = count_matches(content, /^## (Phase|Step) \d/m)
-  conditionals       = count_matches(content, /\b(if|when|otherwise|based on|depending on)\b/i)
-  ask_user_json      = count_matches(content, /"questions"\s*:\s*\[/)
-  ask_user_text      = count_matches(content, /AskUserQuestion|ask user|prompt user/i)
-  pseudocode_blocks  = count_matches(content, /```pseudocode/)
-  computed_refs      = count_matches(content, /computed\.\w+/)
-  line_count         = count_lines(content)
+  # ---- Count workflow-backed phases ----
+  workflow_phases = 0
+  FOR phase IN phases:
+    IF is_workflow_backed(phase.content):
+      workflow_phases += 1
 
-  # ---- Compute aggregate scores ----
-  workflow_score = (
-      workflow_refs * 2
-    + execute_workflow * 2
-    + execution_protocol * 3
-    + initial_state * 3
-    + lib_workflow * 1
-    + blueprint_lib * 1
-    + graph_section * 2
-  )
+  # ---- Also check for workflows/ directory ----
+  has_workflows_dir = skill.has_workflows_dir
+  has_legacy_workflow = skill.has_legacy_workflow
 
-  prose_score = (
-      phase_headings * 2
-    + conditionals * 1
-    + ask_user_json * 2
-    + ask_user_text * 1
-    + pseudocode_blocks * 1
-    + computed_refs * 1
-  )
+  # ---- Classification ----
+  IF workflow_phases == 0 AND NOT has_workflows_dir AND NOT has_legacy_workflow:
+    return "none"
 
-  # ---- Apply decision tree ----
+  IF workflow_phases == total_phases:
+    return "full"
 
-  # Edge case: empty or frontmatter-only file
-  if line_count < 10:
-    return "simple"
+  IF workflow_phases > 0:
+    return "partial"
 
-  # Branch 1: Has sibling workflow.yaml
-  if skill.has_workflow:
-    if workflow_score > 6 AND phase_headings < 3:
-      return "workflow"    # Properly converted thin loader
-    elif workflow_score > 6 AND phase_headings >= 3:
-      return "hybrid"      # Workflow exists but prose remains heavy
-    elif workflow_score <= 6 AND prose_score > 8:
-      return "hybrid"      # Workflow present but prose dominates
-    else:
-      return "workflow"    # Default: trust the workflow.yaml presence
+  # Has workflow files but no phases reference them — still partial
+  IF has_workflows_dir OR has_legacy_workflow:
+    return "partial"
 
-  # Branch 2: No sibling workflow.yaml
-  else:
-    if prose_score >= 8:
-      return "prose"       # Strong procedural content, ready to convert
-    elif phase_headings > 3 OR conditionals > 5:
-      return "prose"       # Enough structure to warrant workflow
-    elif phase_headings <= 2 AND conditionals <= 2 AND line_count < 80:
-      return "simple"      # Too small to benefit from conversion
-    elif ask_user_json >= 1 OR pseudocode_blocks >= 2:
-      return "prose"       # Has structured interaction, worth converting
-    else:
-      return "prose"       # Default: assume convertible unless proven simple
+  return "none"
+```
+
+---
+
+## Additional Flags
+
+Beyond coverage, the algorithm detects these supplementary flags:
+
+### Inputs/Outputs Completeness
+
+```pseudocode
+function check_io_completeness(frontmatter):
+  inputs_defined = "inputs" IN frontmatter AND is_array(frontmatter.inputs) AND len(frontmatter.inputs) > 0
+  outputs_defined = "outputs" IN frontmatter AND is_array(frontmatter.outputs) AND len(frontmatter.outputs) > 0
+  return { inputs_defined, outputs_defined }
+```
+
+### Legacy Layout Detection
+
+```pseudocode
+function check_legacy_layout(skill):
+  # Legacy: has bare workflow.yaml sibling but no workflows/ subdirectory
+  IF skill.has_legacy_workflow AND NOT skill.has_workflows_dir:
+    return true
+  return false
+```
+
+### Frontmatter Workflows Declaration
+
+```pseudocode
+function check_workflows_declared(frontmatter, skill):
+  # Check that frontmatter workflows: list matches actual files
+  IF "workflows" IN frontmatter:
+    declared = set(frontmatter.workflows)
+    actual = set(relative_paths(skill.workflow_files))
+    missing = declared - actual
+    extra = actual - declared
+    return { declared, actual, missing, extra, consistent: len(missing) == 0 AND len(extra) == 0 }
+  return { declared: set(), actual: set(relative_paths(skill.workflow_files)), consistent: true }
 ```
 
 ---
 
 ## Threshold Reference
 
-Summary of numeric thresholds used in the decision tree:
+Summary of key thresholds used in the algorithm:
 
-| Check | Threshold | Branch |
+| Check | Threshold | Result |
 |-------|-----------|--------|
-| `line_count < 10` | 10 lines | -> `simple` (edge case) |
-| `workflow_score > 6` | score 7+ | -> `workflow` (with `has_workflow`) |
-| `phase_headings < 3` | 0-2 phases | thin loader (with high workflow_score) |
-| `phase_headings >= 3` | 3+ phases | hybrid (with high workflow_score) |
-| `prose_score > 8` | score 9+ | -> `hybrid` (when `has_workflow` but low workflow_score) |
-| `prose_score >= 8` | score 8+ | -> `prose` (no workflow) |
-| `phase_headings > 3` | 4+ phases | -> `prose` (secondary check) |
-| `conditionals > 5` | 6+ conditionals | -> `prose` (secondary check) |
-| `line_count < 80` | under 80 lines | -> `simple` (with low phases/conditionals) |
+| `total_phases == 0 AND line_count < 30` | Very short file | `none` |
+| `workflow_phases == 0 AND no workflow files` | No workflow backing | `none` |
+| `workflow_phases == total_phases` | All phases have workflows | `full` |
+| `0 < workflow_phases < total_phases` | Some phases have workflows | `partial` |
+| `has_legacy_workflow AND NOT has_workflows_dir` | Old layout detected | flag: `legacy_layout` |
 
 ---
 
@@ -170,18 +182,17 @@ Summary of numeric thresholds used in the decision tree:
 
 ### Empty SKILL.md
 
-A SKILL.md that contains only YAML frontmatter (or is entirely empty) should be classified
-as `simple`. Detection:
+A SKILL.md that contains only YAML frontmatter (or is entirely empty) is classified
+as `none` with 0 phases. Detection:
 
 ```pseudocode
 if line_count < 10:
-  # File has frontmatter and possibly a title, but no procedural content
-  return "simple"
+  return "none"
 ```
 
 ### Frontmatter-Only File
 
-Some skills have frontmatter + a one-line description but no phases or steps:
+Some skills have frontmatter + a one-line description but no phases:
 
 ```yaml
 ---
@@ -196,74 +207,91 @@ allowed-tools: Read
 Read the file and display it.
 ```
 
-This classifies as `simple` because `phase_headings == 0`, `conditionals == 0`, and
-`line_count < 80`.
+This classifies as `none` (0 phases, no workflows).
 
-### Mixed Patterns (Hybrid)
+### Legacy Workflow Layout
 
-A skill may have been partially converted: workflow.yaml exists, the SKILL.md references it,
-but the SKILL.md also retains extensive procedural prose from before conversion. Example
-signals:
-
-- `## Execution Protocol` section exists (workflow indicator)
-- But also `## Phase 1:`, `## Phase 2:`, `## Phase 3:` (prose indicator)
-- `workflow_score > 6` AND `phase_headings >= 3`
-- Classification: `hybrid` -- needs review to strip residual prose
-
-### Skills with Only Pseudocode
-
-A skill may have no `## Phase N` headings but contain multiple pseudocode blocks with
-conditional logic. The `pseudocode_blocks >= 2` check catches these:
+A skill may use the old layout with a bare `workflow.yaml` sibling instead of
+the `workflows/` subdirectory. This is still detected and counted:
 
 ```pseudocode
-if ask_user_json >= 1 OR pseudocode_blocks >= 2:
-  return "prose"  # Structured enough to convert
+IF skill.has_legacy_workflow:
+  # Check if SKILL.md content references it
+  IF matches(content, /workflow\.yaml/):
+    # Count as workflow-backed for coverage purposes
+    # But flag legacy_layout = true for migration recommendation
 ```
+
+### Skills with workflows/ but No Phase References
+
+A skill may have workflow files in `workflows/` but the SKILL.md body does not
+reference them in any phase. This classifies as `partial` (the files exist, but
+the skill orchestration hasn't been updated to delegate to them).
 
 ---
 
 ## Classification Examples
 
-### Example: Workflow Skill (Thin Loader)
+### Example: Full Coverage
 
 ```markdown
 ---
-name: my-converted-skill
-description: >
-  Does something via workflow.
-allowed-tools: Read, Write, Bash, AskUserQuestion
+name: repo-audit
+workflows:
+  - workflows/scan.yaml
+  - workflows/report.yaml
+inputs:
+  - name: target
+    type: string
+    required: true
+outputs:
+  - name: report
+    type: object
 ---
 
-# My Skill
+# Repo Audit
 
-Execute this workflow deterministically. State persists in conversation context.
+## Phase 1: Scan
+Execute `workflows/scan.yaml` following the execution guide.
 
-## Prerequisites
-...
-
-## Initial State Schema
-...
-
-## Execution Protocol
-See engine_entrypoint.md for full protocol.
-
-## Workflow Graph Overview
-...
-
-## Reference Documentation
-- hiivmind-blueprint-lib
+## Phase 2: Report
+Execute `workflows/report.yaml` following the execution guide.
 ```
 
-**Scores:** `workflow_score = 2+2+3+3+2 = 12`, `phase_headings = 0`, `has_workflow = true`
-**Result:** `workflow` (score > 6, phases < 3)
+**Result:** `full` (2/2 phases workflow-backed)
 
-### Example: Prose Skill (Ready to Convert)
+### Example: Partial Coverage
+
+```markdown
+---
+name: data-pipeline-setup
+workflows:
+  - workflows/validate.yaml
+inputs:
+  - name: config_path
+    type: string
+    required: true
+---
+
+# Data Pipeline Setup
+
+## Phase 1: Gather
+[Prose instructions for collecting user input]
+
+## Phase 2: Validate
+Execute `workflows/validate.yaml` following the execution guide.
+
+## Phase 3: Report
+[Prose instructions for displaying results]
+```
+
+**Result:** `partial` (1/3 phases workflow-backed)
+
+### Example: No Coverage
 
 ```markdown
 ---
 name: my-prose-skill
-description: >
-  Analyzes and processes data files.
 allowed-tools: Read, Glob, AskUserQuestion
 ---
 
@@ -277,66 +305,28 @@ allowed-tools: Read, Glob, AskUserQuestion
 
 ## Phase 3: Generate Report
 ...depending on the output format selected...
-
-## Phase 4: Export
-...if user chose markdown, write .md... based on the analysis results...
 ```
 
-**Scores:** `workflow_score = 0`, `phase_headings = 4`, `conditionals = 5+`
-**Result:** `prose` (no workflow, phase_headings > 3)
+**Result:** `none` (0/3 phases workflow-backed, no workflow files)
 
-### Example: Hybrid Skill
+### Example: Legacy Layout
 
 ```markdown
 ---
-name: my-hybrid-skill
-...
+name: my-converted-skill
 ---
 
 # My Skill
 
 Execute this workflow deterministically.
 
-## Initial State Schema
-state:
-  ...
-
-## Phase 1: Validate Input
-...if config missing, ask user...
-
-## Phase 2: Process Data
-...when format is JSON...otherwise...
-
-## Phase 3: Generate Output
-...depending on user selection...
-
 ## Execution Protocol
-See engine_entrypoint.md.
-
-## Workflow Graph Overview
-...
+See execution guide.
 ```
 
-**Scores:** `workflow_score = 2+3+3+2 = 10`, `phase_headings = 3`, `has_workflow = true`
-**Result:** `hybrid` (workflow_score > 6 but phase_headings >= 3)
+With a sibling `workflow.yaml` file (but no `workflows/` directory).
 
-### Example: Simple Skill
-
-```markdown
----
-name: my-simple-skill
-description: >
-  Displays version info.
-allowed-tools: Read
----
-
-# Version Info
-
-Read the VERSION file and display the contents.
-```
-
-**Scores:** `workflow_score = 0`, `phase_headings = 0`, `conditionals = 0`, `line_count ~12`
-**Result:** `simple` (no workflow, phases <= 2, conditionals <= 2, lines < 80)
+**Result:** `partial` (legacy workflow detected), **flag:** `legacy_layout = true`
 
 ---
 
@@ -344,17 +334,18 @@ Read the VERSION file and display the contents.
 
 The classification drives downstream behavior:
 
-| Classification | Downstream Skill | Action |
-|----------------|-----------------|--------|
-| `prose` | `bp-prose-analyze` | Full structural analysis, then `bp-prose-migrate` |
-| `workflow` | None needed | Already converted; optionally run `bp-skill-validate` |
-| `hybrid` | `bp-skill-refactor` | Strip residual prose, validate workflow completeness |
-| `simple` | None needed | Flag as "skip" in batch operations |
+| Coverage | Downstream Skill | Action |
+|----------|-----------------|--------|
+| `none` | `bp-skill-analyze` | Identify extraction candidates, then `bp-workflow-extract` |
+| `partial` | `bp-skill-analyze` | Assess remaining prose phases for extraction |
+| `full` | `bp-skill-validate` | Validate all workflow files |
+| Any + `legacy_layout` | `bp-skill-refactor` | Migrate to `workflows/` subdirectory layout |
+| Any + missing I/O | `bp-skill-refactor` | Add inputs/outputs to frontmatter |
 
 ---
 
 ## Related Documentation
 
-- **Skill Analysis Pattern:** `${CLAUDE_PLUGIN_ROOT}/lib/patterns/skill-analysis.md`
-- **Node Mapping Pattern:** `${CLAUDE_PLUGIN_ROOT}/lib/patterns/node-mapping.md`
-- **Workflow Generation Pattern:** `${CLAUDE_PLUGIN_ROOT}/lib/patterns/workflow-generation.md`
+- **Skill Analysis Pattern:** `${CLAUDE_PLUGIN_ROOT}/patterns/skill-analysis.md`
+- **Node Mapping Pattern:** `${CLAUDE_PLUGIN_ROOT}/patterns/node-mapping.md`
+- **Authoring Guide:** `${CLAUDE_PLUGIN_ROOT}/patterns/authoring-guide.md`

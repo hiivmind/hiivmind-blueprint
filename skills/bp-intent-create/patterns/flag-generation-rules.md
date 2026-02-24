@@ -275,4 +275,4 @@ function merge_flags(flag_a, flag_b):
 
 - **Keyword Extraction Algorithm:** `patterns/keyword-extraction-algorithm.md`
 - **Intent Mapping Template:** `${CLAUDE_PLUGIN_ROOT}/templates/intent-mapping.yaml.template`
-- **Workflow Generation Pattern:** `${CLAUDE_PLUGIN_ROOT}/lib/patterns/workflow-generation.md`
+- **Workflow Generation Pattern:** `${CLAUDE_PLUGIN_ROOT}/patterns/authoring-guide.md`

@@ -417,6 +417,6 @@ setup_workspace:
 
 ## Related Documentation
 
-- **Workflow Generation Pattern:** `${CLAUDE_PLUGIN_ROOT}/lib/patterns/workflow-generation.md`
+- **Workflow Generation Pattern:** `${CLAUDE_PLUGIN_ROOT}/patterns/authoring-guide.md`
 - **Workflow Template:** `${CLAUDE_PLUGIN_ROOT}/templates/workflow.yaml.template`
 - **Idempotency Guards:** `patterns/idempotency-guards.md`

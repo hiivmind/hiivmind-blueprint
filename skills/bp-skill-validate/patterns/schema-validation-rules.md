@@ -1,5 +1,5 @@
 > **Used by:** `SKILL.md` Phase 3
-> **Supplements:** `${CLAUDE_PLUGIN_ROOT}/lib/patterns/workflow-generation.md`
+> **Supplements:** `${CLAUDE_PLUGIN_ROOT}/patterns/authoring-guide.md`
 
 # Schema Validation Rules
 
@@ -230,4 +230,4 @@ function infer_workflow_version(workflow):
 
 - **Node Features:** `${CLAUDE_PLUGIN_ROOT}/references/node-features.md`
 - **Workflow Template:** `${CLAUDE_PLUGIN_ROOT}/templates/workflow.yaml.template`
-- **Workflow Generation Pattern:** `${CLAUDE_PLUGIN_ROOT}/lib/patterns/workflow-generation.md`
+- **Workflow Generation Pattern:** `${CLAUDE_PLUGIN_ROOT}/patterns/authoring-guide.md`

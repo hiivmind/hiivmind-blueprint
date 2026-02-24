@@ -258,4 +258,4 @@ function validate_all_types(workflow):
 - **Consequences Catalog:** `${CLAUDE_PLUGIN_ROOT}/references/consequences-catalog.md`
 - **Preconditions Catalog:** `${CLAUDE_PLUGIN_ROOT}/references/preconditions-catalog.md`
 - **{computed.lib_version} Migration Guide:** `hiivmind/hiivmind-blueprint-lib@{computed.lib_version}/docs/v3-migration.md`
-- **Workflow Generation (type quick ref):** `${CLAUDE_PLUGIN_ROOT}/lib/patterns/workflow-generation.md`
+- **Workflow Generation (type quick ref):** `${CLAUDE_PLUGIN_ROOT}/patterns/authoring-guide.md`

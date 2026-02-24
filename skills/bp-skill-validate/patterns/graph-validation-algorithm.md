@@ -359,5 +359,5 @@ For typical workflows: V < 50, E < 100. All algorithms complete in negligible ti
 
 ## Related Documentation
 
-- **Workflow Generation (graph section):** `${CLAUDE_PLUGIN_ROOT}/lib/patterns/workflow-generation.md`
+- **Workflow Generation (graph section):** `${CLAUDE_PLUGIN_ROOT}/patterns/authoring-guide.md`
 - **Node Features (transition types):** `${CLAUDE_PLUGIN_ROOT}/references/node-features.md`

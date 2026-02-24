@@ -254,7 +254,7 @@ the following structure:
 
 ## Related Documentation
 
-- **SKILL.md:** `${CLAUDE_PLUGIN_ROOT}/skills-prose/bp-plugin-batch/SKILL.md`
-- **Classification Algorithm:** `${CLAUDE_PLUGIN_ROOT}/skills-prose/bp-plugin-discover/patterns/classification-algorithm.md`
-- **Schema Validation Rules:** `${CLAUDE_PLUGIN_ROOT}/skills-prose/bp-skill-validate/patterns/schema-validation-rules.md`
-- **Graph Validation Algorithm:** `${CLAUDE_PLUGIN_ROOT}/skills-prose/bp-skill-validate/patterns/graph-validation-algorithm.md`
+- **SKILL.md:** `${CLAUDE_PLUGIN_ROOT}/skills/bp-plugin-batch/SKILL.md`
+- **Classification Algorithm:** `${CLAUDE_PLUGIN_ROOT}/skills/bp-plugin-discover/patterns/classification-algorithm.md`
+- **Schema Validation Rules:** `${CLAUDE_PLUGIN_ROOT}/skills/bp-skill-validate/patterns/schema-validation-rules.md`
+- **Graph Validation Algorithm:** `${CLAUDE_PLUGIN_ROOT}/skills/bp-skill-validate/patterns/graph-validation-algorithm.md`

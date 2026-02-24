@@ -24,7 +24,7 @@ health dashboard with scored recommendations.
 
 This skill examines an **entire plugin** -- all skills, workflows, gateway, and shared
 configuration -- to produce a holistic quality assessment. It is the plugin-level counterpart
-to `bp-skill-analyze` (single workflow) and `bp-prose-analyze` (single SKILL.md).
+to `bp-skill-analyze` (single skill analysis).
 
 The analysis produces seven categories of output:
 
@@ -49,20 +49,16 @@ Locate and classify every skill in the target plugin. This phase reuses the logi
 
 ### Step 1.1: Invoke Plugin Discover Logic
 
-Use Glob to find all SKILL.md files across both `skills/` and `skills-prose/` directories.
-Classify each skill by checking for workflow.yaml siblings and analyzing content indicators.
+Use Glob to find all SKILL.md files in the `skills/` directory.
+Classify each skill by checking for workflow files and analyzing content.
 
 ```pseudocode
 DISCOVER_SKILLS():
   # Locate all SKILL.md files in the plugin
   skill_files = Glob("${CLAUDE_PLUGIN_ROOT}/skills/*/SKILL.md")
-  skill_files += Glob("${CLAUDE_PLUGIN_ROOT}/skills-prose/*/SKILL.md")
-
-  # Deduplicate by absolute path
-  skill_files = deduplicate(skill_files)
 
   IF len(skill_files) == 0:
-    DISPLAY "ERROR: No SKILL.md files found under ${CLAUDE_PLUGIN_ROOT}/skills/ or skills-prose/."
+    DISPLAY "ERROR: No SKILL.md files found under ${CLAUDE_PLUGIN_ROOT}/skills/."
     DISPLAY "Verify the plugin directory is correct and contains skill definitions."
     EXIT
 
@@ -84,27 +80,31 @@ CLASSIFY_ALL():
       name:       extract_frontmatter_field(content, "name"),
       path:       file.path,
       directory:  parent_directory(file.path),
-      location:   "skills" if "/skills/" in file.path else "skills-prose"
+      location:   "skills"
     }
 
-    # Check for workflow sibling
-    workflow_path = skill.directory + "/workflow.yaml"
-    skill.has_workflow = file_exists(workflow_path)
-    IF skill.has_workflow:
-      skill.workflow_path = workflow_path
+    # Check for workflow files
+    workflow_dir = skill.directory + "/workflows"
+    skill.workflow_files = Glob(workflow_dir + "/*.yaml")
+    skill.has_workflows_dir = len(skill.workflow_files) > 0
+    skill.has_legacy_workflow = file_exists(skill.directory + "/workflow.yaml")
 
-    # Classify: prose | workflow | hybrid | simple
-    skill.classification = classify_skill(skill, content)
+    # Classify coverage: none | partial | full
+    skill.coverage = classify_coverage(skill, content)
     skill.line_count = count_lines(content)
+
+    # Check inputs/outputs completeness
+    frontmatter = extract_frontmatter(content)
+    skill.inputs_defined = "inputs" IN frontmatter AND len(frontmatter.inputs) > 0
+    skill.outputs_defined = "outputs" IN frontmatter AND len(frontmatter.outputs) > 0
 
     computed.inventory.append(skill)
 
   computed.inventory_summary = {
     total:    len(computed.inventory),
-    prose:    count(s for s in computed.inventory if s.classification == "prose"),
-    workflow: count(s for s in computed.inventory if s.classification == "workflow"),
-    hybrid:   count(s for s in computed.inventory if s.classification == "hybrid"),
-    simple:   count(s for s in computed.inventory if s.classification == "simple")
+    none:     count(s for s in computed.inventory if s.coverage == "none"),
+    partial:  count(s for s in computed.inventory if s.coverage == "partial"),
+    full:     count(s for s in computed.inventory if s.coverage == "full")
   }
 ```
 
@@ -115,8 +115,8 @@ Store the full inventory in `computed.inventory` and summary counts in
 
 ## Phase 2: Cross-Skill Metrics
 
-Compute aggregate metrics across all workflows in the plugin. Only skills that have a
-`workflow.yaml` (classifications `workflow` or `hybrid`) are included in workflow metrics.
+Compute aggregate metrics across all workflows in the plugin. Only skills with
+workflow files (coverage `partial` or `full`) are included in workflow metrics.
 
 ### Step 2.1: Total Nodes Across All Workflows
 
@@ -129,7 +129,7 @@ TOTAL_NODES():
   computed.cross_metrics.total_endings = 0
   computed.cross_metrics.total_actions = 0
 
-  workflow_skills = [s for s in computed.inventory if s.has_workflow]
+  workflow_skills = [s for s in computed.inventory if s.has_workflows_dir or s.has_legacy_workflow]
 
   FOR skill IN workflow_skills:
     content = Read(skill.workflow_path)
@@ -181,8 +181,6 @@ AVERAGE_COMPLEXITY():
           edges += 2  # on_true + on_false
         CASE "user_prompt":
           edges += len(node.on_response)
-        CASE "reference":
-          edges += 1
 
     nodes_count = count_keys(nodes) + count_keys(endings)
     cc = edges - nodes_count + 2  # M = E - N + 2P (P=1)
@@ -302,7 +300,7 @@ BUILD_DEPENDENCY_GRAPH():
   computed.dependencies.graph = {}  # adjacency list: skill_name -> [referenced skills]
   computed.dependencies.references = []
 
-  workflow_skills = [s for s in computed.inventory if s.has_workflow]
+  workflow_skills = [s for s in computed.inventory if s.has_workflows_dir or s.has_legacy_workflow]
 
   FOR skill IN workflow_skills:
     content = Read(skill.workflow_path)
@@ -350,7 +348,7 @@ shared concerns:
 SHARED_STATE_ANALYSIS():
   computed.dependencies.state_vars = {}  # var_name -> [workflow names]
 
-  workflow_skills = [s for s in computed.inventory if s.has_workflow]
+  workflow_skills = [s for s in computed.inventory if s.has_workflows_dir or s.has_legacy_workflow]
 
   FOR skill IN workflow_skills:
     content = Read(skill.workflow_path)
@@ -392,7 +390,7 @@ LIB_VERSION_ALIGNMENT():
 
   computed.dependencies.version_mismatches = []
 
-  workflow_skills = [s for s in computed.inventory if s.has_workflow]
+  workflow_skills = [s for s in computed.inventory if s.has_workflows_dir or s.has_legacy_workflow]
 
   FOR skill IN workflow_skills:
     content = Read(skill.workflow_path)
@@ -520,7 +518,7 @@ to the same `hiivmind-blueprint-lib` version:
 LIB_VERSION_CONSISTENCY():
   computed.version_consistency.lib_versions = {}  # version_string -> [skill names]
 
-  workflow_skills = [s for s in computed.inventory if s.has_workflow]
+  workflow_skills = [s for s in computed.inventory if s.has_workflows_dir or s.has_legacy_workflow]
 
   FOR skill IN workflow_skills:
     content = Read(skill.workflow_path)
@@ -571,7 +569,7 @@ DEPRECATED_TYPE_SCAN():
 
   computed.version_consistency.deprecated_usage = []
 
-  workflow_skills = [s for s in computed.inventory if s.has_workflow]
+  workflow_skills = [s for s in computed.inventory if s.has_workflows_dir or s.has_legacy_workflow]
 
   FOR skill IN workflow_skills:
     content = Read(skill.workflow_path)
@@ -606,7 +604,7 @@ plugin-level expected version:
 SCHEMA_VERSION_CHECK():
   computed.version_consistency.schema_versions = {}  # version -> [skill names]
 
-  workflow_skills = [s for s in computed.inventory if s.has_workflow]
+  workflow_skills = [s for s in computed.inventory if s.has_workflows_dir or s.has_legacy_workflow]
 
   FOR skill IN workflow_skills:
     content = Read(skill.workflow_path)
@@ -655,8 +653,8 @@ COMPUTE_OVERALL_SCORE():
     maintainability: 0.20
   }
 
-  # Completeness: % of skills with workflows, gateway coverage, error handling
-  skills_with_workflows = computed.inventory_summary.workflow + computed.inventory_summary.hybrid
+  # Completeness: % of skills with workflow coverage, gateway coverage, I/O definitions
+  skills_with_workflows = computed.inventory_summary.partial + computed.inventory_summary.full
   total_skills = computed.inventory_summary.total
   workflow_pct = (skills_with_workflows / total_skills * 100) if total_skills > 0 else 0
 
@@ -911,19 +909,19 @@ GENERATE_RECOMMENDATIONS():
     })
 
   # From Phase 1: Inventory
-  IF computed.inventory_summary.prose > 0:
+  IF computed.inventory_summary.none > 0:
     computed.recommendations.append({
       priority: "low",
       category: "completeness",
-      message: f"Convert {computed.inventory_summary.prose} prose-based skill(s) to workflow format.",
+      message: f"{computed.inventory_summary.none} skill(s) have no workflow coverage. Consider extracting high-conditional phases.",
       source: "inventory"
     })
 
-  IF computed.inventory_summary.hybrid > 0:
+  IF computed.inventory_summary.partial > 0:
     computed.recommendations.append({
       priority: "medium",
       category: "quality",
-      message: f"Review {computed.inventory_summary.hybrid} hybrid skill(s) and strip residual prose from converted workflows.",
+      message: f"Review {computed.inventory_summary.partial} partially-covered skill(s) for additional extraction candidates.",
       source: "inventory"
     })
 
@@ -955,13 +953,12 @@ Display the full health dashboard:
 
 ### Inventory
 
-| Classification | Count |
-|----------------|-------|
-| Workflow-based | {computed.inventory_summary.workflow} |
-| Prose-based    | {computed.inventory_summary.prose} |
-| Hybrid         | {computed.inventory_summary.hybrid} |
-| Simple         | {computed.inventory_summary.simple} |
-| **Total**      | **{computed.inventory_summary.total}** |
+| Coverage | Count |
+|----------|-------|
+| Full     | {computed.inventory_summary.full} |
+| Partial  | {computed.inventory_summary.partial} |
+| None     | {computed.inventory_summary.none} |
+| **Total**| **{computed.inventory_summary.total}** |
 
 ### Category Scores
 
@@ -1139,7 +1136,7 @@ computed.version       → computed.scores     → computed.recommendations
 
 - **Health Scoring Algorithm:** `patterns/health-scoring-algorithm.md` (local to this skill)
 - **Cross-Skill Metrics:** `patterns/cross-skill-metrics.md` (local to this skill)
-- **Classification Algorithm:** `${CLAUDE_PLUGIN_ROOT}/skills-prose/bp-plugin-discover/patterns/classification-algorithm.md`
+- **Classification Algorithm:** `${CLAUDE_PLUGIN_ROOT}/skills/bp-plugin-discover/patterns/classification-algorithm.md`
 - **Skill Analysis Pattern:** `${CLAUDE_PLUGIN_ROOT}/lib/patterns/skill-analysis.md`
 - **Node Mapping Pattern:** `${CLAUDE_PLUGIN_ROOT}/lib/patterns/node-mapping.md`
 - **Workflow Template:** `${CLAUDE_PLUGIN_ROOT}/templates/workflow.yaml.template`
@@ -1149,10 +1146,10 @@ computed.version       → computed.scores     → computed.recommendations
 
 ## Related Skills
 
-- Plugin discovery: `${CLAUDE_PLUGIN_ROOT}/skills-prose/bp-plugin-discover/SKILL.md`
-- Plugin batch operations: `${CLAUDE_PLUGIN_ROOT}/skills-prose/bp-plugin-batch/SKILL.md`
-- Single workflow analysis: `${CLAUDE_PLUGIN_ROOT}/skills-prose/bp-skill-analyze/SKILL.md`
-- Prose skill analysis: `${CLAUDE_PLUGIN_ROOT}/skills-prose/bp-prose-analyze/SKILL.md`
-- Workflow validation: `${CLAUDE_PLUGIN_ROOT}/skills-prose/bp-skill-validate/SKILL.md`
-- Workflow upgrade: `${CLAUDE_PLUGIN_ROOT}/skills-prose/bp-skill-upgrade/SKILL.md`
-- Gateway creation: `${CLAUDE_PLUGIN_ROOT}/skills-prose/bp-gateway-create/SKILL.md`
+- Plugin discovery: `${CLAUDE_PLUGIN_ROOT}/skills/bp-plugin-discover/SKILL.md`
+- Plugin batch operations: `${CLAUDE_PLUGIN_ROOT}/skills/bp-plugin-batch/SKILL.md`
+- Skill analysis: `${CLAUDE_PLUGIN_ROOT}/skills/bp-skill-analyze/SKILL.md`
+- Workflow validation: `${CLAUDE_PLUGIN_ROOT}/skills/bp-skill-validate/SKILL.md`
+- Workflow extraction: `${CLAUDE_PLUGIN_ROOT}/skills/bp-workflow-extract/SKILL.md`
+- Workflow upgrade: `${CLAUDE_PLUGIN_ROOT}/skills/bp-skill-upgrade/SKILL.md`
+- Gateway creation: `${CLAUDE_PLUGIN_ROOT}/skills/bp-gateway-create/SKILL.md`

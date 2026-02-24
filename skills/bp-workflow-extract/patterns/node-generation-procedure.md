@@ -1,5 +1,5 @@
 > **Used by:** `SKILL.md` Phase 3
-> **Supplements:** `${CLAUDE_PLUGIN_ROOT}/lib/patterns/workflow-generation.md`
+> **Supplements:** `${CLAUDE_PLUGIN_ROOT}/patterns/authoring-guide.md`
 
 # Node Generation Procedure
 
@@ -13,7 +13,7 @@ primary lookup table for Phase 3 of the migration skill.
 
 When converting prose actions to workflow consequences, match the prose description
 to the appropriate consequence type. All types below are from the {computed.lib_version} consolidated
-type system (see `${CLAUDE_PLUGIN_ROOT}/lib/patterns/workflow-generation.md` for the
+type system (see `${CLAUDE_PLUGIN_ROOT}/patterns/authoring-guide.md` for the
 consolidation mapping from legacy types).
 
 ### File Operations
@@ -434,7 +434,7 @@ Every node must have all required transition fields populated:
 
 ## Related Documentation
 
-- **Workflow Generation Pattern:** `${CLAUDE_PLUGIN_ROOT}/lib/patterns/workflow-generation.md`
+- **Workflow Generation Pattern:** `${CLAUDE_PLUGIN_ROOT}/patterns/authoring-guide.md`
 - **Consequence Catalog:** `${CLAUDE_PLUGIN_ROOT}/references/consequences-catalog.md`
 - **Precondition Catalog:** `${CLAUDE_PLUGIN_ROOT}/references/preconditions-catalog.md`
 - **Prompt Modes Reference:** `${CLAUDE_PLUGIN_ROOT}/references/prompt-modes.md`

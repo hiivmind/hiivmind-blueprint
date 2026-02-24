@@ -52,7 +52,6 @@ If mandatory tools are missing, exit with error and installation guidance.
 | conditional | Diamond | `node{Condition?}` |
 | conditional (audit) | Diamond | `node{Validations?}` |
 | user_prompt | Stadium | `node([User Prompt])` |
-| reference | Subroutine | `node[[Reference Doc]]` |
 | ending (success) | Rounded | `node(Success)` |
 | ending (error) | Rounded | `node(Error)` |
 
@@ -235,7 +234,6 @@ Shape mapping:
 action         -> [Label]
 conditional    -> {Label?}
 user_prompt    -> ([Label])
-reference      -> [[Label]]
 ending.success -> (Success)
 ending.error   -> (Error)
 ```
@@ -261,11 +259,6 @@ For each node, generate transition edges:
 {node_id} -->|{option_id}| {on_response.{option_id}.next_node}
 ```
 
-**Reference nodes:**
-```mermaid
-{node_id} --> {next_node}
-```
-
 Only emit edges whose targets are within `computed.selected_nodes` or ending IDs.
 
 ### Step 3.3: Apply Styling
@@ -277,7 +270,6 @@ classDef success fill:#90EE90,stroke:#228B22,color:#000
 classDef error fill:#FFB6C1,stroke:#DC143C,color:#000
 classDef conditional fill:#87CEEB,stroke:#4682B4,color:#000
 classDef userPrompt fill:#DDA0DD,stroke:#9932CC,color:#000
-classDef reference fill:#FFFACD,stroke:#DAA520,color:#000
 ```
 
 Apply classes to nodes:
@@ -285,7 +277,6 @@ Apply classes to nodes:
 - Endings with `type: error` -- `:::error`
 - Conditional nodes -- `:::conditional`
 - User prompt nodes -- `:::userPrompt`
-- Reference nodes -- `:::reference`
 
 ### Step 3.4: Assemble Complete Diagram
 
@@ -410,6 +401,6 @@ stateDiagram-v2
 
 ## Related Skills
 
-- Workflow analysis: `${CLAUDE_PLUGIN_ROOT}/skills-prose/bp-skill-analyze/SKILL.md`
-- Prose-based migration: `${CLAUDE_PLUGIN_ROOT}/skills-prose/bp-prose-migrate/SKILL.md`
-- Plugin discovery: `${CLAUDE_PLUGIN_ROOT}/skills-prose/bp-plugin-discover/SKILL.md`
+- Workflow analysis: `${CLAUDE_PLUGIN_ROOT}/skills/bp-skill-analyze/SKILL.md`
+- Prose-based migration: `${CLAUDE_PLUGIN_ROOT}/skills/bp-workflow-extract/SKILL.md`
+- Plugin discovery: `${CLAUDE_PLUGIN_ROOT}/skills/bp-plugin-discover/SKILL.md`
