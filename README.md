@@ -1,18 +1,18 @@
 # hiivmind-blueprint-author
 
-Authoring tools for converting Claude Code skills to deterministic YAML workflow patterns.
+Journey-oriented tools for building, assessing, enhancing, extracting, maintaining, and visualizing Claude Code skills as deterministic YAML workflow patterns.
 
 ## Overview
 
-This plugin provides tools for the full skill authoring lifecycle:
+This plugin provides 7 journey-oriented skills covering the full skill authoring lifecycle:
 
-1. **Initialize** - Set up plugin for workflow support
-2. **Discover** - Find existing skills and assess conversion status
-3. **Analyze** - Deep structural analysis of prose skills
-4. **Convert** - Transform analysis into workflow.yaml
-5. **Generate** - Write skills and workflow files
-6. **Gateway** - Create gateway commands for multi-skill plugins
-7. **Visualize** - Generate Mermaid diagrams from workflows
+1. **Gateway** - Entry point that routes user intent to the correct journey skill
+2. **Build** - Create new skills from scratch with workflow patterns
+3. **Assess** - Evaluate existing skills for quality, structure, and conversion readiness
+4. **Enhance** - Improve existing skills with better patterns and error handling
+5. **Extract** - Extract workflow patterns from prose-based skills
+6. **Maintain** - Validate, update, and repair skills over time
+7. **Visualize** - Generate Mermaid diagrams from workflow definitions
 
 ## Installation
 
@@ -23,20 +23,23 @@ claude mcp add-skill-plugin hiivmind/hiivmind-blueprint-author
 ## Quick Start
 
 ```bash
-# Initialize a plugin for workflow support
-/hiivmind-blueprint-author init
+# Build a new skill from scratch
+/hiivmind-blueprint-author build a validation skill for config files
 
-# Discover skills in current plugin
-/hiivmind-blueprint-author discover
+# Assess an existing skill
+/hiivmind-blueprint-author assess skills/my-skill/SKILL.md
 
-# Analyze a specific skill
-/hiivmind-blueprint-author analyze skills/my-skill/SKILL.md
+# Enhance a skill with better patterns
+/hiivmind-blueprint-author enhance skills/my-skill/SKILL.md
 
-# Convert to workflow format
-/hiivmind-blueprint-author convert
+# Extract workflow from a prose skill
+/hiivmind-blueprint-author extract skills/my-skill/SKILL.md
 
-# Generate workflow files
-/hiivmind-blueprint-author generate
+# Validate and maintain skills
+/hiivmind-blueprint-author maintain
+
+# Generate a Mermaid diagram
+/hiivmind-blueprint-author visualize skills/my-skill/workflow.yaml
 ```
 
 ## Related Plugins
