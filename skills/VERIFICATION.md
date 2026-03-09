@@ -10,8 +10,8 @@ Run from the `skills/` directory.
 
 ```bash
 # From skills/ directory
-checks_passed=0; checks_total=13
-for check in 1 2 3 4 5 6 7 8 9 10 11; do
+checks_passed=0; checks_total=16
+for check in 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15 16; do
   # (see individual check scripts below)
 done
 echo "$checks_passed/$checks_total automated checks passed"
@@ -221,7 +221,7 @@ for dir in */; do
 done
 ```
 
-**Migration:** Use `bp-skill-refactor` to migrate from bare `workflow.yaml` to `workflows/workflow.yaml`.
+**Migration:** Use `bp-maintain` to migrate from bare `workflow.yaml` to `workflows/workflow.yaml`.
 
 ---
 
@@ -299,26 +299,27 @@ done
 
 ---
 
-## Check 11: Handoff Documentation (skill-analyze <-> workflow-extract)
+## Check 11: Handoff Documentation (journey skill cross-references)
 
-`bp-skill-analyze` and `bp-workflow-extract` must reference each other, documenting the `computed.analysis` handoff contract.
+Journey skills that form pipelines must reference each other, documenting handoff contracts (e.g., `computed.analysis` between assessment and extraction phases).
 
-**Why:** These two skills form a pipeline. The analysis output schema must be documented in both directions so either skill can be updated independently without breaking the contract.
+**Why:** Journey skills hand off structured state to downstream skills. The handoff schema must be documented in both directions so either skill can be updated independently without breaking the contract.
 
 **Automated:**
 ```bash
-sa=$(grep -c "workflow-extract" bp-skill-analyze/SKILL.md 2>/dev/null || echo 0)
-we=$(grep -c "skill-analyze" bp-workflow-extract/SKILL.md 2>/dev/null || echo 0)
-echo "skill-analyze references workflow-extract: $sa times"
-echo "workflow-extract references skill-analyze: $we times"
-if [ "$sa" -ge 1 ] && [ "$we" -ge 1 ]; then
+# Example: bp-assess and bp-extract should cross-reference each other
+ae=$(grep -c "bp-extract" bp-assess/SKILL.md 2>/dev/null || echo 0)
+ea=$(grep -c "bp-assess" bp-extract/SKILL.md 2>/dev/null || echo 0)
+echo "bp-assess references bp-extract: $ae times"
+echo "bp-extract references bp-assess: $ea times"
+if [ "$ae" -ge 1 ] && [ "$ea" -ge 1 ]; then
   echo "PASS"
 else
   echo "FAIL"
 fi
 ```
 
-**Deeper validation (manual):** Check that `bp-skill-analyze/patterns/analysis-output-schema.md` defines the exact fields that `bp-workflow-extract` Phase 1 expects.
+**Deeper validation (manual):** Check that handoff schemas (e.g., analysis output fields) are documented in both the producing and consuming skill.
 
 ---
 
@@ -383,9 +384,9 @@ done
 Read 3 representative skills end-to-end and verify prose quality matches `skills_old/` exemplars.
 
 **Recommended skills:**
-1. `bp-skill-analyze` — the core analysis skill
-2. `bp-gateway-create` — the most complex gateway skill
-3. `bp-plugin-discover` — the discovery skill with coverage classification
+1. `bp-assess` — the core assessment/analysis journey skill
+2. `bp-build` — the build journey skill
+3. `bp-gateway` — the gateway/routing skill
 
 **Quality criteria:**
 - Phases flow logically (gathering → analysis → execution → reporting)
@@ -395,6 +396,102 @@ Read 3 representative skills end-to-end and verify prose quality matches `skills
 - Pattern file references add value (heavy material offloaded from SKILL.md)
 - Related Skills section cross-references are accurate
 - No orphan concepts (everything referenced is defined somewhere)
+
+---
+
+## Check 15: Mode Detection Phase
+
+Every journey skill should have a Phase 1: Mode Detection that parses invocation flags (except `bp-visualize`, which may handle this differently). Mode flags should be stored in `computed.mode.*` or `computed.mode`.
+
+**Why:** Journey skills support multiple modes of operation (e.g., `--full`, `--quick`, `--interactive`). A dedicated mode detection phase at the start ensures consistent flag parsing and prevents mode logic from being scattered across later phases.
+
+**Automated:**
+```bash
+for dir in */; do
+  skill="${dir%/}"; f="$skill/SKILL.md"
+  [ -f "$f" ] || continue
+  # Skip bp-visualize (handles mode differently) and _archived skills
+  [[ "$skill" == "bp-visualize" || "$skill" == _archived* ]] && continue
+  mode_phase=$(grep -ci 'mode detection\|mode.*detection' "$f")
+  mode_computed=$(grep -c 'computed\.mode' "$f")
+  if [ "$mode_phase" -ge 1 ] && [ "$mode_computed" -ge 1 ]; then
+    echo "PASS: $skill (mode_phase:$mode_phase mode_state:$mode_computed)"
+  else
+    echo "FAIL: $skill (mode_phase:$mode_phase mode_state:$mode_computed)"
+  fi
+done
+```
+
+**Common fixes:**
+- Add a `## Phase 1: Mode Detection` section that parses invocation flags
+- Store parsed mode in `computed.mode` or `computed.mode.*` namespace
+
+---
+
+## Check 16: Journey Handoffs
+
+Related Skills and Next Actions sections should reference journey skill names (`bp-build`, `bp-assess`, `bp-enhance`, `bp-extract`, `bp-maintain`, `bp-visualize`, `bp-gateway`) and NOT reference archived skill names.
+
+**Why:** Journey skills replace the old fine-grained skills. Handoff documentation must point users to the correct active skills, not archived ones that are no longer invocable.
+
+**Automated:**
+```bash
+journey_skills="bp-build|bp-assess|bp-enhance|bp-extract|bp-maintain|bp-visualize|bp-gateway"
+archived_skills="bp-skill-create|bp-skill-analyze|bp-skill-validate|bp-skill-refactor|bp-skill-upgrade|bp-workflow-extract|bp-plugin-discover|bp-plugin-analyze|bp-plugin-batch|bp-gateway-create|bp-gateway-validate|bp-intent-create|bp-intent-validate"
+for dir in */; do
+  skill="${dir%/}"; f="$skill/SKILL.md"
+  [ -f "$f" ] || continue
+  [[ "$skill" == _archived* ]] && continue
+  journey_refs=$(grep -cE "($journey_skills)" "$f")
+  archived_refs=$(grep -cE "($archived_skills)" "$f")
+  if [ "$archived_refs" -eq 0 ]; then
+    echo "PASS: $skill (journey_refs:$journey_refs archived_refs:0)"
+  else
+    echo "FAIL: $skill (journey_refs:$journey_refs archived_refs:$archived_refs)"
+  fi
+done
+```
+
+**Common fixes:**
+- Replace references to archived skill names with their journey equivalents
+- Update Related Skills / Next Actions sections to use journey skill names
+
+---
+
+## Check 17: No Archived Skill References
+
+Active skills (not in `_archived/`) must not reference archived skill names as invocable skills. Archived names: `bp-skill-create`, `bp-skill-analyze`, `bp-skill-validate`, `bp-skill-refactor`, `bp-skill-upgrade`, `bp-workflow-extract`, `bp-plugin-discover`, `bp-plugin-analyze`, `bp-plugin-batch`, `bp-gateway-create`, `bp-gateway-validate`, `bp-intent-create`, `bp-intent-validate`.
+
+**Why:** Referencing archived skills as invocable creates dead-end handoffs. Users following these references will get "skill not found" errors.
+
+**Automated:**
+```bash
+archived="bp-skill-create bp-skill-analyze bp-skill-validate bp-skill-refactor bp-skill-upgrade bp-workflow-extract bp-plugin-discover bp-plugin-analyze bp-plugin-batch bp-gateway-create bp-gateway-validate bp-intent-create bp-intent-validate"
+for dir in */; do
+  skill="${dir%/}"; f="$skill/SKILL.md"
+  [ -f "$f" ] || continue
+  [[ "$skill" == _archived* ]] && continue
+  ok=1
+  for old in $archived; do
+    hits=$(grep -c "$old" "$f")
+    if [ "$hits" -gt 0 ]; then
+      echo "FAIL: $skill references archived skill '$old' ($hits times)"
+      ok=0
+    fi
+  done
+  [ "$ok" -eq 1 ] && echo "PASS: $skill"
+done
+```
+
+**Common fixes:**
+- Replace `bp-skill-create` → `bp-build`
+- Replace `bp-skill-analyze` → `bp-assess`
+- Replace `bp-skill-validate` → `bp-assess`
+- Replace `bp-skill-refactor` / `bp-skill-upgrade` → `bp-maintain`
+- Replace `bp-workflow-extract` → `bp-extract`
+- Replace `bp-plugin-discover` / `bp-plugin-analyze` / `bp-plugin-batch` → `bp-enhance`
+- Replace `bp-gateway-create` / `bp-gateway-validate` → `bp-gateway`
+- Replace `bp-intent-create` / `bp-intent-validate` → `bp-gateway`
 
 ---
 
@@ -453,3 +550,4 @@ b_refs_a=$(grep -c "skill-a" skill-b/SKILL.md)
 |------|--------|-------|
 | 2026-02-06 | 11/11 automated PASS, 15 skills, 26 patterns, 41 .md total | Initial creation + fixes applied |
 | 2026-02-24 | Updated for skill/workflow separation refactor | Checks 12-13 added, check 7 updated, skill renames applied |
+| 2026-03-09 | Updated for journey-oriented redesign | Checks 15-17 added, checks 11/14 updated for journey skill names |
