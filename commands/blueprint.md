@@ -81,40 +81,15 @@ Flags modify workflow execution. Per-invocation only (reset for each command).
 
 ## Available Skills
 
-### Skill Operations
-
-| Skill | Purpose |
-|-------|---------|
-| **skill-create** | Create a new skill from scratch |
-| **skill-analyze** | Analyze a workflow.yaml structure and quality |
-| **skill-validate** | Validate a workflow.yaml for errors |
-| **skill-refactor** | Refactor or restructure a workflow |
-| **skill-upgrade** | Upgrade workflow schema version |
-| **visualize** | Generate Mermaid diagram from workflow |
-
-### Prose Conversion
-
-| Skill | Purpose |
-|-------|---------|
-| **prose-analyze** | Analyze a prose SKILL.md before conversion |
-| **prose-migrate** | Convert a prose SKILL.md to workflow.yaml |
-
-### Gateway & Intent
-
-| Skill | Purpose |
-|-------|---------|
-| **gateway-create** | Create a gateway command for multi-skill plugins |
-| **gateway-validate** | Validate gateway routing and structure |
-| **intent-create** | Create intent-mapping.yaml for a gateway |
-| **intent-validate** | Validate intent mapping rules |
-
-### Plugin Management
-
-| Skill | Purpose |
-|-------|---------|
-| **plugin-discover** | Discover and inventory skills in a plugin |
-| **plugin-analyze** | Analyze plugin health and cross-skill metrics |
-| **plugin-batch** | Run operations across all skills in a plugin |
+| Journey | Purpose |
+|---------|---------|
+| **build** | Create a new skill from an idea |
+| **assess** | Understand where a skill/plugin sits on the coverage spectrum |
+| **enhance** | Add structure to a prose skill (state, pseudocode, guards) |
+| **extract** | Formalize a prose skill into workflow YAML |
+| **maintain** | Fix, upgrade, or refactor existing workflows |
+| **visualize** | Generate a diagram from a workflow |
+| **gateway** | Set up intent routing for your plugin |
 
 ---
 
@@ -158,8 +133,7 @@ This gateway uses 3VL (3-valued logic) intent detection with **two-axis matching
 
 Intent flags are split into **target** (what to operate on) and **action** (what to do):
 
-- **Target flags:** `has_gateway`, `has_intent`, `has_plugin`, `has_prose`, `has_workflow`
-- **Action flags:** `has_create`, `has_validate`, `has_analyze`, `has_migrate`, `has_upgrade`, `has_refactor`, `has_discover`, `has_batch`, `has_visualize`
+- **Journey flags:** `has_idea`, `has_assess`, `has_enhance`, `has_prose`, `has_fix`, `has_diagram`, `has_routing`
 
 Compound rules (target + action) have higher priority than single-action rules.
 
@@ -193,36 +167,29 @@ Skill(
 
 4. **Let the skill take over** - It will load its own SKILL.md and execute its workflow
 
-**Example:** If intent matches "convert prose", invoke `bp-prose-migrate`. Do not convert the skill yourself.
+**Example:** If intent matches "enhance skill", invoke `bp-enhance`. Do not enhance the skill yourself.
 
 ---
 
 ## Quick Examples
 
-- `/blueprint create a new skill` -> Routes to bp-skill-create
-- `/blueprint analyze this workflow` -> Routes to bp-skill-analyze
-- `/blueprint convert prose to workflow` -> Routes to bp-prose-migrate
-- `/blueprint validate gateway` -> Routes to bp-gateway-validate
-- `/blueprint discover skills in plugin` -> Routes to bp-plugin-discover
+- `/blueprint create a new skill` -> Routes to bp-build
+- `/blueprint assess my plugin` -> Routes to bp-assess
+- `/blueprint enhance this skill` -> Routes to bp-enhance
+- `/blueprint extract prose to workflow` -> Routes to bp-extract
+- `/blueprint validate my workflow` -> Routes to bp-maintain
 - `/blueprint visualize` -> Routes to bp-visualize
+- `/blueprint set up gateway routing` -> Routes to bp-gateway
 - `/blueprint` -> Shows interactive menu
 
 ---
 
 ## Related Skills
 
-- Skill creation: `${CLAUDE_PLUGIN_ROOT}/skills/bp-skill-create/SKILL.md`
-- Workflow analysis: `${CLAUDE_PLUGIN_ROOT}/skills/bp-skill-analyze/SKILL.md`
-- Workflow validation: `${CLAUDE_PLUGIN_ROOT}/skills/bp-skill-validate/SKILL.md`
-- Workflow refactoring: `${CLAUDE_PLUGIN_ROOT}/skills/bp-skill-refactor/SKILL.md`
-- Workflow upgrade: `${CLAUDE_PLUGIN_ROOT}/skills/bp-skill-upgrade/SKILL.md`
-- Visualization: `${CLAUDE_PLUGIN_ROOT}/skills/bp-visualize/SKILL.md`
-- Prose analysis: `${CLAUDE_PLUGIN_ROOT}/skills/bp-prose-analyze/SKILL.md`
-- Prose migration: `${CLAUDE_PLUGIN_ROOT}/skills/bp-prose-migrate/SKILL.md`
-- Gateway creation: `${CLAUDE_PLUGIN_ROOT}/skills/bp-gateway-create/SKILL.md`
-- Gateway validation: `${CLAUDE_PLUGIN_ROOT}/skills/bp-gateway-validate/SKILL.md`
-- Intent creation: `${CLAUDE_PLUGIN_ROOT}/skills/bp-intent-create/SKILL.md`
-- Intent validation: `${CLAUDE_PLUGIN_ROOT}/skills/bp-intent-validate/SKILL.md`
-- Plugin discovery: `${CLAUDE_PLUGIN_ROOT}/skills/bp-plugin-discover/SKILL.md`
-- Plugin analysis: `${CLAUDE_PLUGIN_ROOT}/skills/bp-plugin-analyze/SKILL.md`
-- Batch operations: `${CLAUDE_PLUGIN_ROOT}/skills/bp-plugin-batch/SKILL.md`
+- Build: `${CLAUDE_PLUGIN_ROOT}/skills/bp-build/SKILL.md`
+- Assess: `${CLAUDE_PLUGIN_ROOT}/skills/bp-assess/SKILL.md`
+- Enhance: `${CLAUDE_PLUGIN_ROOT}/skills/bp-enhance/SKILL.md`
+- Extract: `${CLAUDE_PLUGIN_ROOT}/skills/bp-extract/SKILL.md`
+- Maintain: `${CLAUDE_PLUGIN_ROOT}/skills/bp-maintain/SKILL.md`
+- Visualize: `${CLAUDE_PLUGIN_ROOT}/skills/bp-visualize/SKILL.md`
+- Gateway: `${CLAUDE_PLUGIN_ROOT}/skills/bp-gateway/SKILL.md`
