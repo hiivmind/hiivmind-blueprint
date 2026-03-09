@@ -30,7 +30,7 @@ These placeholders appear in `${CLAUDE_PLUGIN_ROOT}/templates/SKILL.md.template`
 
 | Placeholder | Source | Default | Description |
 |------------|--------|---------|-------------|
-| `{{skill_name}}` | User input | -- | The full kebab-case skill name. Used in frontmatter `name:` field and all invocation examples. Example: `bp-skill-create` |
+| `{{skill_name}}` | User input | -- | The full kebab-case skill name. Used in frontmatter `name:` field and all invocation examples. Example: `bp-build` |
 | `{{description}}` | Computed | -- | Frontmatter `description:` field. Auto-generated from skill name and features, or provided by user. Must include trigger keywords for Claude's skill matching. Max 1024 characters. |
 | `{{allowed_tools}}` | Computed | `Read, Write, Glob, Bash, AskUserQuestion` | Comma-separated list of tools the skill may use. |
 | `{{title}}` | Computed | -- | Human-readable title for the `# Heading` of the SKILL.md. Derived from skill name via title-casing. |
@@ -98,7 +98,7 @@ These placeholders appear in `${CLAUDE_PLUGIN_ROOT}/templates/workflow.yaml.temp
 
 | Placeholder | Source | Default | Description |
 |------------|--------|---------|-------------|
-| `{{workflow_id}}` | Computed | `{skill_name}-{phase_title}` | The workflow identity name. Used in the `name:` field. Each workflow has its own ID distinct from the skill name. Example: `bp-skill-create-validate` |
+| `{{workflow_id}}` | Computed | `{skill_name}-{phase_title}` | The workflow identity name. Used in the `name:` field. Each workflow has its own ID distinct from the skill name. Example: `bp-build-validate` |
 | `{{description}}` | Computed | -- | Workflow description. Describes what this specific workflow phase does. |
 | `{{state_variables}}` | Computed | `phase, flags, computed` | Comma-separated list documenting which state fields the workflow uses. |
 | `{{start_node}}` | Computed | `start_{phase_title}` | The name of the first node to execute. Derived from phase title. |

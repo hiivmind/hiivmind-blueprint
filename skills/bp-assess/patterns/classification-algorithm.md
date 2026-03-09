@@ -336,11 +336,11 @@ The classification drives downstream behavior:
 
 | Coverage | Downstream Skill | Action |
 |----------|-----------------|--------|
-| `none` | `bp-skill-analyze` | Identify extraction candidates, then `bp-workflow-extract` |
-| `partial` | `bp-skill-analyze` | Assess remaining prose phases for extraction |
-| `full` | `bp-skill-validate` | Validate all workflow files |
-| Any + `legacy_layout` | `bp-skill-refactor` | Migrate to `workflows/` subdirectory layout |
-| Any + missing I/O | `bp-skill-refactor` | Add inputs/outputs to frontmatter |
+| `none` | `bp-assess` | Identify extraction candidates, then `bp-extract` |
+| `partial` | `bp-assess` | Assess remaining prose phases for extraction |
+| `full` | `bp-maintain` | Validate all workflow files |
+| Any + `legacy_layout` | `bp-maintain` | Migrate to `workflows/` subdirectory layout |
+| Any + missing I/O | `bp-maintain` | Add inputs/outputs to frontmatter |
 
 ---
 

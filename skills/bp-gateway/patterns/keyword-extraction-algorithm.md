@@ -4,7 +4,7 @@
 # Keyword Extraction Algorithm
 
 Complete regex catalog and extraction pipeline for deriving trigger keywords from SKILL.md
-description fields. Used by `bp-intent-create` to build the keyword lists that populate
+description fields. Used by `bp-gateway` to build the keyword lists that populate
 intent_flags in intent-mapping.yaml.
 
 ---

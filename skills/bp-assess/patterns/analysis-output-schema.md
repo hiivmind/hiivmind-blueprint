@@ -1,9 +1,9 @@
 > **Used by:** `SKILL.md` Phase 4, Step 4.1
-> **Contract between:** bp-skill-analyze → bp-workflow-extract
+> **Contract between:** bp-assess → bp-extract
 
 # Analysis Output Schema
 
-Complete field reference for the analysis YAML produced by `bp-skill-analyze` and consumed by `bp-workflow-extract`. This document is the handoff contract between the two skills.
+Complete field reference for the analysis YAML produced by `bp-assess` and consumed by `bp-extract`. This document is the handoff contract between the two skills.
 
 ---
 
@@ -272,9 +272,9 @@ analysis:
 
 ---
 
-## Consumer Notes for bp-workflow-extract
+## Consumer Notes for bp-extract
 
-When consuming this schema, `bp-workflow-extract` should:
+When consuming this schema, `bp-extract` should:
 
 1. **Validate required fields** - All fields marked required must be present. Fail early with a descriptive error if any are missing.
 2. **Use `phases[].actions` for node generation** - Each action maps to one or more workflow nodes.
