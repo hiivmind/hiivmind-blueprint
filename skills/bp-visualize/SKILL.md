@@ -67,9 +67,38 @@ If mandatory tools are missing, exit with error and installation guidance.
 
 ---
 
-## Phase 1: Load Workflow
+## Phase 1: Mode Detection
 
-### Step 1.1: Determine Target Workflow
+Parse any flags provided by the user or calling skill to determine visualization mode upfront.
+
+### Step 1.1: Parse Flags
+
+Check for flags in the user's request or passed context:
+
+| Flag | Effect | Example |
+|------|--------|---------|
+| `--format <type>` | Set diagram format | `--format flowchart`, `--format state`, `--format subflow` |
+| `--output <path>` | Set file output path | `--output docs/workflow-diagram.md` |
+
+Store parsed values:
+```yaml
+computed:
+  mode:
+    format: "flowchart"   # flowchart | state | subflow (null if not provided)
+    output_path: null      # file path or null for display-only
+```
+
+### Step 1.2: Apply Mode or Prompt
+
+- If `--format` provided: set `computed.mode.format` and skip the visualization mode prompt in Phase 3 (Step 3.3).
+- If `--output` provided: set `computed.mode.output_path` and skip the file output prompt in Phase 5 (Step 5.2).
+- If **no flags** provided: proceed normally -- the user will be prompted for format choice in Phase 3.
+
+---
+
+## Phase 2: Load Workflow
+
+### Step 2.1: Determine Target Workflow
 
 If user provided a path:
 1. Validate the path exists
@@ -96,7 +125,7 @@ If no path provided:
    }
    ```
 
-### Step 1.2: Parse Workflow Structure
+### Step 2.2: Parse Workflow Structure
 
 Extract from workflow.yaml:
 - `name` -- Workflow identifier
@@ -121,9 +150,9 @@ computed:
 
 ---
 
-## Phase 2: Analyze & Choose Mode
+## Phase 3: Analyze & Choose Mode
 
-### Step 2.1: Detect Decision Nodes
+### Step 3.1: Detect Decision Nodes
 
 Identify nodes that create branching:
 - **conditional** nodes -- `branches.true` and `branches.false`
@@ -142,7 +171,7 @@ computed:
       branch_count: 4
 ```
 
-### Step 2.2: Identify Subflow Boundaries
+### Step 3.2: Identify Subflow Boundaries
 
 Trace workflow paths to detect natural segments:
 
@@ -173,7 +202,7 @@ computed:
       exit_to: ["success", "error_delegation"]
 ```
 
-### Step 2.3: Present Visualization Options
+### Step 3.3: Present Visualization Options
 
 Ask user which visualization mode:
 
@@ -216,9 +245,9 @@ workflows (4+ decision nodes), LR for shallow workflows or subflow views.
 
 ---
 
-## Phase 3: Generate Diagram
+## Phase 4: Generate Diagram
 
-### Step 3.1: Build Node Definitions
+### Step 4.1: Build Node Definitions
 
 For each node in the selected scope, generate Mermaid syntax:
 
@@ -238,7 +267,7 @@ ending.success -> (Success)
 ending.error   -> (Error)
 ```
 
-### Step 3.2: Build Edges
+### Step 4.2: Build Edges
 
 For each node, generate transition edges:
 
@@ -261,7 +290,7 @@ For each node, generate transition edges:
 
 Only emit edges whose targets are within `computed.selected_nodes` or ending IDs.
 
-### Step 3.3: Apply Styling
+### Step 4.3: Apply Styling
 
 Add class definitions for visual distinction:
 
@@ -278,7 +307,7 @@ Apply classes to nodes:
 - Conditional nodes -- `:::conditional`
 - User prompt nodes -- `:::userPrompt`
 
-### Step 3.4: Assemble Complete Diagram
+### Step 4.4: Assemble Complete Diagram
 
 Combine into final output:
 
@@ -292,9 +321,9 @@ Store assembled output in `computed.diagram_output`.
 
 ---
 
-## Phase 4: Output
+## Phase 5: Output
 
-### Step 4.1: Display Diagram
+### Step 5.1: Display Diagram
 
 Output the Mermaid diagram in a code block:
 
@@ -313,7 +342,7 @@ flowchart TD
 ```
 ~~~
 
-### Step 4.2: Offer File Output
+### Step 5.2: Offer File Output
 
 Ask if user wants to save:
 
@@ -401,6 +430,7 @@ stateDiagram-v2
 
 ## Related Skills
 
-- Workflow analysis: `${CLAUDE_PLUGIN_ROOT}/skills/bp-skill-analyze/SKILL.md`
-- Prose-based migration: `${CLAUDE_PLUGIN_ROOT}/skills/bp-workflow-extract/SKILL.md`
-- Plugin discovery: `${CLAUDE_PLUGIN_ROOT}/skills/bp-plugin-discover/SKILL.md`
+- Skill assessment: `${CLAUDE_PLUGIN_ROOT}/skills/bp-assess/SKILL.md`
+- Workflow extraction: `${CLAUDE_PLUGIN_ROOT}/skills/bp-extract/SKILL.md`
+- Skill building: `${CLAUDE_PLUGIN_ROOT}/skills/bp-build/SKILL.md`
+- Skill maintenance: `${CLAUDE_PLUGIN_ROOT}/skills/bp-maintain/SKILL.md`
