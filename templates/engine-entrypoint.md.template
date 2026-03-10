@@ -1,5 +1,5 @@
 # Hiivmind Blueprint Engine Entrypoint
-## Version: 2.0.0
+## Version: {{engine_version}}
 
 This document defines the standardized execution protocol used by all hiivmind-blueprint gateway commands. It provides a deterministic 3-phase model for loading local files and executing YAML workflows. All type definitions and execution semantics are read from local files — no remote fetching.
 
@@ -142,7 +142,7 @@ LOAD_CONFIG():
     state._local.config_loaded ← true
   ELSE:
     # Config is optional for backward compatibility
-    state._local.engine_version ← "2.0.0"
+    state._local.engine_version ← "{{engine_version}}"
     state._local.config_loaded ← false
 ```
 
@@ -162,6 +162,7 @@ LOAD_WORKFLOW():
   state._workflow.loaded ← true
 ```
 
+{{#if_gateway}}
 ### Step 2.4: Load Intent Mapping (Gateway-Specific)
 
 Only for gateway commands — skill invocations skip this step.
@@ -172,6 +173,7 @@ LOAD_INTENT_MAPPING():
     content ← READ_YAML(state._paths.intent_mapping_path)
     state._workflow.intent_mapping ← content
 ```
+{{/if_gateway}}
 
 ### Step 2.5: Parse Arguments
 
@@ -218,22 +220,16 @@ Read and follow `.hiivmind/blueprint/execution-guide.md`, which defines:
 
 ```pseudocode
 EXECUTE_VIA_GUIDE():
-  # The execution guide is the authoritative reference for workflow traversal.
-  # Follow its 3-phase model exactly:
-  #   Phase 1: Initialize (definitions + state + preconditions)
-  #   Phase 2: Execute (dispatch loop)
-  #   Phase 3: Complete (endings + logging)
-
   execution_guide_path ← ".hiivmind/blueprint/execution-guide.md"
 
   IF NOT file_exists(execution_guide_path):
     FAIL "Missing execution guide: " + execution_guide_path +
          ". Run bp-build to provision this file."
 
-  # Read and follow execution-guide.md
   READ_AND_FOLLOW(execution_guide_path)
 ```
 
+{{#if_gateway}}
 ### Step 3.2: Gateway-Specific Behavior
 
 During workflow execution, gateway commands have additional responsibilities:
@@ -247,7 +243,6 @@ HANDLE_INVOKE_SKILL(consequence, state):
   skill_name ← interpolate(consequence.skill, state)
   args ← interpolate(consequence.args, state) IF consequence.args ELSE ""
 
-  # Use the Skill tool to invoke the matched skill
   result ← Skill(skill: skill_name, args: args)
 
   IF consequence.store_as:
@@ -264,6 +259,7 @@ EMIT_CI_ANNOTATIONS(history):
     ELIF entry.outcome.warning:
       EMIT "::warning::" + entry.node + ": " + entry.outcome.warning
 ```
+{{/if_gateway}}
 
 ### Step 3.V: Verify Phase 3 Complete
 
@@ -279,7 +275,7 @@ EMIT_CI_ANNOTATIONS(history):
 | Version | Changes |
 |---------|---------|
 | 1.0.0 | Initial engine entrypoint protocol (5-phase, remote fetching) |
-| 2.0.0 | Rewritten as 3-phase local-only protocol. Removed remote fetching (Phases 2-3 of v1.0.0). Removed `_bootstrap` and `_semantics` state namespaces. Added `_local` namespace. Delegates execution to local execution-guide.md. |
+| 2.0.0 | Rewritten as 3-phase local-only protocol. Removed remote fetching. Removed `_bootstrap` and `_semantics` state namespaces. Added `_local` namespace. Delegates execution to local execution-guide.md. |
 
 ---
 

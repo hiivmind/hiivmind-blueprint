@@ -21,7 +21,6 @@ This pattern describes how to transform workflow.yaml node graphs into Mermaid d
 | `conditional` | Branch on condition | Diamond | `node_id{Condition?}` |
 | `conditional` (audit) | Validate all conditions | Diamond | `node_id{Validations?}` |
 | `user_prompt` | Get user input | Stadium | `node_id([User Prompt])` |
-| `reference` | Link to documentation | Subroutine | `node_id[[Reference Doc]]` |
 | `ending` | Terminal state | Rounded | `node_id(Ending Message)` |
 
 ### Shape Syntax Reference
@@ -137,7 +136,6 @@ classDef error fill:#FFB6C1,stroke:#DC143C,color:#000
 classDef conditional fill:#87CEEB,stroke:#4682B4,color:#000
 classDef userPrompt fill:#DDA0DD,stroke:#9932CC,color:#000
 classDef action fill:#F0F0F0,stroke:#696969,color:#000
-classDef reference fill:#FFFACD,stroke:#DAA520,color:#000
 ```
 
 ### Applying Classes

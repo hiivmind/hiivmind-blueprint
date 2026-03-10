@@ -190,7 +190,7 @@ Audit mode evaluates ALL conditions (no short-circuit) and collects detailed res
 | Type | Purpose |
 |------|---------|
 | `log_node` | Record node execution |
-| `log_entry` | Log event/warning/error (level: info/warning/error) |
+| `log_entry` | Log event/warning/error (level: debug/info/warning/error) |
 
 ### core/state
 | Type | Purpose | Operations |
@@ -257,7 +257,7 @@ Audit mode evaluates ALL conditions (no short-circuit) and collects detailed res
 ### core/state
 | Type | Purpose | Operators |
 |------|---------|-----------|
-| `state_check` | Check state field values | operator: equals, not_equals, null, not_null, true, false |
+| `state_check` | Check state field values | operator: equals, not_equals, null, not_null, true, false; value: (any, required for equals/not_equals) |
 
 ### extensions/filesystem
 | Type | Purpose | Checks |
@@ -268,7 +268,11 @@ Audit mode evaluates ALL conditions (no short-circuit) and collects detailed res
 | Type | Purpose | Capabilities |
 |------|---------|--------------|
 | `tool_check` | Check tool availability | capability: available, version_gte |
-| `python_module_available` | Check Python module | - |
+
+### extensions/python
+| Type | Purpose |
+|------|---------|
+| `python_module_available` | Check Python module |
 
 ### extensions/network
 | Type | Purpose |

@@ -133,11 +133,11 @@ Workflow-backed phases delegate to a self-contained workflow YAML:
 ```markdown
 ### Phase 2: Validate
 
-Execute `workflows/validate.yaml` following the execution guide:
+Execute `workflows/validate.yaml` following the execution guide (v2.0):
 
 1. Read `.hiivmind/blueprint/definitions.yaml` — build type registry
 2. Read `workflows/validate.yaml`
-3. Follow `.hiivmind/blueprint/execution-guide.md` (Init → Execute → Complete)
+3. Follow `.hiivmind/blueprint/execution-guide.md` (Initialize → Execute → Complete)
 
 **Before workflow:** Ensure `computed.target_files` is populated from Phase 1.
 **After workflow:** Check `computed.validation_results` for any failures.
@@ -320,7 +320,7 @@ consequences:
         required: true
       - name: value
         type: boolean
-        required: false
+        required: true
     payload:
       kind: state_mutation
       effect: |
@@ -473,8 +473,9 @@ endings:
     type: error
     consequences:
       - type: log_entry
-        event: "workflow_error"
-        data: { error: "${computed.last_error}" }
+        level: "error"
+        message: "workflow_error"
+        context: { error: "${computed.last_error}" }
     message: "Operation failed"
     recovery: "Check logs for details"
 ```

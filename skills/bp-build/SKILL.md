@@ -517,8 +517,21 @@ DETECT_CONTEXT():
   computed.context.has_definitions = len(definitions_files) > 0
 
   # Check for existing gateway command
-  gateway_files = Glob("commands/*/SKILL.md")
+  gateway_files = Glob("commands/*.md")
+  gateway_files += Glob("commands/*/SKILL.md")
   computed.context.has_gateway = len(gateway_files) > 0
+
+  # Check for existing execution guide
+  exec_guide_files = Glob(".hiivmind/blueprint/execution-guide.md")
+  computed.context.has_execution_guide = len(exec_guide_files) > 0
+
+  # Check for existing engine entrypoint
+  entrypoint_files = Glob(".hiivmind/blueprint/engine_entrypoint.md")
+  computed.context.has_engine_entrypoint = len(entrypoint_files) > 0
+
+  # Check for existing config
+  config_files = Glob(".hiivmind/blueprint/config.yaml")
+  computed.context.has_config = len(config_files) > 0
 
   # If plugin.json exists, extract parent plugin name
   IF computed.context.has_plugin_manifest:
@@ -792,74 +805,206 @@ CREATE_PLUGIN_MANIFEST():
 
 **Create definitions file:**
 
-If `.hiivmind/blueprint/definitions.yaml` does not exist, create a starter definitions file
-with common types. The user should copy specific types from the hiivmind-blueprint-lib catalog
-as needed.
+If `.hiivmind/blueprint/definitions.yaml` does not exist, create it by scanning the plugin's
+workflow files for used types and pulling matching definitions from the blueprint-lib catalog.
+If the file already exists, perform an idempotent merge of any newly-referenced types.
 
 ```pseudocode
+SCAN_WORKFLOW_TYPES():
+  # Scan all workflow YAML files for type references
+  consequence_types = set()
+  precondition_types = set()
+
+  workflow_files = Glob("skills/*/workflows/*.yaml")
+  workflow_files += Glob("commands/*/workflow.yaml")
+
+  FOR wf_path IN workflow_files:
+    wf = READ_YAML(wf_path)
+
+    # Scan action nodes for consequence types
+    FOR node_id, node IN wf.nodes:
+      IF node.type == "action" AND "actions" IN node:
+        FOR action IN node.actions:
+          IF "type" IN action:
+            consequence_types.add(action.type)
+
+      # Scan conditional nodes for precondition types
+      IF node.type == "conditional" AND "condition" IN node:
+        precondition_types.add(node.condition.type)
+        IF node.condition.type IN ["composite", "all_of", "any_of", "none_of", "xor_of"]:
+          FOR sub IN (node.condition.conditions OR []):
+            IF "type" IN sub:
+              precondition_types.add(sub.type)
+
+      # Scan user_prompt consequence handlers
+      IF node.type == "user_prompt" AND "on_response" IN node:
+        FOR resp_id, handler IN node.on_response:
+          IF "consequence" IN handler:
+            FOR action IN handler.consequence:
+              IF "type" IN action:
+                consequence_types.add(action.type)
+
+    # Scan entry_preconditions
+    IF "entry_preconditions" IN wf:
+      FOR pre IN wf.entry_preconditions:
+        IF "type" IN pre:
+          precondition_types.add(pre.type)
+
+  RETURN { consequence_types, precondition_types }
+
+
 CREATE_DEFINITIONS():
+  Bash("mkdir -p .hiivmind/blueprint/")
+
+  scanned = SCAN_WORKFLOW_TYPES()
+
   IF computed.context.has_definitions:
-    SKIP "Definitions file already exists"
+    # Idempotent merge: add any new types not already in definitions
+    existing = READ_YAML(".hiivmind/blueprint/definitions.yaml")
+    existing_consequence_types = set(existing.consequences.keys()) IF existing.consequences ELSE set()
+    existing_precondition_types = set(existing.preconditions.keys()) IF existing.preconditions ELSE set()
+
+    new_consequences = scanned.consequence_types - existing_consequence_types
+    new_preconditions = scanned.precondition_types - existing_precondition_types
+
+    IF len(new_consequences) == 0 AND len(new_preconditions) == 0:
+      DISPLAY "Definitions file up to date — no new types found"
+      RETURN
+
+    # Merge new types from catalog into existing file
+    FOR type_name IN new_consequences:
+      catalog_def = LOOKUP_CATALOG_CONSEQUENCE(type_name)
+      IF catalog_def:
+        existing.consequences[type_name] = catalog_def
+
+    FOR type_name IN new_preconditions:
+      catalog_def = LOOKUP_CATALOG_PRECONDITION(type_name)
+      IF catalog_def:
+        existing.preconditions[type_name] = catalog_def
+
+    Write(".hiivmind/blueprint/definitions.yaml", YAML_DUMP(existing))
+    computed.files_updated.append(".hiivmind/blueprint/definitions.yaml")
+    DISPLAY "Updated: .hiivmind/blueprint/definitions.yaml (added " +
+            str(len(new_consequences) + len(new_preconditions)) + " types)"
+    RETURN
+
+  # New file: build from scan results + catalog
+  definitions = BUILD_DEFINITIONS_FROM_CATALOG(scanned)
+  Write(".hiivmind/blueprint/definitions.yaml", definitions)
+  computed.files_created.append(".hiivmind/blueprint/definitions.yaml")
+  DISPLAY "Created: .hiivmind/blueprint/definitions.yaml (" +
+          str(len(scanned.consequence_types)) + " consequence types, " +
+          str(len(scanned.precondition_types)) + " precondition types from workflow scan)"
+```
+
+**Create execution guide:**
+
+Copy the execution guide from the framework's authoritative source to the target plugin.
+
+```pseudocode
+CREATE_EXECUTION_GUIDE():
+  IF file_exists(".hiivmind/blueprint/execution-guide.md"):
+    SKIP "Execution guide already exists"
     RETURN
 
   Bash("mkdir -p .hiivmind/blueprint/")
 
-  starter_definitions = """
-# Type definitions for workflow execution
-# Copy needed types from hiivmind-blueprint-lib catalog
-# See: https://github.com/hiivmind/hiivmind-blueprint-lib
+  source_path = "${CLAUDE_PLUGIN_ROOT}/lib/patterns/execution-guide.md"
+  content = Read(source_path)
 
-nodes:
-  action:
-    description: "Execute consequences, route on success/failure"
-    execution:
-      effect: |
-        for action in node.actions:
-          result = dispatch_consequence(action, state)
-          if result.failed: return route_to(node.on_failure)
-        return route_to(node.on_success)
+  IF content IS EMPTY:
+    DISPLAY "WARNING: Could not read execution guide from: " + source_path
+    RETURN
 
-  conditional:
-    description: "Evaluate precondition and branch"
-    execution:
-      effect: |
-        if audit.enabled:
-          results = evaluate_all(node.condition)
-          store(audit.output, results)
-          passed = results.passed
-        else:
-          passed = evaluate(node.condition)
-        return route_to(branches.on_true if passed else branches.on_false)
+  Write(".hiivmind/blueprint/execution-guide.md", content)
+  computed.files_created.append(".hiivmind/blueprint/execution-guide.md")
+  DISPLAY "Created: .hiivmind/blueprint/execution-guide.md"
+```
 
-  user_prompt:
-    description: "Present question to user, route by response"
-    execution:
-      effect: |
-        prompt = build_prompt(node.prompt, state)
-        response = present_and_await(prompt)
-        state.user_responses[node_id] = response
-        handler = node.on_response[response.selected_id]
-        if handler.consequence: execute_each(handler.consequence)
-        return route_to(handler.next_node)
+**Create engine entrypoint (gateway plugins only):**
 
-consequences:
-  mutate_state:
-    description: "Modify workflow state"
-  set_flag:
-    description: "Set boolean flag in workflow state"
-  display:
-    description: "Display content to user"
+For plugins with a gateway command, provision the engine entrypoint from template.
 
-preconditions:
-  state_check:
-    description: "Check state field against a condition"
-  composite:
-    description: "Combine conditions with logical operators"
-"""
+```pseudocode
+CREATE_ENGINE_ENTRYPOINT():
+  IF NOT computed.context.has_gateway:
+    RETURN  # Not a gateway plugin — engine entrypoint not needed
 
-  Write(".hiivmind/blueprint/definitions.yaml", starter_definitions)
-  computed.files_created.append(".hiivmind/blueprint/definitions.yaml")
-  DISPLAY "Created: .hiivmind/blueprint/definitions.yaml (starter types — add more from catalog as needed)"
+  IF file_exists(".hiivmind/blueprint/engine_entrypoint.md"):
+    SKIP "Engine entrypoint already exists"
+    RETURN
+
+  Bash("mkdir -p .hiivmind/blueprint/")
+
+  template_path = "${CLAUDE_PLUGIN_ROOT}/templates/engine-entrypoint.md.template"
+  template = Read(template_path)
+
+  IF template IS EMPTY:
+    DISPLAY "WARNING: Could not read engine entrypoint template from: " + template_path
+    RETURN
+
+  result = template
+  result = replace(result, "{{engine_version}}", "2.0.0")
+  # Remove {{#if_gateway}}...{{/if_gateway}} markers (keep content — this IS a gateway plugin)
+  result = replace(result, "{{#if_gateway}}", "")
+  result = replace(result, "{{/if_gateway}}", "")
+
+  Write(".hiivmind/blueprint/engine_entrypoint.md", result)
+  computed.files_created.append(".hiivmind/blueprint/engine_entrypoint.md")
+  DISPLAY "Created: .hiivmind/blueprint/engine_entrypoint.md (v2.0.0)"
+```
+
+**Create config (gateway plugins only):**
+
+For plugins with a gateway command, provision the config from template.
+
+```pseudocode
+CREATE_CONFIG():
+  IF NOT computed.context.has_gateway:
+    RETURN  # Not a gateway plugin — config not needed
+
+  IF file_exists(".hiivmind/blueprint/config.yaml"):
+    SKIP "Config already exists"
+    RETURN
+
+  Bash("mkdir -p .hiivmind/blueprint/")
+
+  template_path = "${CLAUDE_PLUGIN_ROOT}/templates/config.yaml.template"
+  template = Read(template_path)
+
+  IF template IS EMPTY:
+    DISPLAY "WARNING: Could not read config template from: " + template_path
+    RETURN
+
+  # Read current lib_version from blueprint-lib reference
+  lib_version = Read("${CLAUDE_PLUGIN_ROOT}/.hiivmind/blueprint/config.yaml")
+    .extract("lib_version") OR "v3.1.1"
+  lib_ref = "hiivmind/hiivmind-blueprint-lib@" + lib_version
+
+  result = template
+  result = replace(result, "{{engine_version}}", "2.0.0")
+  result = replace(result, "{{lib_version}}", lib_version)
+  result = replace(result, "{{lib_ref}}", lib_ref)
+  result = replace(result, "{{schema_version}}", "2.3")
+
+  Write(".hiivmind/blueprint/config.yaml", result)
+  computed.files_created.append(".hiivmind/blueprint/config.yaml")
+  DISPLAY "Created: .hiivmind/blueprint/config.yaml"
+```
+
+**Orchestrate infrastructure provisioning:**
+
+```pseudocode
+ORCHESTRATE_INFRASTRUCTURE():
+  # Always provision these (all plugin types with workflow-backed skills)
+  CREATE_PLUGIN_MANIFEST()
+  CREATE_DEFINITIONS()
+  CREATE_EXECUTION_GUIDE()
+
+  # Gateway-specific provisioning (only if plugin has commands/ directory)
+  IF computed.context.has_gateway:
+    CREATE_ENGINE_ENTRYPOINT()
+    CREATE_CONFIG()
 ```
 
 ---
@@ -931,8 +1076,17 @@ VALIDATE_FILES():
   # Add infrastructure files
   IF ".claude-plugin/plugin.json" IN computed.files_created:
     expected_files.append(".claude-plugin/plugin.json")
-  IF ".hiivmind/blueprint/definitions.yaml" IN computed.files_created:
+  IF ".hiivmind/blueprint/definitions.yaml" IN computed.files_created OR computed.context.has_definitions:
     expected_files.append(".hiivmind/blueprint/definitions.yaml")
+
+  # Always-required blueprint files (for plugins with workflow-backed skills)
+  IF len(computed.workflow_phases) > 0:
+    expected_files.append(".hiivmind/blueprint/execution-guide.md")
+
+  # Gateway-required blueprint files
+  IF computed.context.has_gateway:
+    expected_files.append(".hiivmind/blueprint/engine_entrypoint.md")
+    expected_files.append(".hiivmind/blueprint/config.yaml")
 
   FOR file IN expected_files:
     IF file_exists(file) AND file_size(file) > 0:
@@ -944,6 +1098,14 @@ VALIDATE_FILES():
     DISPLAY "WARNING: Some files failed validation:"
     FOR file IN computed.validation.failed:
       DISPLAY "  - MISSING: " + file
+      IF file contains "execution-guide.md":
+        DISPLAY "    Fix: Run bp-build again, or copy from ${CLAUDE_PLUGIN_ROOT}/lib/patterns/execution-guide.md"
+      IF file contains "engine_entrypoint.md":
+        DISPLAY "    Fix: Run bp-build again, or populate from ${CLAUDE_PLUGIN_ROOT}/templates/engine-entrypoint.md.template"
+      IF file contains "config.yaml" AND file contains "blueprint":
+        DISPLAY "    Fix: Run bp-build again, or populate from ${CLAUDE_PLUGIN_ROOT}/templates/config.yaml.template"
+      IF file contains "definitions.yaml":
+        DISPLAY "    Fix: Run bp-build again to scan workflow types and generate definitions"
 ```
 
 ### Step 6.2: Display Summary

@@ -95,26 +95,16 @@ Flags modify workflow execution. Per-invocation only (reset for each command).
 
 ## Execution Protocol
 
-**MANDATORY:** This gateway requires loading and following execution semantics from remote sources.
+**MANDATORY:** This gateway requires loading local execution definitions before running workflows.
 
-**See:** `.hiivmind/blueprint/engine_entrypoint.md` (Engine v1.0.0) for full protocol.
+**See:** `.hiivmind/blueprint/engine_entrypoint.md` (Engine v2.0.0) for full protocol.
 
 ### Quick Summary
 
-1. **Bootstrap:** Extract version from workflow.yaml
-2. **Fetch Semantics:** Load execution rules from hiivmind-blueprint-lib
-3. **Load Local Files:** Read workflow.yaml + intent-mapping.yaml
-4. **Execute:** Run workflow per traversal semantics (initialize -> execute -> complete)
-- When `invoke_skill` consequence fires: Use Skill tool to invoke matched skill
-
-
-**Verification Checkpoint:**
-Before proceeding to Phase 3, verify:
-- `_semantics.bootstrap.phases` has 5 items ending with "execute"
-- `_semantics.bootstrap.required_sections` has exactly 4 items
-- `_semantics.traversal.phases` equals `["initialize", "execute", "complete"]`
-
-If verification fails, retry fetch.
+1. **Prerequisites:** Check tools (jq, yq, gh)
+2. **Load Local Files:** Read definitions.yaml, config.yaml, workflow.yaml, intent-mapping.yaml
+3. **Execute:** Run workflow per execution-guide.md (Initialize → Execute → Complete)
+   - When `invoke_skill` consequence fires: Use Skill tool to invoke matched skill
 
 ---
 

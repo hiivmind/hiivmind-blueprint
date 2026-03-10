@@ -43,7 +43,7 @@ This skill performs three categories of maintenance on a single workflow.yaml fi
 
 | Category | What It Does |
 |----------|--------------|
-| **Diagnose** | 4-dimension validation: schema, graph, types, state — reports all issues |
+| **Diagnose** | 5-dimension validation: schema, graph, types, state, blueprint — reports all issues |
 | **Upgrade** | Versioned migration from 2.0 to 2.4, one step at a time, with backup and idempotency |
 | **Refactor** | Structural operations: extract subflow, inline subflow, split, rename, cleanup dead code |
 
@@ -64,6 +64,7 @@ Inspect arguments for mode flags that control which phases execute:
 PARSE_MODE(args):
   computed.validate_only = false
   computed.upgrade_mode = false
+  computed.upgrade_engine = false
   computed.refactor_op = null
   computed.workflow_path = null
 
@@ -74,6 +75,10 @@ PARSE_MODE(args):
   IF args contains "--upgrade":
     computed.upgrade_mode = true
     # Jump to upgrade flow in Phase 4 after diagnosis
+
+  IF args contains "--upgrade-engine":
+    computed.upgrade_engine = true
+    # Upgrade engine_entrypoint.md and config.yaml to v2.0
 
   IF args contains "--refactor <op>":
     computed.refactor_op = extract_value(args, "--refactor")
@@ -201,7 +206,7 @@ LOAD_WORKFLOW():
 
 ## Phase 2: Diagnose
 
-Run 4-dimension validation on the loaded workflow. This phase is always executed regardless
+Run 5-dimension validation on the loaded workflow. This phase is always executed regardless
 of flags. If `computed.validate_only` is true, display the report and stop here.
 
 Initialize issue collectors:
@@ -211,7 +216,8 @@ computed.issues = {
   schema: [],
   graph: [],
   types: [],
-  state: []
+  state: [],
+  blueprint: []
 }
 ```
 
@@ -563,20 +569,108 @@ VALIDATE_STATE(workflow):
         "'" + field + "' is cleared and re-used — verify ordering")
 ```
 
-### Step 2.5: Aggregate and Report
+### Step 2.5: Blueprint Infrastructure Validation
+
+Validate the `.hiivmind/blueprint/` directory and its contents for consistency.
+
+```pseudocode
+VALIDATE_BLUEPRINT(workflow):
+  # Determine plugin type
+  has_gateway = len(Glob("commands/*.md")) > 0 OR len(Glob("commands/*/SKILL.md")) > 0
+  has_workflow_skills = len(Glob("skills/*/workflows/*.yaml")) > 0
+
+  # 2.5a: Directory existence
+  IF NOT directory_exists(".hiivmind/blueprint/"):
+    IF has_gateway OR has_workflow_skills:
+      append_issue("blueprint", "error", ".hiivmind/blueprint/",
+        "Blueprint directory missing. Fix: Run bp-build to provision .hiivmind/blueprint/ files")
+    RETURN  # No point checking files if directory missing
+
+  # 2.5b: Required files based on plugin type
+  IF has_workflow_skills:
+    IF NOT file_exists(".hiivmind/blueprint/execution-guide.md"):
+      append_issue("blueprint", "error", "execution-guide.md",
+        "Missing execution-guide.md (required for workflow-backed skills). " +
+        "Fix: Run bp-build or copy from ${CLAUDE_PLUGIN_ROOT}/lib/patterns/execution-guide.md")
+    IF NOT file_exists(".hiivmind/blueprint/definitions.yaml"):
+      append_issue("blueprint", "error", "definitions.yaml",
+        "Missing definitions.yaml (required for workflow-backed skills). " +
+        "Fix: Run bp-build to scan workflow types and generate definitions")
+
+  IF has_gateway:
+    IF NOT file_exists(".hiivmind/blueprint/engine_entrypoint.md"):
+      append_issue("blueprint", "error", "engine_entrypoint.md",
+        "Missing engine_entrypoint.md (required for gateway plugins). " +
+        "Fix: Run bp-build or populate from ${CLAUDE_PLUGIN_ROOT}/templates/engine-entrypoint.md.template")
+    IF NOT file_exists(".hiivmind/blueprint/config.yaml"):
+      append_issue("blueprint", "error", "config.yaml",
+        "Missing config.yaml (required for gateway plugins). " +
+        "Fix: Run bp-build or populate from ${CLAUDE_PLUGIN_ROOT}/templates/config.yaml.template")
+
+  # 2.5c: definitions.yaml type completeness
+  IF file_exists(".hiivmind/blueprint/definitions.yaml"):
+    definitions = READ_YAML(".hiivmind/blueprint/definitions.yaml")
+    defined_consequences = set(definitions.consequences.keys()) IF definitions.consequences ELSE set()
+    defined_preconditions = set(definitions.preconditions.keys()) IF definitions.preconditions ELSE set()
+
+    # Scan workflow for referenced types
+    FOR node_id, node IN workflow.nodes:
+      IF node.type == "action" AND "actions" IN node:
+        FOR action IN node.actions:
+          IF "type" IN action AND action.type NOT IN defined_consequences:
+            append_issue("blueprint", "error", node_id,
+              "Consequence type '" + action.type + "' used in workflow but missing from definitions.yaml. " +
+              "Fix: Add '" + action.type + "' to definitions.yaml consequences section from catalog")
+      IF node.type == "conditional" AND "condition" IN node:
+        IF node.condition.type NOT IN defined_preconditions:
+          append_issue("blueprint", "error", node_id,
+            "Precondition type '" + node.condition.type + "' used in workflow but missing from definitions.yaml. " +
+            "Fix: Add '" + node.condition.type + "' to definitions.yaml preconditions section from catalog")
+
+  # 2.5d: Version consistency (config.yaml vs engine_entrypoint.md)
+  IF file_exists(".hiivmind/blueprint/config.yaml") AND file_exists(".hiivmind/blueprint/engine_entrypoint.md"):
+    config = READ_YAML(".hiivmind/blueprint/config.yaml")
+    entrypoint_content = Read(".hiivmind/blueprint/engine_entrypoint.md")
+    # Parse version from "## Version: X.Y.Z" header
+    entrypoint_version = extract_pattern(entrypoint_content, /## Version: (\S+)/)
+
+    IF config.engine_version != entrypoint_version:
+      append_issue("blueprint", "warning", "config.yaml",
+        "engine_version '" + config.engine_version + "' in config.yaml does not match '" +
+        entrypoint_version + "' in engine_entrypoint.md. " +
+        "Fix: Update config.yaml engine_version to '" + entrypoint_version + "'")
+
+  # 2.5e: Obsolete remote-fetching artifacts
+  IF file_exists(".hiivmind/blueprint/config.yaml"):
+    config_content = Read(".hiivmind/blueprint/config.yaml")
+    IF "lib_raw_url" IN config_content:
+      append_issue("blueprint", "warning", "config.yaml",
+        "Obsolete field 'lib_raw_url' found (runtime fetching artifact). " +
+        "Fix: Remove lib_raw_url from config.yaml — upgrade to engine v2.0")
+
+  IF file_exists(".hiivmind/blueprint/engine_entrypoint.md"):
+    entrypoint_content = Read(".hiivmind/blueprint/engine_entrypoint.md")
+    IF "Fetch Execution Semantics" IN entrypoint_content OR "gh api repos/hiivmind" IN entrypoint_content:
+      append_issue("blueprint", "warning", "engine_entrypoint.md",
+        "Obsolete remote-fetching protocol detected (v1.0.0 artifact). " +
+        "Fix: Upgrade to engine_entrypoint.md v2.0 — run bp-maintain --upgrade-engine")
+```
+
+### Step 2.6: Aggregate and Report
 
 Aggregate findings by severity:
 
 ```pseudocode
 AGGREGATE_ISSUES():
   computed.issue_summary = {
-    schema: { errors: 0, warnings: 0, info: 0 },
-    graph:  { errors: 0, warnings: 0, info: 0 },
-    types:  { errors: 0, warnings: 0, info: 0 },
-    state:  { errors: 0, warnings: 0, info: 0 }
+    schema:    { errors: 0, warnings: 0, info: 0 },
+    graph:     { errors: 0, warnings: 0, info: 0 },
+    types:     { errors: 0, warnings: 0, info: 0 },
+    state:     { errors: 0, warnings: 0, info: 0 },
+    blueprint: { errors: 0, warnings: 0, info: 0 }
   }
 
-  FOR dimension IN ["schema", "graph", "types", "state"]:
+  FOR dimension IN ["schema", "graph", "types", "state", "blueprint"]:
     FOR issue IN computed.issues[dimension]:
       computed.issue_summary[dimension][issue.severity] += 1
 
@@ -608,12 +702,13 @@ Display the diagnosis report:
 | Graph     | {status} | {n} | {n} | {n} |
 | Types     | {status} | {n} | {n} | {n} |
 | State     | {status} | {n} | {n} | {n} |
+| Blueprint | {status} | {n} | {n} | {n} |
 
 **Overall:** {FAIL if total_errors > 0 else WARN if total_warnings > 0 else PASS}
 
 ### Issues
 
-{for dimension in ["schema", "graph", "types", "state"]}
+{for dimension in ["schema", "graph", "types", "state", "blueprint"]}
 {if computed.issues[dimension]}
 #### {dimension}
 
@@ -672,6 +767,23 @@ PLAN_OPERATIONS():
         reason: "Node '" + node_id + "' has " + str(len(node.actions)) + " actions (threshold: 5)"
       })
 
+  # Blueprint infrastructure issues -> suggest engine upgrade
+  has_remote_artifacts = any(i.message contains "remote-fetching" OR i.message contains "lib_raw_url"
+                             for i IN computed.issues.blueprint)
+  has_missing_blueprint = any(i.severity == "error" for i IN computed.issues.blueprint)
+  IF has_remote_artifacts:
+    computed.recommendations.append({
+      operation: "upgrade-engine",
+      priority: 1,
+      reason: "Obsolete remote-fetching artifacts detected — upgrade to engine v2.0"
+    })
+  IF has_missing_blueprint:
+    computed.recommendations.append({
+      operation: "rebuild-blueprint",
+      priority: 1,
+      reason: "Missing .hiivmind/blueprint/ files — run bp-build to provision"
+    })
+
   # No issues found
   IF computed.total_errors == 0 AND computed.total_warnings == 0:
     computed.recommendations.append({
@@ -683,8 +795,8 @@ PLAN_OPERATIONS():
 
 ### Step 3.2: Present Plan
 
-If `computed.upgrade_mode` or `computed.refactor_op` is set from flags, skip the menu and
-proceed directly to Phase 4 with the specified operation.
+If `computed.upgrade_mode`, `computed.upgrade_engine`, or `computed.refactor_op` is set from
+flags, skip the menu and proceed directly to Phase 4 with the specified operation.
 
 Otherwise, present findings and let the user choose:
 
@@ -720,6 +832,10 @@ Otherwise, present findings and let the user choose:
         "description": "Remove unreachable nodes, unused endings, unused state"
       },
       {
+        "label": "Upgrade engine to v2.0",
+        "description": "Replace engine_entrypoint.md, update config.yaml, deploy execution-guide.md"
+      },
+      {
         "label": "No changes",
         "description": "Review complete — do not modify the workflow"
       }
@@ -751,13 +867,17 @@ HANDLE_PLAN(response):
     CASE "Refactor: cleanup dead code":
       computed.selected_operation = "cleanup"
       GOTO Phase 4: Refactor Flow
+    CASE "Upgrade engine to v2.0":
+      computed.selected_operation = "upgrade-engine"
+      GOTO Phase 4: Engine Upgrade Flow
     CASE "No changes":
       DISPLAY "Maintenance complete. No changes applied."
       EXIT
 ```
 
 If multiple operations are recommended (e.g., upgrade + refactor), suggest order:
-upgrade first, then refactor. This ensures type migrations happen before structural changes.
+engine upgrade first, then schema upgrade, then refactor. This ensures infrastructure is
+correct before type migrations and structural changes.
 
 ---
 
@@ -909,6 +1029,93 @@ APPLY_MIGRATIONS():
 
 The detailed migration functions for each version step are documented in
 `patterns/migration-table.md`. Each function is idempotent per `patterns/idempotency-guards.md`.
+
+---
+
+### Engine Upgrade Flow
+
+Executes when `computed.upgrade_engine == true`. Upgrades the `.hiivmind/blueprint/` engine
+infrastructure from v1.0.0 (remote fetching) to v2.0 (local only).
+
+```pseudocode
+UPGRADE_ENGINE():
+  # Step 1: Detect current engine version
+  config_path = ".hiivmind/blueprint/config.yaml"
+  IF file_exists(config_path):
+    config = READ_YAML(config_path)
+    current_version = config.engine_version OR "unknown"
+  ELSE:
+    current_version = "unknown"
+
+  # Step 2: Idempotency check — already at v2.0?
+  IF current_version == "2.0.0":
+    DISPLAY "Engine already at v2.0.0 — no upgrade needed"
+    RETURN
+
+  DISPLAY "Upgrading engine from " + current_version + " to 2.0.0..."
+  computed.engine_changes = []
+
+  # Step 3: Replace engine_entrypoint.md with v2.0
+  entrypoint_path = ".hiivmind/blueprint/engine_entrypoint.md"
+  IF file_exists(entrypoint_path):
+    existing_content = Read(entrypoint_path)
+    # Check for local customizations (drift detection)
+    template_path = "${CLAUDE_PLUGIN_ROOT}/templates/engine-entrypoint.md.template"
+    template = Read(template_path)
+    v2_content = replace(template, "{{engine_version}}", "2.0.0")
+    v2_content = replace(v2_content, "{{#if_gateway}}", "")
+    v2_content = replace(v2_content, "{{/if_gateway}}", "")
+
+    # Create backup of existing entrypoint
+    backup_path = entrypoint_path + ".v1-backup"
+    Write(backup_path, existing_content)
+    DISPLAY "  Backed up: " + entrypoint_path + " → " + backup_path
+
+    Write(entrypoint_path, v2_content)
+    computed.engine_changes.append("Replaced engine_entrypoint.md with v2.0")
+  ELSE:
+    # No existing entrypoint — create from template
+    v2_content = Read("${CLAUDE_PLUGIN_ROOT}/templates/engine-entrypoint.md.template")
+    v2_content = replace(v2_content, "{{engine_version}}", "2.0.0")
+    v2_content = replace(v2_content, "{{#if_gateway}}", "")
+    v2_content = replace(v2_content, "{{/if_gateway}}", "")
+    Bash("mkdir -p .hiivmind/blueprint/")
+    Write(entrypoint_path, v2_content)
+    computed.engine_changes.append("Created engine_entrypoint.md v2.0")
+
+  # Step 4: Update config.yaml — bump version, remove lib_raw_url
+  IF file_exists(config_path):
+    config.engine_version = "2.0.0"
+    IF "lib_raw_url" IN config:
+      DELETE config.lib_raw_url
+      computed.engine_changes.append("Removed lib_raw_url from config.yaml")
+    Write(config_path, YAML_DUMP(config))
+    computed.engine_changes.append("Updated config.yaml engine_version to 2.0.0")
+  ELSE:
+    # Create config from template
+    config_template = Read("${CLAUDE_PLUGIN_ROOT}/templates/config.yaml.template")
+    config_content = replace(config_template, "{{engine_version}}", "2.0.0")
+    config_content = replace(config_content, "{{lib_version}}", "v3.1.1")
+    config_content = replace(config_content, "{{lib_ref}}", "hiivmind/hiivmind-blueprint-lib@v3.1.1")
+    config_content = replace(config_content, "{{schema_version}}", "2.3")
+    Write(config_path, config_content)
+    computed.engine_changes.append("Created config.yaml with engine_version 2.0.0")
+
+  # Step 5: Deploy execution-guide.md if missing
+  IF NOT file_exists(".hiivmind/blueprint/execution-guide.md"):
+    source = Read("${CLAUDE_PLUGIN_ROOT}/lib/patterns/execution-guide.md")
+    Write(".hiivmind/blueprint/execution-guide.md", source)
+    computed.engine_changes.append("Deployed execution-guide.md")
+
+  # Report changes
+  DISPLAY ""
+  DISPLAY "## Engine Upgrade Complete"
+  DISPLAY ""
+  FOR change IN computed.engine_changes:
+    DISPLAY "  ✓ " + change
+  DISPLAY ""
+  DISPLAY "Engine upgraded to v2.0.0 (local-only model)"
+```
 
 ---
 

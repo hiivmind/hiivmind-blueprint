@@ -1,3 +1,6 @@
+> **DEPRECATED (v1.0.0 backup):** This template is superseded by `templates/engine-entrypoint.md.template` (v2.0).
+> Retained for history only — do not use for new installations.
+
 # Hiivmind Blueprint Engine Entrypoint
 ## Version: {{engine_version}}
 
