@@ -46,7 +46,7 @@ Phase 3 (prose)     → reads computed.validation_results, displays report
 ```
 
 For workflow-backed phases:
-1. Read `.hiivmind/blueprint/definitions.yaml` — build type registry
+1. Load type registry from `blueprint-types.md` (see [hiivmind-blueprint-lib](https://github.com/hiivmind/hiivmind-blueprint-lib/blob/main/blueprint-types.md))
 2. Read the workflow YAML file
 3. Follow the 3-phase workflow execution model (Init → Execute → Complete)
 4. After completion, `computed.*` values from the workflow are available to subsequent phases
@@ -72,7 +72,7 @@ Phase 3: Complete
     Return result type
 ```
 
-All type definitions are read from `.hiivmind/blueprint/definitions.yaml` — no remote fetching, no version resolution.
+All type definitions are loaded from `blueprint-types.md` in `hiivmind-blueprint-lib` — no remote fetching, no version resolution, no local `definitions.yaml` file required.
 
 ---
 
@@ -81,7 +81,7 @@ All type definitions are read from `.hiivmind/blueprint/definitions.yaml` — no
 ```
 FUNCTION initialize(workflow_path):
     # 1. Read local definitions
-    definitions = parse_yaml(read_file(".hiivmind/blueprint/definitions.yaml"))
+    definitions = load_blueprint_types("blueprint-types.md")  # from hiivmind-blueprint-lib
     types = {
         nodes: definitions.nodes,
         consequences: definitions.consequences,

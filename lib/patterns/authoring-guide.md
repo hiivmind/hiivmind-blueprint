@@ -135,7 +135,7 @@ Workflow-backed phases delegate to a self-contained workflow YAML:
 
 Execute `workflows/validate.yaml` following the execution guide (v2.0):
 
-1. Read `.hiivmind/blueprint/definitions.yaml` — build type registry
+1. Load type registry from `blueprint-types.md` (see [hiivmind-blueprint-lib](https://github.com/hiivmind/hiivmind-blueprint-lib/blob/main/blueprint-types.md))
 2. Read `workflows/validate.yaml`
 3. Follow `.hiivmind/blueprint/execution-guide.md` (Initialize → Execute → Complete)
 
@@ -266,100 +266,24 @@ endings:                  # Map of ending_id → ending definition
 
 ---
 
-## 8. Setting Up the Definitions File
+## 8. Type Definitions (v7.0.0)
 
-Every repo that uses blueprint workflows needs a centralized definitions file:
+As of v7.0.0, `hiivmind-blueprint-lib` ships a single consolidated file:
 
 ```
-.hiivmind/blueprint/definitions.yaml
+blueprint-types.md
 ```
 
-This file combines **nodes**, **consequences**, and **preconditions** — all the types used by any workflow in the repo.
+See the complete type catalog at:
+[https://github.com/hiivmind/hiivmind-blueprint-lib/blob/main/blueprint-types.md](https://github.com/hiivmind/hiivmind-blueprint-lib/blob/main/blueprint-types.md)
 
-### Format
+The catalog covers all **nodes**, **consequences**, and **preconditions** in a single Markdown document. The LLM reads this file directly — no `.hiivmind/blueprint/definitions.yaml` is required.
 
-The definitions file uses a slimmed-down format — only execution-relevant fields:
-
-```yaml
-# .hiivmind/blueprint/definitions.yaml
-
-nodes:
-  action:
-    description: "Execute consequences, route on success/failure"
-    execution:
-      effect: |
-        for action in node.actions:
-          result = dispatch_consequence(action, state)
-          if result.failed: return route_to(node.on_failure)
-        return route_to(node.on_success)
-
-  conditional:
-    description: "Evaluate precondition, branch on result"
-    execution:
-      effect: |
-        result = evaluate_precondition(node.condition, state)
-        if result: return route_to(node.branches.on_true)
-        else: return route_to(node.branches.on_false)
-
-  user_prompt:
-    description: "Present question, handle response"
-    execution:
-      effect: |
-        present_prompt(node.prompt, state)
-        response = await_user_input()
-        handler = match_response(response, node.on_response)
-        execute_consequences(handler.consequence, state)
-        return route_to(handler.next_node)
-
-consequences:
-  set_flag:
-    description: "Set a boolean flag"
-    parameters:
-      - name: flag
-        type: string
-        required: true
-      - name: value
-        type: boolean
-        required: true
-    payload:
-      kind: state_mutation
-      effect: |
-        state.flags[params.flag] = params.value ?? true
-
-  # ...only include types your workflows actually use
-
-preconditions:
-  state_check:
-    description: "Check state field against a condition"
-    parameters:
-      - name: field
-        type: string
-        required: true
-      - name: operator
-        type: string
-        required: true
-    evaluation:
-      effect: |
-        val = resolve_path(state, field)
-        if operator == "not_null": return val != null
-        if operator == "equals":  return val == value
-        if operator == "true":    return val == true
-```
-
-### Copying From the Catalog
-
-The type definitions in `hiivmind-blueprint-lib` are the authoritative catalog:
-- `consequences/core.yaml`, `intent.yaml`, `extensions.yaml`
-- `preconditions/core.yaml`, `extensions.yaml`
-- `nodes/workflow_nodes.yaml`
-
-When copying to your definitions file:
-1. **Keep:** `description` (as a single string, not the `brief`/`detail` object), `parameters`, `payload`/`evaluation`/`execution`
-2. **Omit:** `category`, `since`, `replaces`, `related`, `state_reads`, `state_writes`, `examples`
+> **Note:** The `.hiivmind/blueprint/definitions.yaml` file is no longer needed. If you have one from a pre-v7.0.0 setup, it can be deleted — the skill loads `blueprint-types.md` automatically from the catalog.
 
 ### Which Types to Include
 
-Only include types your workflows actually use. Scan your workflow YAML for:
+When authoring workflows, reference types from the catalog. When setting up your SKILL.md, instruct the LLM to load the catalog from `blueprint-types.md`. Scan your workflow YAML for:
 - All `type:` values in action node `actions` arrays → consequence types needed
 - All `type:` values in conditional node `condition` blocks → precondition types needed
 - Recurse into `composite` conditions for nested precondition types
@@ -369,54 +293,16 @@ Only include types your workflows actually use. Scan your workflow YAML for:
 
 ## 9. Type Catalog Quick Reference
 
-### Consequence Types (22)
+As of v7.0.0, the complete type catalog lives in a single file in `hiivmind-blueprint-lib`:
 
-| Type | Category | What It Does |
-|------|----------|-------------|
-| `set_flag` | core/state | Set a boolean flag in state |
-| `mutate_state` | core/state | Set, append, clear, or merge state fields |
-| `evaluate` | core/evaluation | Evaluate expression, store as flag |
-| `compute` | core/evaluation | Evaluate expression, store as computed value |
-| `display` | core/interaction | Display text, table, JSON, or markdown |
-| `create_checkpoint` | core/control | Save state snapshot for rollback |
-| `rollback_checkpoint` | core/control | Restore state from checkpoint |
-| `spawn_agent` | core/control | Launch sub-agent task |
-| `inline` | core/control | Execute inline pseudocode |
-| `invoke_skill` | core/control | Invoke another skill |
-| `set_timestamp` | core/utility | Store current timestamp |
-| `evaluate_keywords` | core/intent | 3VL keyword evaluation |
-| `parse_intent_flags` | core/intent | Parse intent into 3VL flags |
-| `match_3vl_rules` | core/intent | Match 3VL flags against rules |
-| `log_node` | core/logging | Log node execution |
-| `log_entry` | core/logging | Log custom event |
-| `local_file_ops` | extensions/file-system | Read, write, mkdir, delete files |
-| `git_ops_local` | extensions/git | Clone, pull, fetch, get-sha |
-| `compute_hash` | extensions/hashing | Compute content hash |
-| `web_ops` | extensions/web | HTTP fetch, cache |
-| `run_command` | extensions/scripting | Run bash/python/node commands |
-| `install_tool` | extensions/package | Install a tool/package |
+**[blueprint-types.md](https://github.com/hiivmind/hiivmind-blueprint-lib/blob/main/blueprint-types.md)**
 
-### Precondition Types (9)
+The catalog includes:
+- **22 consequence types** — state mutations, control flow, display, intent detection, logging, and extensions
+- **9 precondition types** — state checks, path checks, tool checks, network, git, and web
+- **3 node types** — `action`, `conditional`, `user_prompt`
 
-| Type | Category | What It Checks |
-|------|----------|---------------|
-| `composite` | core/composite | Combine conditions (all, any, none, xor) |
-| `evaluate_expression` | core/expression | Evaluate arbitrary expression |
-| `state_check` | core/state | Check state field (true, false, equals, not_null, null) |
-| `path_check` | extensions/filesystem | File/directory exists, is_file, is_directory, contains_text |
-| `tool_check` | extensions/tools | Tool available, version check |
-| `network_available` | extensions/network | Network connectivity |
-| `python_module_available` | extensions/python | Python module importable |
-| `source_check` | extensions/git | Source exists, cloned, has_updates |
-| `fetch_check` | extensions/web | HTTP fetch succeeded, has_content |
-
-### Node Types (3)
-
-| Type | Purpose | Routing |
-|------|---------|---------|
-| `action` | Execute consequences | `on_success` / `on_failure` |
-| `conditional` | Branch on precondition | `branches.on_true` / `branches.on_false` |
-| `user_prompt` | Ask user, route by response | `on_response.{handler_id}.next_node` |
+Refer to `blueprint-types.md` for the authoritative list with full parameter definitions and pseudocode effects.
 
 ---
 
@@ -712,11 +598,13 @@ Levels control what's displayed:
 
 ---
 
-## Appendix: Migration From Remote Definitions
+## Appendix: Migration Guide
+
+### Migrating from Remote Definitions (v5.0 → v6.0)
 
 If migrating from the old `definitions.source` model:
 
-### Before (v5.0 and earlier)
+**Before (v5.0 and earlier):**
 
 ```yaml
 # In workflow.yaml
@@ -726,21 +614,34 @@ definitions:
 # Types fetched from GitHub at runtime
 ```
 
-### After (v6.0)
+**After (v6.0):**
 
 ```yaml
 # workflow.yaml — no definitions block needed
 
-# Types in .hiivmind/blueprint/definitions.yaml
-# Copied from blueprint-lib catalog at authoring time
+# Types loaded from local definitions at runtime
 ```
 
 Steps:
-1. Identify all types used across your workflows
-2. Copy their slimmed-down definitions from the blueprint-lib catalog
-3. Place them in `.hiivmind/blueprint/definitions.yaml`
-4. Remove the `definitions:` block from all workflow YAML files
-5. Update SKILL.md templates to read the local definitions file
+1. Remove the `definitions:` block from all workflow YAML files
+2. Update SKILL.md templates to load from the local definitions file
+
+### Migrating from Local Definitions File (v6.0 → v7.0.0)
+
+If migrating from the v6.0 local definitions model:
+
+**Before (v6.0):**
+- Type definitions stored in `.hiivmind/blueprint/definitions.yaml` per repo
+- SKILL.md instructed the LLM to read that file first
+
+**After (v7.0.0):**
+- `.hiivmind/blueprint/definitions.yaml` is **no longer required**
+- The skill loads the type catalog from `blueprint-types.md` in `hiivmind-blueprint-lib` automatically
+- See [blueprint-types.md](https://github.com/hiivmind/hiivmind-blueprint-lib/blob/main/blueprint-types.md) for the complete catalog
+
+Steps:
+1. Delete `.hiivmind/blueprint/definitions.yaml` from your repo (if present)
+2. Update your SKILL.md templates to reference `blueprint-types.md` instead of `definitions.yaml`
 
 ---
 
@@ -748,5 +649,5 @@ Steps:
 
 - **Skill Analysis:** `patterns/skill-analysis.md`
 - **Execution Guide:** `patterns/execution-guide.md`
-- **Node Type Definitions:** `hiivmind/hiivmind-blueprint-lib/nodes/workflow_nodes.yaml`
+- **Type Catalog:** [blueprint-types.md](https://github.com/hiivmind/hiivmind-blueprint-lib/blob/main/blueprint-types.md) in `hiivmind-blueprint-lib`
 - **Prompts Config:** `references/prompts-config-examples.md`
