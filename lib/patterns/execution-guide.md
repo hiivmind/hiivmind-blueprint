@@ -331,6 +331,24 @@ FUNCTION complete_restart(ending, workflow, types, state):
     GOTO Phase 2 (execute loop)
 ```
 
+### Executing `ending` nodes
+
+New in blueprint-lib v8. Reaching a node whose ID maps to the `endings:` map (rather than `nodes:`) terminates the FSM for the current workflow run. The Phase 3 `complete()` function above handles all ending behavior; this section summarises the runtime contract.
+
+**Runtime steps at an ending node:**
+
+1. Record the outcome (`success | failure | error | cancelled | indeterminate`) — surfaces to callers as the run's terminal outcome.
+2. Execute `consequences[]` if present — best-effort; log any failures but do NOT abort termination on consequence error.
+3. Apply `behavior` (default: display `message` / `summary`):
+   - **`silent`** — complete without emitting output.
+   - **`delegate`** — hand off to the specified `skill` with `args` and `context`. The run is terminated from the workflow's perspective; the delegated skill continues the conversation.
+   - **`restart`** — re-enter the workflow at `target_node`, bounded by `max_restarts`. `reset_state: true` clears the workflow's state (preserving `_restart_count`); `false` retains it. When `max_restarts` is exceeded, the restart is suppressed and the runtime treats the node as a normal terminal.
+4. Emit a terminal signal to the caller.
+
+**Invariant:** ending nodes have no transition slots. Schema rejects `on_success`/`on_failure`/`on_true`/`on_false`/`on_unknown`/`on_response` on an ending.
+
+**Note:** `behavior: restart` declares *re-entry*, not a transition. The ending fires first (outcome + consequences), then the restart happens. Observers should see the outcome event before the FSM re-enters at `target_node`.
+
 ---
 
 ## 5. Consequence Dispatch
@@ -374,6 +392,29 @@ FUNCTION execute_consequence(consequence, types, state):
         DEFAULT:
             THROW "Unknown payload kind: {type_def.payload.kind}"
 ```
+
+### Executing `mcp_tool_call` consequences
+
+New in blueprint-lib v8 (BL1). `mcp_tool_call` is a generic MCP dispatcher. Runtime implementations may invoke the tool in one of two topologies:
+
+**Topology A — Runtime-invokes:**
+The runtime has its own MCP client. It resolves the alias via the workflow's `data_mcps:`, invokes the tool on the declared server, and stores the result at `store_as`. The FSM proceeds to `on_success` or `on_failure` based on the tool result.
+
+**Topology B — LLM-invokes:**
+The runtime emits a tool *reference* in its response to the LLM agent. The LLM's own MCP client invokes the tool, captures the result, and feeds it back to the runtime on the next FSM tick. Used by progressive-disclosure runtimes where the control-MCP never invokes data-MCPs itself (see `hiivmind-control-mcp` architecture).
+
+**Resolution pipeline (both topologies):**
+
+1. Parse `tool: <alias>.<tool_name>`.
+2. Look up `<alias>` in the workflow's `data_mcps:` block.
+3. Match `"name@semver-range"` against connected data-MCP servers.
+4. If `params_type` is present: resolve it against the workflow's `payload_types:` block at load time (a missing reference is an `unresolved_params_type` error).
+5. Runtime-time: the decision whether to validate `params` against the payload type's shape is a runtime choice. Blueprint-lib does not mandate it.
+
+**Store-as behavior:**
+
+- Topology A: runtime writes the resolved tool result at `store_as`.
+- Topology B: the LLM reports the tool result back; the runtime captures it and writes to `store_as` before the next `get_next_node` call.
 
 ---
 
