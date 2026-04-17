@@ -1,0 +1,198 @@
+name: blueprint-gateway
+version: "2.0.0"
+description: Gateway workflow for hiivmind-blueprint plugin
+# Routes to 7 journey-oriented bp-* skills via intent detection or interactive menu
+
+definitions:
+  source: "hiivmind/hiivmind-blueprint-lib"
+  version: "{computed.lib_version}"
+
+start_node: route_by_intent
+
+initial_state:
+  flags:
+    help_requested: false
+    verbose: false
+  computed:
+    matched_action: null
+    matched_skill: null
+  prompts:
+    mode: "interactive"
+    tabular:
+      match_strategy: "fuzzy"
+      fuzzy_threshold: 0.7
+      other_handler: "prompt"
+
+nodes:
+  route_by_intent:
+    type: conditional
+    description: "Check if intent was detected from user input"
+    condition:
+      type: state_check
+      field: computed.matched_action
+      operator: not_null
+    branches:
+      on_true: resolve_action
+      on_false: show_menu
+
+  resolve_action:
+    type: conditional
+    description: "Route help requests to help display, otherwise to skill dispatch"
+    condition:
+      type: state_check
+      field: computed.matched_action
+      operator: equals
+      value: "show_help"
+    branches:
+      on_true: display_help
+      on_false: check_menu_fallback
+
+  check_menu_fallback:
+    type: conditional
+    description: "Check if fallback triggered menu action"
+    condition:
+      type: state_check
+      field: computed.matched_action
+      operator: equals
+      value: "show_menu"
+    branches:
+      on_true: show_menu
+      on_false: dispatch_skill
+
+  dispatch_skill:
+    type: action
+    description: "Copy matched action to matched skill for dispatch"
+    actions:
+      - type: mutate_state
+        operation: set
+        field: computed.matched_skill
+        value: "${computed.matched_action}"
+    on_success: execute_skill
+    on_failure: error_skill_failed
+
+  show_menu:
+    type: user_prompt
+    description: "Display available skills menu"
+    prompt:
+      question: "What would you like to do?"
+      header: "Blueprint"
+      options:
+        - id: build
+          label: "Build"
+          description: "Create a new skill from an idea"
+        - id: assess
+          label: "Assess"
+          description: "Understand where a skill/plugin sits on the coverage spectrum"
+        - id: enhance
+          label: "Enhance"
+          description: "Add structure to a prose skill (state, pseudocode, guards)"
+        - id: extract
+          label: "Extract"
+          description: "Formalize a prose skill into workflow YAML"
+        - id: maintain
+          label: "Maintain"
+          description: "Fix, upgrade, or refactor existing workflows"
+        - id: visualize
+          label: "Visualize"
+          description: "Generate a diagram from a workflow"
+        - id: gateway
+          label: "Gateway"
+          description: "Set up intent routing for your plugin"
+    on_response:
+      build:
+        consequence:
+          - type: mutate_state
+            operation: set
+            field: computed.matched_skill
+            value: "bp-build"
+        next_node: execute_skill
+      assess:
+        consequence:
+          - type: mutate_state
+            operation: set
+            field: computed.matched_skill
+            value: "bp-assess"
+        next_node: execute_skill
+      enhance:
+        consequence:
+          - type: mutate_state
+            operation: set
+            field: computed.matched_skill
+            value: "bp-enhance"
+        next_node: execute_skill
+      extract:
+        consequence:
+          - type: mutate_state
+            operation: set
+            field: computed.matched_skill
+            value: "bp-extract"
+        next_node: execute_skill
+      maintain:
+        consequence:
+          - type: mutate_state
+            operation: set
+            field: computed.matched_skill
+            value: "bp-maintain"
+        next_node: execute_skill
+      visualize:
+        consequence:
+          - type: mutate_state
+            operation: set
+            field: computed.matched_skill
+            value: "bp-visualize"
+        next_node: execute_skill
+      gateway:
+        consequence:
+          - type: mutate_state
+            operation: set
+            field: computed.matched_skill
+            value: "bp-gateway"
+        next_node: execute_skill
+
+  execute_skill:
+    type: action
+    description: "Execute the selected skill"
+    actions:
+      - type: invoke_skill
+        skill_path: "${CLAUDE_PLUGIN_ROOT}/skills/${computed.matched_skill}/SKILL.md"
+    on_success: success_completed
+    on_failure: error_skill_failed
+
+  display_help:
+    type: action
+    description: "Display gateway help information"
+    actions:
+      - type: display
+        content: |
+          # Blueprint - Authoring Tools
+
+          ## Available Journeys
+          | Journey | Purpose |
+          |---------|---------|
+          | `build` | Create a new skill from an idea |
+          | `assess` | Understand where a skill/plugin sits on the coverage spectrum |
+          | `enhance` | Add structure to a prose skill (state, pseudocode, guards) |
+          | `extract` | Formalize a prose skill into workflow YAML |
+          | `maintain` | Fix, upgrade, or refactor existing workflows |
+          | `visualize` | Generate a diagram from a workflow |
+          | `gateway` | Set up intent routing for your plugin |
+
+          ## Usage
+          ```
+          /blueprint                     # Show interactive menu
+          /blueprint [request]           # Route by natural language
+          /blueprint --help              # This help screen
+          ```
+    on_success: success_completed
+    on_failure: error_skill_failed
+
+endings:
+  success_completed:
+    type: success
+    message: "Operation completed successfully"
+
+  error_skill_failed:
+    type: error
+    message: "Skill execution failed: ${error.message}"
+    recovery:
+      suggestion: "Check the error message and try again"

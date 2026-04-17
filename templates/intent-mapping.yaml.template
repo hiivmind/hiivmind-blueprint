@@ -153,7 +153,6 @@ intent_rules:
     conditions:
       has_help_flag: T
     action: show_full_help
-    priority: 100
     description: "Explicit --help or -h flag"
 
   # Runtime flags documentation
@@ -161,16 +160,14 @@ intent_rules:
     conditions:
       has_flags_help: T
     action: show_flag_help
-    priority: 95
     description: "User wants to understand runtime flags"
 
-  # Configuration topic help (priority 90 - above skill help)
+  # Configuration topic help
   - name: "help_with_logging"
     conditions:
       has_help: T
       has_logging_help: T
     action: show_logging_help
-    priority: 90
     description: "Help for logging configuration"
 
   - name: "help_with_display"
@@ -178,7 +175,6 @@ intent_rules:
       has_help: T
       has_display_help: T
     action: show_display_help
-    priority: 90
     description: "Help for display configuration"
 
   - name: "help_with_prompts"
@@ -186,7 +182,6 @@ intent_rules:
       has_help: T
       has_prompts_help: T
     action: show_prompts_help
-    priority: 90
     description: "Help for prompts configuration"
 
   # Skill-specific help (generated per-skill)
@@ -196,7 +191,6 @@ intent_rules:
       has_help: T
       has_{{skill_id}}: T
     action: show_skill_help_{{skill_id}}
-    priority: 85
     description: "Help with {{skill_name}}"
   {{/skill_help_rules}}
 
@@ -204,7 +198,7 @@ intent_rules:
   # SKILL RULES (Customize for each plugin)
   # ═══════════════════════════════════════════════════════════
 
-  # Pure single intents (highest priority)
+  # Pure single intents
   {{#init_skill}}
   - name: "init_only"
     conditions:
@@ -213,7 +207,6 @@ intent_rules:
       has_query: F
       has_delete: F
     action: delegate_{{init_skill_id}}
-    priority: 90
     description: "Create new {{init_target}}"
   {{/init_skill}}
 
@@ -224,7 +217,6 @@ intent_rules:
       has_init: F
       has_modify: F
     action: delegate_{{query_skill_id}}
-    priority: 85
     description: "Show or find {{query_target}}"
   {{/query_skill}}
 
@@ -235,7 +227,6 @@ intent_rules:
       has_init: F
       has_query: F
     action: delegate_{{modify_skill_id}}
-    priority: 80
     description: "Modify existing {{modify_target}}"
   {{/modify_skill}}
 
@@ -247,23 +238,20 @@ intent_rules:
       {{flag}}: {{value}}
       {{/conditions}}
     action: delegate_{{skill_id}}
-    priority: {{priority}}
     description: "{{description}}"
   {{/skill_rules}}
 
-  # General help fallback (lower priority - catches "help" without specific skill)
+  # General help fallback (catches "help" without specific skill)
   - name: "general_help"
     conditions:
       has_help: T
     action: show_full_help
-    priority: 20
     description: "General help request"
 
   # Default fallback
   - name: "show_menu"
     conditions: {}
     action: show_main_menu
-    priority: 10
     description: "No clear intent, show interactive menu"
 
 # Action definitions

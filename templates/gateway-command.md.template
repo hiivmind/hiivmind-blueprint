@@ -2,9 +2,8 @@
 #
 # This template generates the gateway command markdown file.
 # Placeholders use {{placeholder}} syntax and are replaced at generation time.
-# {{lib_version}} comes from workflow.yaml definitions.source
 #
-# Execution semantics: https://github.com/hiivmind/hiivmind-blueprint-lib
+# Execution semantics: .hiivmind/blueprint/execution-guide.md
 
 ---
 name: {{plugin_name}}
@@ -15,15 +14,15 @@ arguments:
   - name: request
     description: What you want to do (optional - shows menu if omitted)
     required: false
----
-
-# {{plugin_title}} Gateway
-
-Execute this workflow for intelligent routing to the appropriate skill.
-
-> **Workflow:** `${CLAUDE_PLUGIN_ROOT}/commands/{{plugin_name}}/workflow.yaml`
-> **Intent Mapping:** `${CLAUDE_PLUGIN_ROOT}/commands/{{plugin_name}}/intent-mapping.yaml`
-
+inputs:
+  - name: request
+    type: string
+    required: false
+    description: Natural language request describing the desired operation
+outputs:
+  - name: result
+    type: object
+    description: Result from the dispatched skill execution
 ---
 
 ## Usage
@@ -35,40 +34,22 @@ Execute this workflow for intelligent routing to the appropriate skill.
 /{{plugin_name}} [flags] [request]  # With runtime flags
 ```
 
-## Quick Examples
-
-{{#examples}}
-- `{{command}}` → Routes to {{skill_name}}
-{{/examples}}
-
----
-
+{{#if_runtime_flags}}
 ## Runtime Flags
 
-Flags modify workflow execution behavior. They are **per-invocation only** and reset for each command.
-
-### Display Flags
+Flags modify workflow execution. Per-invocation only (reset for each command).
 
 | Flag | Effect |
 |------|--------|
-| `--verbose`, `-v` | Show all node details and condition evaluations |
-| `--quiet`, `-q` | Only user prompts and final result |
-| `--terse` | Batch summaries only (non-interactive nodes) |
-| `--debug` | Full state dumps after each node |
+| `--verbose`, `-v` | Show all node details (level: verbose) |
+| `--quiet`, `-q` | Only prompts and final result (level: quiet) |
+| `--debug` | Full state dumps (level: debug) |
+| `--no-log` | Disable file logging |
 | `--no-display` | Silent mode (no terminal output) |
-
-### Logging Flags
-
-| Flag | Effect |
-|------|--------|
-| `--log-level=X` | Set logging level: `error`, `warn`, `info`, `debug`, `trace` |
-| `--log-format=X` | Output format: `json`, `yaml`, `pretty` |
-| `--log-dir=X` | Override log directory |
-| `--trace` | Shorthand for `--log-level=trace` |
-| `--no-log` | Disable all file logging |
-| `--ci` | CI mode: structured output, no progress indicators |
+| `--ci` | CI mode: GitHub annotations |
 
 ---
+{{/if_runtime_flags}}
 
 ## Help Commands
 
@@ -83,26 +64,56 @@ Flags modify workflow execution behavior. They are **per-invocation only** and r
 
 | Command | Description |
 |---------|-------------|
-| `/{{plugin_name}} help logging` | Logging levels, flags, and priority hierarchy |
-| `/{{plugin_name}} help display` | Display verbosity and batch mode options |
+| `/{{plugin_name}} help output` | Output levels and configuration |
 | `/{{plugin_name}} help prompts` | Prompt modes and match strategies |
-| `/{{plugin_name}} help flags` | Quick reference for all runtime flags |
+| `/{{plugin_name}} help flags` | Quick reference for runtime flags |
 
 ---
 
-## Available Operations
+## Execution
 
-{{#skills}}
-### {{skill_label}}
+### Step 1: Read Definitions
 
-{{skill_description}}
+Read `.hiivmind/blueprint/definitions.yaml` and build the type registry (nodes, consequences, preconditions).
 
-**Trigger phrases:** {{trigger_phrases}}
+### Step 2: Detect Gateway Files
 
-{{/skills}}
+```pseudocode
+DETECT_PATHS():
+  workflow_path ← "${CLAUDE_PLUGIN_ROOT}/commands/{{plugin_name}}/workflow.yaml"
+  intent_mapping_path ← "${CLAUDE_PLUGIN_ROOT}/commands/{{plugin_name}}/intent-mapping.yaml"
+
+  IF NOT file_exists(workflow_path):
+    FAIL "workflow.yaml is required"
+```
+
+### Step 3: Execute Workflow
+
+Follow `.hiivmind/blueprint/execution-guide.md`:
+1. **Initialize** — Read workflow.yaml, validate types against definitions, initialize state, check entry preconditions
+2. **Execute** — Main loop: dispatch nodes until an ending is reached
+3. **Complete** — Display ending message and return result
 
 ---
 
+{{#workflow_graph}}
+## Workflow Graph Overview
+
+```
+{{graph_ascii}}
+```
+---
+{{/workflow_graph}}
+
+## Quick Examples
+
+{{#examples}}
+- `{{command}}` → Routes to {{skill_name}}
+{{/examples}}
+
+---
+
+{{#if_intent_detection}}
 ## Intent Detection
 
 This gateway uses 3VL (3-valued logic) intent detection with **dynamic routing**:
@@ -124,33 +135,30 @@ This gateway uses O(1) dynamic routing instead of N conditional nodes.
 
 If no clear winner, disambiguation is offered.
 
-### Safety Handling
+---
+{{/if_intent_detection}}
 
-This gateway includes a standard `error_safety` ending for requests that Claude's built-in safety detects as harmful. The workflow will:
+## Skill Dispatch Protocol
 
-1. Exit cleanly via the `error_safety` ending
-2. Display a brief, non-judgmental message
-3. Offer recovery guidance
+**CRITICAL:** Gateways are ROUTERS, not executors. When a skill is matched:
 
-No custom jailbreak detection is implemented—Claude's native safety (95.3% block rate) handles this automatically.
+1. **DO NOT answer the user's request yourself** - Your job is routing, not answering
+2. **DO NOT pre-validate or gather information** - Let the skill handle its own context
+3. **IMMEDIATELY invoke the skill** using the Skill tool:
+
+```
+Skill(
+  skill: "${computed.matched_skill}",
+  args: "${arguments}"
+)
+```
+
+4. **Let the skill take over** - It will load its own SKILL.md and execute its workflow
+
+**Example:** If intent matches "navigate", invoke `{{plugin_name}}-navigate`. Do not search for data yourself.
 
 ---
 
-## Execution Reference
-
-Execution semantics from [hiivmind-blueprint-lib](https://github.com/hiivmind/hiivmind-blueprint-lib) (version: {{lib_version}}):
-
-| Semantic | Source |
-|----------|--------|
-| Core loop | [traversal.yaml](https://raw.githubusercontent.com/hiivmind/hiivmind-blueprint-lib/{{lib_version}}/execution/traversal.yaml) |
-| State | [state.yaml](https://raw.githubusercontent.com/hiivmind/hiivmind-blueprint-lib/{{lib_version}}/execution/state.yaml) |
-| Workflow loading | [workflow-loader.yaml](https://raw.githubusercontent.com/hiivmind/hiivmind-blueprint-lib/{{lib_version}}/resolution/workflow-loader.yaml) |
-
-## Reference Documentation
-
-- **Type Definitions:** [hiivmind-blueprint-lib](https://github.com/hiivmind/hiivmind-blueprint-lib/tree/{{lib_version}})
-
----
 
 ## Related Skills
 

@@ -1,0 +1,103 @@
+# Type definitions for workflow execution
+# Generated from workflow type scan of hiivmind-blueprint gateway
+# Source catalog: hiivmind-blueprint-lib
+
+nodes:
+  action:
+    description: "Execute consequences, route on success/failure"
+    execution:
+      effect: |
+        for action in node.actions:
+          result = dispatch_consequence(action, state)
+          if result.failed: return route_to(node.on_failure)
+        return route_to(node.on_success)
+
+  conditional:
+    description: "Evaluate precondition and branch"
+    execution:
+      effect: |
+        if audit.enabled:
+          results = evaluate_all(node.condition)
+          store(audit.output, results)
+          passed = results.passed
+        else:
+          passed = evaluate(node.condition)
+        return route_to(branches.on_true if passed else branches.on_false)
+
+  user_prompt:
+    description: "Present question to user, route by response"
+    execution:
+      effect: |
+        prompt = build_prompt(node.prompt, state)
+        response = present_and_await(prompt)
+        state.user_responses[node_id] = response
+        handler = node.on_response[response.selected_id]
+        if handler.consequence: execute_each(handler.consequence)
+        return route_to(handler.next_node)
+
+consequences:
+  mutate_state:
+    description: "Modify workflow state"
+    parameters: [operation, field, value]
+    payload:
+      kind: state_mutation
+      effect: |
+        switch operation:
+          case "set": state[field] = interpolate(value)
+          case "append": state[field].append(interpolate(value))
+          case "merge": state[field] = merge(state[field], interpolate(value))
+          case "clear": state[field] = default_for_type(field)
+
+  invoke_skill:
+    description: "Invoke another skill via Skill tool"
+    parameters: [skill_path]
+    payload:
+      kind: tool_call
+      effect: |
+        resolved_path = interpolate(skill_path, state)
+        result = Skill(skill: resolved_path)
+        if store_as: state.computed[store_as] = result
+
+  display:
+    description: "Display content to user"
+    parameters: [content, format]
+    payload:
+      kind: side_effect
+      effect: |
+        resolved = interpolate(content, state)
+        present_to_user(resolved, format or "text")
+
+  set_flag:
+    description: "Set boolean flag in workflow state"
+    parameters: [flag, value]
+    payload:
+      kind: state_mutation
+      effect: |
+        state.flags[flag] = value if value is not null else true
+
+preconditions:
+  state_check:
+    description: "Check state field against a condition"
+    parameters: [field, operator, value]
+    evaluation:
+      effect: |
+        actual = resolve_path(state, field)
+        switch operator:
+          case "equals": return actual == value
+          case "not_equals": return actual != value
+          case "not_null": return actual is not null
+          case "is_null": return actual is null
+          case "contains": return value in actual
+          case "greater_than": return actual > value
+          case "less_than": return actual < value
+
+  composite:
+    description: "Combine conditions with logical operators"
+    parameters: [operator, conditions]
+    evaluation:
+      effect: |
+        switch operator:
+          case "all": return all(evaluate(c) for c in conditions)
+          case "any": return any(evaluate(c) for c in conditions)
+          case "none": return not any(evaluate(c) for c in conditions)
+          case "xor": return sum(evaluate(c) for c in conditions) == 1

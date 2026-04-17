@@ -1,0 +1,203 @@
+# Gateway Command Template
+#
+# This template generates the gateway command markdown file.
+# Placeholders use {{placeholder}} syntax and are replaced at generation time.
+# Version is extracted at runtime from workflow.yaml definitions.version
+#
+# Execution semantics: https://github.com/hiivmind/hiivmind-blueprint-lib
+
+---
+name: {{plugin_name}}
+description: >
+  Unified entry point for {{plugin_name}} operations - describe what you need
+  in natural language or select from the menu.
+arguments:
+  - name: request
+    description: What you want to do (optional - shows menu if omitted)
+    required: false
+---
+
+## Prerequisites
+
+**Check these dependencies before execution:**
+
+| Tool | Required | Check | Install |
+|------|----------|-------|---------|
+| `jq` | **Mandatory** | `command -v jq` | `brew install jq` / `apt install jq` |
+| `yq` | **Mandatory** | `command -v yq` | `brew install yq` / [github.com/mikefarah/yq](https://github.com/mikefarah/yq) |
+| `gh` | Recommended | `command -v gh` | `brew install gh` / `apt install gh` |
+
+If mandatory tools are missing, exit with error listing the install commands above.
+
+---
+
+## Initial State - Paths
+
+Detect and set path variables:
+
+```pseudocode
+workflow_path = "${CLAUDE_PLUGIN_ROOT}/commands/{{plugin_name}}/workflow.yaml"
+intent_mapping_path = "${CLAUDE_PLUGIN_ROOT}/commands/{{plugin_name}}/intent-mapping.yaml"
+
+# Check file existence and set state
+if file_exists(workflow_path):
+    state.workflow_available = true
+    state.workflow_path = workflow_path
+else:
+    state.workflow_available = false
+    # ERROR: workflow.yaml is required
+
+if file_exists(intent_mapping_path):
+    state.intent_mapping_available = true
+    state.intent_mapping_path = intent_mapping_path
+else:
+    state.intent_mapping_available = false
+    # Intent detection disabled (skills-only mode)
+```
+
+**Result variables:**
+- `state.workflow_path` - Path to workflow.yaml (required)
+- `state.intent_mapping_path` - Path to intent-mapping.yaml (optional)
+- `state.workflow_available` - Boolean
+- `state.intent_mapping_available` - Boolean
+
+---
+
+{{#workflow_graph}}
+## Workflow Graph Overview
+
+```
+{{graph_ascii}}
+```
+---
+
+## Usage
+
+```
+/{{plugin_name}}                    # Show interactive menu
+/{{plugin_name}} [request]          # Route by natural language intent
+/{{plugin_name}} --help             # Show full help
+/{{plugin_name}} [flags] [request]  # With runtime flags
+```
+
+## Quick Examples
+
+{{#examples}}
+- `{{command}}` → Routes to {{skill_name}}
+{{/examples}}
+
+---
+
+{{#if_runtime_flags}}
+## Runtime Flags
+
+Flags modify workflow execution. Per-invocation only (reset for each command).
+
+| Flag | Effect |
+|------|--------|
+| `--verbose`, `-v` | Show all node details (level: verbose) |
+| `--quiet`, `-q` | Only prompts and final result (level: quiet) |
+| `--debug` | Full state dumps (level: debug) |
+| `--no-log` | Disable file logging |
+| `--no-display` | Silent mode (no terminal output) |
+| `--ci` | CI mode: GitHub annotations |
+
+---
+{{/if_runtime_flags}}
+
+## Help Commands
+
+| Command | Description |
+|---------|-------------|
+| `/{{plugin_name}} --help` | Show full command reference |
+| `/{{plugin_name}} -h` | Short form of --help |
+| `/{{plugin_name}} help` | Same as --help |
+| `/{{plugin_name}} help [skill]` | Help for specific skill |
+
+### Configuration Help
+
+| Command | Description |
+|---------|-------------|
+| `/{{plugin_name}} help output` | Output levels and configuration |
+| `/{{plugin_name}} help prompts` | Prompt modes and match strategies |
+| `/{{plugin_name}} help flags` | Quick reference for runtime flags |
+
+---
+
+
+## Execution Protocol
+
+**MANDATORY:** This gateway requires loading and following execution semantics from remote sources.
+
+**See:** `.hiivmind/blueprint/engine_entrypoint.md` (Engine v1.0.0) for full protocol.
+
+### Quick Summary
+
+1. **Bootstrap:** Extract `{{lib_version}}` from workflow.yaml
+2. **Fetch Semantics:** Load execution rules from hiivmind-blueprint-lib@{{lib_version}}
+3. **Load Local Files:** Read workflow.yaml + intent-mapping.yaml
+4. **Execute:** Run workflow per traversal semantics (initialize → execute → complete)
+- When `invoke_skill` consequence fires: Use Skill tool to invoke matched skill
+
+**Verification Checkpoint:**
+Before proceeding to Phase 3, verify:
+- `_semantics.bootstrap.phases` has 5 items ending with "execute"
+- `_semantics.bootstrap.required_sections` has exactly 4 items
+- `_semantics.traversal.phases` equals `["initialize", "execute", "complete"]`
+
+If verification fails, retry fetch.
+
+---
+
+{{#if_intent_detection}}
+## Intent Detection
+
+This gateway uses 3VL (3-valued logic) intent detection with **dynamic routing**:
+
+| Value | Meaning | Example |
+|-------|---------|---------|
+| **T** (True) | Keyword matched | "create" → has_init: T |
+| **F** (False) | Negative keyword matched | "don't create" → has_init: F |
+| **U** (Unknown) | No match either way | (default state) |
+
+### How Intent Resolution Works
+
+1. **Parse input** against flag keywords → `computed.intent_flags`
+2. **Match rules** in priority order → `computed.intent_matches`
+3. **Check for clear winner** (2+ point lead)
+4. **Dynamic route** to `${computed.matched_action}` → skill execution
+
+This gateway uses O(1) dynamic routing instead of N conditional nodes.
+
+If no clear winner, disambiguation is offered.
+
+---
+{{/if_intent_detection}}
+
+## Skill Dispatch Protocol
+
+**CRITICAL:** Gateways are ROUTERS, not executors. When a skill is matched:
+
+1. **DO NOT answer the user's request yourself** - Your job is routing, not answering
+2. **DO NOT pre-validate or gather information** - Let the skill handle its own context
+3. **IMMEDIATELY invoke the skill** using the Skill tool:
+
+```
+Skill(
+  skill: "${computed.matched_skill}",
+  args: "${arguments}"
+)
+```
+
+4. **Let the skill take over** - It will load its own SKILL.md and execute its workflow
+
+**Example:** If intent matches "navigate", invoke `{{plugin_name}}-navigate`. Do not search for data yourself.
+
+---
+
+
+## Related Skills
+
+{{#skills}}
+- {{skill_label}}: `${CLAUDE_PLUGIN_ROOT}/skills/{{skill_directory}}/SKILL.md`
+{{/skills}}

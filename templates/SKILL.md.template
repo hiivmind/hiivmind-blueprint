@@ -1,0 +1,169 @@
+# SKILL.md Template
+#
+# This template generates the SKILL.md that orchestrates a skill's execution.
+# A skill is a prose orchestrator that optionally delegates phases to workflow definitions.
+# Placeholders use {{placeholder}} syntax and are replaced at generation time.
+#
+# Authoring guide: patterns/authoring-guide.md
+# Execution guide: patterns/execution-guide.md
+
+---
+name: {{skill_name}}
+description: >
+  {{description}}
+allowed-tools: {{allowed_tools}}
+inputs:
+  {{#inputs}}
+  - name: {{name}}
+    type: {{type}}
+    required: {{required}}
+    description: {{description}}
+  {{/inputs}}
+outputs:
+  {{#outputs}}
+  - name: {{name}}
+    type: {{type}}
+    description: {{description}}
+  {{/outputs}}
+{{#if_workflows}}
+workflows:
+  {{#workflows}}
+  - workflows/{{filename}}
+  {{/workflows}}
+{{/if_workflows}}
+---
+
+# {{title}}
+
+{{overview}}
+
+---
+
+## Usage
+
+This skill is invoked via the Skill tool:
+
+```
+Skill(skill: "{{skill_name}}")
+Skill(skill: "{{skill_name}}", args: "[arguments]")
+```
+
+Or via gateway routing:
+```
+/{{parent_plugin_name}} [natural language request]
+```
+
+---
+
+## Help
+
+| Command | Description |
+|---------|-------------|
+| `Skill(skill: "{{skill_name}}", args: "--help")` | Show skill help |
+| `Skill(skill: "{{skill_name}}", args: "help")` | Same as --help |
+
+For gateway help: `/{{parent_plugin_name}} help {{skill_short_name}}`
+
+---
+
+{{#if_runtime_flags}}
+## Runtime Flags
+
+Flags modify execution. Per-invocation only (reset for each call).
+
+| Flag | Effect |
+|------|--------|
+| `--verbose`, `-v` | Show all details (level: verbose) |
+| `--quiet`, `-q` | Only prompts and final result (level: quiet) |
+| `--debug` | Full state dumps (level: debug) |
+| `--no-log` | Disable file logging |
+| `--no-display` | Silent mode (no terminal output) |
+
+---
+{{/if_runtime_flags}}
+
+{{#examples}}
+## Quick Examples
+
+{{#items}}
+- `{{invocation}}` → {{outcome}}
+{{/items}}
+
+---
+{{/examples}}
+
+## Execution
+
+{{#phases}}
+### Phase {{number}}: {{title}}
+
+{{#if_prose_phase}}
+{{prose_instructions}}
+{{/if_prose_phase}}
+
+{{#if_workflow_phase}}
+Execute `workflows/{{workflow_file}}` following the execution guide:
+
+1. Read `.hiivmind/blueprint/definitions.yaml` — build type registry
+2. Read `${CLAUDE_PLUGIN_ROOT}/skills/{{skill_directory}}/workflows/{{workflow_file}}`
+3. Follow `.hiivmind/blueprint/execution-guide.md` (Init → Execute → Complete)
+
+{{#pre_workflow_prose}}
+**Before workflow:** {{pre_workflow_prose}}
+{{/pre_workflow_prose}}
+
+{{#post_workflow_prose}}
+**After workflow:** {{post_workflow_prose}}
+{{/post_workflow_prose}}
+{{/if_workflow_phase}}
+
+{{/phases}}
+
+---
+
+{{#workflow_graph}}
+## Workflow Graph Overview
+
+```
+{{graph_ascii}}
+```
+
+---
+{{/workflow_graph}}
+
+{{#if_intent_detection}}
+## Intent Detection
+
+This skill uses intent detection when an intent-mapping.yaml is present.
+
+| Value | Meaning | Example |
+|-------|---------|---------|
+| **T** (True) | Keyword matched | "create" → has_init: T |
+| **F** (False) | Negative keyword matched | "don't create" → has_init: F |
+| **U** (Unknown) | No match either way | (default state) |
+
+### Resolution Flow
+
+1. **Parse input** against flag keywords → `computed.intent_flags`
+2. **Match rules** in priority order → `computed.intent_matches`
+3. **Check for clear winner** (2+ point lead)
+4. **Route** to matched action or request disambiguation
+
+---
+{{/if_intent_detection}}
+
+## Reference Documentation
+
+- **Type Catalog:** [hiivmind-blueprint-lib](https://github.com/hiivmind/hiivmind-blueprint-lib)
+- **Authoring Guide:** [hiivmind-blueprint/patterns/authoring-guide.md](https://github.com/hiivmind/hiivmind-blueprint/blob/main/patterns/authoring-guide.md)
+- **Execution Guide:** `.hiivmind/blueprint/execution-guide.md`
+
+---
+
+{{#related_skills}}
+## Related Skills
+
+{{#skills}}
+- {{description}}: `${CLAUDE_PLUGIN_ROOT}/skills/{{skill_id}}/SKILL.md`
+{{/skills}}
+{{/related_skills}}

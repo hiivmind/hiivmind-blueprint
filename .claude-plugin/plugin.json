@@ -1,20 +1,19 @@
 {
-  "name": "hiivmind-blueprint",
-  "description": "Meta-plugin for converting Claude Code skills to deterministic YAML workflow patterns",
-  "version": "1.0.0",
+  "name": "blueprint",
+  "description": "Journey-oriented tools for building, assessing, enhancing, extracting, maintaining, and visualizing Claude Code skills as deterministic YAML workflow patterns. Provides 7 journey-oriented skills with a unified gateway.",
+  "version": "2.0.0",
   "license": "MIT",
   "author": {
     "name": "Nathaniel Ramm"
   },
-  "repository": "https://github.com/hiivmind/hiivmind-blueprint",
-  "homepage": "https://github.com/hiivmind/hiivmind-blueprint#readme",
   "keywords": [
     "workflow",
     "yaml",
-    "meta-plugin",
     "skills",
     "conversion",
-    "deterministic",
-    "blueprint"
+    "authoring",
+    "blueprint",
+    "generate",
+    "analyze"
   ]
 }

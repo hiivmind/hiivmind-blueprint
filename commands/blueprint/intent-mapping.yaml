@@ -1,0 +1,88 @@
+version: "2.0.0"
+description: Intent mapping for blueprint gateway — journey-oriented routing
+
+intent_flags:
+  # HELP FLAGS
+  has_help_flag:
+    keywords: ["--help", "-h", "-?"]
+    description: "Explicit help flag"
+  has_help:
+    keywords: ["help", "how do i", "how to", "?", "explain", "guide", "what can"]
+    description: "Natural language help request"
+
+  # JOURNEY FLAGS
+  has_idea:
+    keywords: ["create", "new", "build", "scaffold", "idea", "start", "from scratch", "initialize", "init"]
+    description: "Create something new"
+  has_assess:
+    keywords: ["assess", "analyze", "analyse", "evaluate", "where", "spectrum", "coverage", "fit", "appropriate", "health", "inventory", "discover", "scan", "metrics", "quality", "review"]
+    description: "Assess or analyze skills/plugin"
+  has_enhance:
+    keywords: ["enhance", "improve", "add structure", "pseudocode", "state management", "strengthen", "tighten", "guards", "checkpoints"]
+    description: "Improve prose skill structure"
+  has_existing:
+    keywords: ["existing", "current", "my", "this", "convert"]
+    description: "Operates on an existing skill"
+  has_prose:
+    keywords: ["prose", "extract", "formalize", "workflow from"]
+    negative_keywords: ["workflow.yaml"]
+    description: "Prose to workflow operations"
+  has_fix:
+    keywords: ["fix", "upgrade", "refactor", "validate", "broken", "schema", "lint", "check", "migrate", "restructure", "cleanup", "verify", "errors", "test"]
+    description: "Fix, upgrade, or refactor workflows"
+  has_diagram:
+    keywords: ["visualize", "visualise", "diagram", "show", "mermaid", "graph", "flow chart", "render", "draw"]
+    description: "Visualize as diagram"
+  has_routing:
+    keywords: ["gateway", "intent", "routing", "multi-skill", "3VL", "intent mapping", "entry point", "entrypoint"]
+    description: "Gateway and intent routing"
+
+rules:
+  # HELP (highest priority)
+  - name: explicit_help
+    conditions: { has_help_flag: T }
+    action: show_help
+    priority: 100
+  - name: general_help
+    conditions: { has_help: T }
+    action: show_help
+    priority: 90
+
+  # COMPOUND (high specificity)
+  - name: extract
+    conditions: { has_existing: T, has_prose: T }
+    action: bp-extract
+    priority: 25
+
+  # SINGLE JOURNEY (standard priority)
+  - name: build
+    conditions: { has_idea: T }
+    action: bp-build
+    priority: 20
+  - name: assess
+    conditions: { has_assess: T }
+    action: bp-assess
+    priority: 20
+  - name: enhance
+    conditions: { has_enhance: T }
+    action: bp-enhance
+    priority: 20
+  - name: extract_alt
+    conditions: { has_prose: T }
+    action: bp-extract
+    priority: 15
+  - name: maintain
+    conditions: { has_fix: T }
+    action: bp-maintain
+    priority: 20
+  - name: visualize
+    conditions: { has_diagram: T }
+    action: bp-visualize
+    priority: 15
+  - name: gateway
+    conditions: { has_routing: T }
+    action: bp-gateway
+    priority: 20
+
+fallback:
+  action: show_menu

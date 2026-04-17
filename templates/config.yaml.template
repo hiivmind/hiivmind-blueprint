@@ -1,0 +1,9 @@
+# Engine protocol version
+engine_version: "{{engine_version}}"
+
+# Build provenance — which blueprint-lib version generated these local files
+lib_version: "{{lib_version}}"
+lib_ref: "{{lib_ref}}"
+
+# Workflow schema version
+schema_version: "{{schema_version}}"

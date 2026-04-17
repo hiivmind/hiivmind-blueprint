@@ -1,0 +1,9 @@
+# Engine protocol version
+engine_version: "2.0.0"
+
+# Build provenance — which blueprint-lib version generated these local files
+lib_version: "v3.1.1"
+lib_ref: "hiivmind/hiivmind-blueprint-lib@v3.1.1"
+
+# Workflow schema version
+schema_version: "2.3"

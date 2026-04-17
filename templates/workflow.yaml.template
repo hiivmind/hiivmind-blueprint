@@ -1,28 +1,25 @@
-# Workflow Template
+# Workflow Definition Template
 #
-# This template is used by hiivmind-blueprint to generate workflow.yaml files.
+# This template generates individual workflow definitions within a skill.
+# Each workflow is a self-contained unit that a skill's SKILL.md orchestrates.
+# A skill may have one or many workflow files in its workflows/ subdirectory.
+#
 # Placeholders use {{placeholder}} syntax and are replaced at generation time.
 #
-# Schema: https://raw.githubusercontent.com/hiivmind/hiivmind-blueprint-lib/main/schema/workflow.json
-# Version: 2.2 (prompts config, audit mode for conditionals)
+# Schema: https://raw.githubusercontent.com/hiivmind/hiivmind-blueprint-lib/main/schema/authoring/workflow.json
+# Version: 3.0 (local definitions, no remote loading)
+#
+# Type definitions are resolved from .hiivmind/blueprint/definitions.yaml
+# Authoring-time reference: see hiivmind-blueprint/patterns/authoring-guide.md (Part 2) for workflow authoring.
 
 # ============================================================================
 # WORKFLOW IDENTITY
 # ============================================================================
 
-name: "{{skill_id}}"
+name: "{{workflow_id}}"
 version: "1.0.0"
 description: >
   {{description}}
-
-# ============================================================================
-# EXTERNAL TYPE DEFINITIONS
-# ============================================================================
-# Reference type definitions (consequences, preconditions) from hiivmind-blueprint-lib.
-# Omit to use embedded definitions (not recommended for new workflows).
-
-definitions:
-  source: hiivmind/hiivmind-blueprint-lib@v2.0.0
 
 # ============================================================================
 # ENTRY PRECONDITIONS
@@ -35,8 +32,9 @@ entry_preconditions:
   # - type: {{type}}
   #   {{#params}}{{key}}: {{value}}{{/params}}
   # {{/entry_preconditions}}
-  - type: tool_available
+  - type: tool_check
     tool: git
+    capability: available
 
 # ============================================================================
 # INITIAL STATE
@@ -46,80 +44,37 @@ entry_preconditions:
 
 initial_state:
   phase: "start"
-  # {{#state_fields}}
-  # {{name}}: {{default}}
-  # {{/state_fields}}
   flags:
-    # {{#flags}}
-    # {{name}}: false
-    # {{/flags}}
     initialized: false
   computed: {}
-  # --------------------------------------------------------------------------
-  # Logging Configuration (optional)
-  # --------------------------------------------------------------------------
-  # Skill-specific logging (priority 2 in 4-tier hierarchy).
-  # See: lib/workflow/logging-config-loader.md
-  # {{#if_logging}}
-  logging:
-    enabled: true
-    level: "info"                # trace | debug | info | warn | error
-    auto:
-      init: true                 # Auto init_log at workflow start
-      node_tracking: true        # Auto log_node for each node
-      finalize: true             # Auto finalize_log at endings
-      write: true                # Auto write_log after finalize
-    output:
-      format: "yaml"             # yaml | json | markdown
-      location: ".logs/"         # Relative to skill/plugin root
-    retention:
-      strategy: "count"          # none | days | count
-      count: 10                  # Max files to keep
-  # {{/if_logging}}
-  # --------------------------------------------------------------------------
-  # Prompts Configuration (optional)
-  # --------------------------------------------------------------------------
-  # User prompt execution mode. Defaults to interactive (AskUserQuestion tool).
-  # Use tabular mode for CLI-style input when AskUserQuestion is unavailable.
-  # See: lib/workflow/prompts-config-loader.md
-  # {{#if_prompts}}
+
+  # ──────────────────────────────────────────────────────────────────────────
+  # Output Configuration (unified logging + display)
+  # ──────────────────────────────────────────────────────────────────────────
+  # Schema: schema/config/output-config.json
+  output:
+    level: "normal"           # silent | quiet | normal | verbose | debug
+    log_enabled: true
+    log_format: "yaml"
+    log_location: ".logs/"
+
+  # ──────────────────────────────────────────────────────────────────────────
+  # Prompts Configuration (multi-modal)
+  # ──────────────────────────────────────────────────────────────────────────
+  # Schema: schema/config/prompts-config.json
   prompts:
-    mode: "interactive"          # interactive | tabular
-    # tabular:                   # Only used when mode: tabular
-    #   match_strategy: "prefix" # exact | prefix | fuzzy
-    #   other_handler: "prompt"  # prompt | route | fail
-    #   case_sensitive: false
-    #   show_option_ids: true
-  # {{/if_prompts}}
-  # --------------------------------------------------------------------------
-  # Display Configuration (optional)
-  # --------------------------------------------------------------------------
-  # Real-time terminal output (distinct from logging which writes to files).
-  # See: lib/workflow/display-config-loader.md
-  # {{#if_display}}
-  display:
-    enabled: true
-    verbosity: "normal"          # silent | terse | normal | verbose | debug
-    batch:
-      enabled: true              # Collapse non-interactive node segments
-      threshold: 3               # Min nodes to trigger batching
-      show_summary: true         # Show "N nodes executed"
-      show_node_list: false      # Include node IDs in summary
-      expand_on_error: true      # Expand batch on failure
-    show:
-      workflow_state: true       # Show state at verbose+
-      node_transitions: true     # Show → arrows
-      condition_eval: false      # Show condition expressions
-      branch_result: true        # Show branch decisions
-      tool_output: true          # Show tool output
-      phase_markers: false       # Show phase boundaries
-      spinner_text: true         # Show activeForm in spinner
-    format:
-      style: "structured"        # structured | minimal | inline
-      indent: 2
-      use_icons: true            # Use ✓ → ? icons
-      timestamp: false
-  # {{/if_display}}
+    interface: "auto"         # auto | claude_code | web | api | agent
+    modes:
+      claude_code: "interactive"
+      web: "forms"
+      api: "structured"
+      agent: "autonomous"
+    tabular:
+      match_strategy: "prefix"
+      other_handler: "prompt"
+    autonomous:
+      strategy: "best_match"
+      confidence_threshold: 0.7
 
 # ============================================================================
 # START NODE
@@ -131,8 +86,7 @@ start_node: {{start_node}}
 # NODES
 # ============================================================================
 # Workflow graph. Each node executes and routes to next node or ending.
-# Node types: action, conditional, user_prompt, reference
-# Note: validation_gate is DEPRECATED (v2.0) - use conditional with audit instead
+# Node types: action, conditional, user_prompt
 
 nodes:
   # --------------------------------------------------------------------------
@@ -175,63 +129,52 @@ nodes:
   #   on_response:
   #     option_id:
   #       consequence:
-  #         - type: set_state
+  #         - type: mutate_state
+  #           operation: set
   #           field: selected_option
   #           value: option_id
   #       next_node: next_node_name
   #
-  # Dynamic options from state (alternative to static options):
+  # Dynamic options from state:
   # user_prompt_dynamic:
   #   type: user_prompt
   #   prompt:
   #     question: "Select an item"
   #     header: "Items"
   #     options_from_state: "computed.items"
-  #     option_mapping:
+  #     options:
   #       id: "item.id"
   #       label: "item.name"
   #       description: "item.desc"
   #   on_response:
-  #     "${selected_id}":
+  #     selected:
   #       next_node: process_item
 
   # --------------------------------------------------------------------------
   # Conditional with Audit Mode (replaces deprecated validation_gate)
   # --------------------------------------------------------------------------
-  # DEPRECATED: validation_gate (v2.0)
-  # Use conditional with audit.enabled: true for comprehensive validation.
-  # Audit mode evaluates ALL conditions (no short-circuit) and collects results.
-  #
   # validate_prerequisites:
   #   type: conditional
   #   description: "Validate prerequisites"
   #   condition:
-  #     type: all_of
+  #     type: composite
+  #     operator: all
   #     conditions:
-  #       - type: file_exists
+  #       - type: path_check
   #         path: "${config_path}"
-  #       - type: tool_available
+  #         check: is_file
+  #       - type: tool_check
   #         tool: "git"
+  #         capability: available
   #   audit:
   #     enabled: true
   #     output: computed.validation_errors
   #     messages:
-  #       file_exists: "Required config not found: ${config_path}"
-  #       tool_available: "Git is required but not installed"
+  #       path_check: "Required config not found: ${config_path}"
+  #       tool_check: "Git is required but not installed"
   #   branches:
   #     on_true: proceed_node
   #     on_false: validation_failed
-
-  # --------------------------------------------------------------------------
-  # Reference Node Template
-  # --------------------------------------------------------------------------
-  # reference_node_name:
-  #   type: reference
-  #   doc: "lib/path/to/pattern.md"
-  #   section: "Section Heading"  # Optional
-  #   context:
-  #     var_name: "${computed.value}"
-  #   next_node: after_reference_node
 
   # --------------------------------------------------------------------------
   # Generated Nodes
@@ -288,24 +231,10 @@ nodes:
         next_node: {{next_node}}
       {{/responses}}
     {{/if_user_prompt}}
-    {{#if_validation_gate}}
-    # NOTE: validation_gate is DEPRECATED (v2.0). Consider using conditional with audit.
-    # This template generates legacy format for backwards compatibility.
-    validations:
-      {{#validations}}
-      - type: {{type}}
-        {{#params}}
-        {{key}}: {{value}}
-        {{/params}}
-        error_message: "{{error_message}}"
-      {{/validations}}
-    on_valid: {{on_valid}}
-    on_invalid: {{on_invalid}}
-    {{/if_validation_gate}}
     {{#if_conditional_audit}}
-    # Audit mode conditional (replaces validation_gate)
     condition:
-      type: all_of
+      type: composite
+      operator: all
       conditions:
         {{#validations}}
         - type: {{type}}
@@ -324,19 +253,6 @@ nodes:
       on_true: {{on_valid}}
       on_false: {{on_invalid}}
     {{/if_conditional_audit}}
-    {{#if_reference}}
-    doc: "{{doc}}"
-    {{#section}}
-    section: "{{section}}"
-    {{/section}}
-    {{#context}}
-    context:
-      {{#vars}}
-      {{key}}: "{{value}}"
-      {{/vars}}
-    {{/context}}
-    next_node: {{next_node}}
-    {{/if_reference}}
 
   {{/nodes}}
 
@@ -369,11 +285,10 @@ endings:
 
   {{/error_endings}}
   cancelled:
-    type: error
+    type: cancelled
     message: "Operation cancelled by user"
 
   # Safety ending - route here when Claude detects harmful intent
-  # Claude's built-in safety (95.3% block rate) handles detection automatically
   error_safety:
     type: error
     category: safety

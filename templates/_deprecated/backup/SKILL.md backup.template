@@ -1,0 +1,96 @@
+# SKILL.md Template
+#
+# This template generates the SKILL.md that executes a workflow.
+# Placeholders use {{placeholder}} syntax and are replaced at generation time.
+# {{lib_version}} comes from workflow.yaml definitions.source
+#
+# Execution semantics: https://github.com/hiivmind/hiivmind-blueprint-lib
+
+---
+name: {{skill_name}}
+description: >
+  {{description}}
+allowed-tools: {{allowed_tools}}
+---
+
+# {{title}}
+
+Execute this workflow deterministically. State persists in conversation context.
+
+> **Workflow:** `${CLAUDE_PLUGIN_ROOT}/skills/{{skill_directory}}/workflow.yaml`
+
+---
+
+{{#workflow_graph}}
+## Workflow Graph Overview
+
+```
+{{graph_ascii}}
+```
+
+---
+{{/workflow_graph}}
+
+## Prerequisites
+
+**Check these dependencies before execution:**
+
+| Tool | Required | Check | Install |
+|------|----------|-------|---------|
+| `jq` | **Mandatory** | `command -v jq` | `brew install jq` / `apt install jq` |
+| `yq` | **Mandatory** | `command -v yq` | `brew install yq` / [github.com/mikefarah/yq](https://github.com/mikefarah/yq) |
+| `gh` | Recommended | `command -v gh` | `brew install gh` / `apt install gh` |
+
+If mandatory tools are missing, exit with error listing the install commands above.
+
+---
+
+## Execution Protocol
+
+**See:** `.hiivmind/blueprint/engine_entrypoint.md` (Engine v1.0.0) for full 4-phase protocol.
+
+### Quick Summary
+
+1. **Bootstrap:** Extract `{{lib_version}}` from workflow.yaml
+2. **Fetch Semantics:** Load execution rules from hiivmind-blueprint-lib@{{lib_version}}
+3. **Load Local Files:** Read and validate workflow.yaml
+4. **Execute:** Run workflow per traversal semantics (initialize → execute → complete)
+
+**Skill-Specific Configuration:**
+- workflow_path: `${CLAUDE_PLUGIN_ROOT}/skills/{{skill_directory}}/workflow.yaml`
+- lib_version: Extracted from workflow.yaml definitions
+- No intent mapping required (skills are direct execution)
+
+**Type Loading:**
+- Threshold: 30 types (selective vs. lazy loading)
+- Source types support: remote (`owner/repo@version`), local relative (`./`), local absolute (`/path`)
+
+**On-Demand Detail Fetching:**
+When dispatching a node type for the first time, fetch its specific semantics from hiivmind-blueprint-lib@{{lib_version}}:
+
+| Node Type | What to Fetch |
+|-----------|---------------|
+| `conditional` | `nodes/core/conditional.yaml` or dispatch section from engine_execution.yaml |
+| `user_prompt` | `nodes/core/user_prompt.yaml` for multi-modal prompt handling |
+| `reference` | `resolution/workflow-loader.yaml` for sub-workflow loading |
+| Consequence type | `consequences/{type}.yaml` for execution semantics |
+
+See `resolution/entrypoints.yaml` for pre-composed yq queries.
+
+**DO NOT improvise execution semantics.** Fetch the authoritative definitions.
+
+---
+
+## Reference Documentation
+
+- **Type Definitions:** [hiivmind-blueprint-lib](https://github.com/hiivmind/hiivmind-blueprint-lib/tree/{{lib_version}})
+
+---
+
+{{#related_skills}}
+## Related Skills
+
+{{#skills}}
+- {{description}}: `${CLAUDE_PLUGIN_ROOT}/skills/{{skill_id}}/SKILL.md`
+{{/skills}}
+{{/related_skills}}
