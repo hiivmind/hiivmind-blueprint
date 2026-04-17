@@ -416,6 +416,22 @@ The runtime emits a tool *reference* in its response to the LLM agent. The LLM's
 - Topology A: runtime writes the resolved tool result at `store_as`.
 - Topology B: the LLM reports the tool result back; the runtime captures it and writes to `store_as` before the next `get_next_node` call.
 
+#### Effect-envelope enforcement
+
+Workflows may declare an explicit `declared_effects:` block (BL6, v8.1+) to
+narrow the default envelope inferred from `data_mcps`. Enforcement is a
+load-time static check, the consuming runtime's responsibility:
+
+- Reject any `mcp_tool_call` whose `tool` is not in the narrowed allowlist
+  (`tool_outside_envelope`).
+- Reject workflows whose reachable invocation count for an alias exceeds a
+  declared `max_call_count` (`count_exceeds_envelope`).
+- Warn on over-declaration (declared tools never invoked); not an error.
+
+Blueprint-lib validates only the block's syntactic shape. `declared_effects`
+narrows the envelope but does not widen it — cross-referencing against the
+aliased MCP server's published tools happens at the runtime boundary.
+
 ---
 
 ## 6. Precondition Dispatch
