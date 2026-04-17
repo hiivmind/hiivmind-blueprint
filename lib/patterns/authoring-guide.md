@@ -301,8 +301,20 @@ The catalog includes:
 - **22 consequence types** — state mutations, control flow, display, intent detection, logging, and extensions
 - **9 precondition types** — state checks, path checks, tool checks, network, git, and web
 - **3 node types** — `action`, `conditional`, `user_prompt`
+- **1 terminal node type** — `ending` (new in v8; see below)
 
 Refer to `blueprint-types.md` for the authoritative list with full parameter definitions and pseudocode effects.
+
+### Primitive Node Types
+
+| Type | Purpose | Transition Slots |
+|------|---------|-----------------|
+| `action` | Execute a sequence of consequences | `on_success`, `on_failure` |
+| `conditional` | Evaluate a precondition and branch | `branches.on_true`, `branches.on_false` |
+| `user_prompt` | Present a question; route by response | `on_response.{handler_id}.next_node` |
+| `ending` | Terminal state. Emit outcome; run consequences; apply behavior. | None — schema forbids `on_success`/`on_failure`/`on_true`/`on_false`/`on_unknown`/`on_response`. |
+
+The `ending` node is the canonical termination point for a workflow run. Every path through the graph must reach an ending. Endings are defined under a top-level `endings:` map (not inside `nodes:`), with an `outcome` field (`success | failure | error | cancelled | indeterminate`), an optional `message`, optional `consequences[]`, and an optional `behavior` block. See Section 10 for full ending examples.
 
 ---
 
@@ -479,7 +491,92 @@ Consequence results can be stored in state:
 
 ---
 
-## 13. Entry Preconditions
+## 13. v8 Extensions: MCP Integration and Payload Types
+
+### `mcp_tool_call` — invoke an external MCP tool
+
+New in blueprint-lib v8 (BL1). Invokes a tool on a data-MCP server declared in the workflow's `data_mcps:` front-matter.
+
+**Signature:**
+
+```
+mcp_tool_call(tool, params, params_type?, store_as?)
+```
+
+- `tool` — `"<alias>.<tool_name>"` where `<alias>` is a key declared in `data_mcps:`.
+- `params` — map of literals + `${}` state interpolation.
+- `params_type` — optional reference to a payload type declared in the workflow's `payload_types:` block (format: `name@version`).
+- `store_as` — optional state field to receive the tool result.
+
+**Minimal example:**
+
+```yaml
+data_mcps:
+  eightball: "eightball-tools@^1"
+
+nodes:
+  shake:
+    type: action
+    consequences:
+      - type: mcp_tool_call
+        tool: eightball.shake
+        params:
+          question: "${computed.question}"
+        store_as: computed.answer
+    on_success: done
+```
+
+The catalog describes the *effect*. Topology (runtime-invokes vs LLM-invokes) is an execution concern — see `execution-guide.md`.
+
+---
+
+### Payload Types (`payload_types:` block)
+
+New in v8 (BL2). Workflows declare data shapes at the top in a `payload_types:` block. Consequences reference shapes via `params_type: <name>@<version>`. No central catalog; shapes live per-workflow.
+
+**Key pattern:** `^[a-z_][a-z0-9_]*@\d+$` (e.g. `shake_params@1`).
+
+**Field descriptor forms:**
+
+- **Scalar string:** `"string"`, `"integer (min=1, max=100)"`, `"array<string>"`, `"enum{a,b,c}"`.
+- **Structured:** `{type: string, min_length: 1, optional: true}`.
+
+**Example:**
+
+```yaml
+payload_types:
+  shake_params@1:
+    question: string (min_length=1)
+    context:  string (optional)
+```
+
+Blueprint-lib's loader validates that each `params_type` reference resolves; it does NOT validate the shape of `params` itself — that is a runtime concern.
+
+---
+
+### Workflow-level declarations (v8)
+
+Three new optional front-matter fields in v8:
+
+- **`trust_mode`** (BL3) — enum `{stateless, gated}`, default `stateless`. Declarative metadata for runtimes; blueprint-lib validates the enum only.
+- **`data_mcps`** (BL4) — map of `<alias>` → `"<name>@<semver-range>"`. Declares which MCP servers the workflow depends on; aliases are used as prefixes in `mcp_tool_call.tool` references.
+- **`payload_types`** (BL2) — see Payload Types section above.
+
+**Example front-matter:**
+
+```yaml
+name: my-workflow
+version: "1.0.0"
+trust_mode: stateless
+data_mcps:
+  docs: "docs-mcp@^2"
+payload_types:
+  query@1: { text: "string (min_length=1)" }
+```
+
+---
+
+## 14. Entry Preconditions
 
 Check requirements before the workflow starts:
 
@@ -497,7 +594,7 @@ If any entry precondition fails, the workflow stops with an error before executi
 
 ---
 
-## 14. User Prompts and Conditional Audit Mode
+## 15. User Prompts and Conditional Audit Mode
 
 ### User Prompt Nodes
 
@@ -576,7 +673,7 @@ validate_env:
 
 ---
 
-## 15. Output Configuration
+## 16. Output Configuration
 
 Configure display verbosity and logging:
 
