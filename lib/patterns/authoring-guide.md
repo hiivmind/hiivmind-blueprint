@@ -561,6 +561,7 @@ Three new optional front-matter fields in v8:
 - **`trust_mode`** (BL3) — enum `{stateless, gated}`, default `stateless`. Declarative metadata for runtimes; blueprint-lib validates the enum only.
 - **`data_mcps`** (BL4) — map of `<alias>` → `"<name>@<semver-range>"`. Declares which MCP servers the workflow depends on; aliases are used as prefixes in `mcp_tool_call.tool` references.
 - **`payload_types`** (BL2) — see Payload Types section above.
+- **`declared_effects`** (BL6, v8.1+) — optional per-alias effect envelope narrowing. Each alias maps to either the string literal `forbidden` or an object with optional `tools: [...]` and `max_call_count: N`. Cross-alias enforcement (tools-subset, alias-declared-in-`data_mcps`) is the consuming runtime's job; blueprint-lib validates only the syntactic shape.
 
 **Example front-matter:**
 
@@ -573,6 +574,31 @@ data_mcps:
 payload_types:
   query@1: { text: "string (min_length=1)" }
 ```
+
+#### Narrowing the effect envelope (`declared_effects`)
+
+Workflows that declare `data_mcps` accept any exported tool on any declared
+alias by default. To narrow that envelope — useful for sensitive workflows or
+for producing a machine-readable "effect manifest" — add a `declared_effects:`
+block:
+
+```yaml
+data_mcps:
+  crm:     "internal-crm@^2.1"
+  billing: "stripe-mcp@~3"
+
+declared_effects:
+  crm:
+    tools: [search_customers, get_account]   # read-only subset
+  billing:
+    tools: [create_invoice]
+    max_call_count: 1                        # hard cap across workflow run
+  shell: forbidden                           # explicit deny (documentation)
+```
+
+Over-declaration (listing tools the workflow never calls) is a warning from the
+consuming runtime, not an error — authors can narrow progressively during
+hardening.
 
 ---
 
