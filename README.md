@@ -1,4 +1,4 @@
-# hiivmind-blueprint-author
+# hiivmind-blueprint
 
 Journey-oriented tools for building, assessing, enhancing, extracting, maintaining, and visualizing Claude Code skills as deterministic YAML workflow patterns.
 
@@ -16,44 +16,46 @@ This plugin provides 7 journey-oriented skills covering the full skill authoring
 
 ## Installation
 
+Install directly from GitHub (no cloning required):
+
 ```bash
-claude plugin add /path/to/hiivmind-blueprint
+claude --plugin-url https://github.com/hiivmind/hiivmind-blueprint/archive/refs/heads/main.zip
 ```
 
-Or install from GitHub:
+For local development, install from a cloned copy:
 
 ```bash
-claude plugin add hiivmind/hiivmind-blueprint
+claude plugin add /path/to/hiivmind-blueprint
 ```
 
 ## Quick Start
 
 ```bash
 # Build a new skill from scratch
-/hiivmind-blueprint-author build a validation skill for config files
+/blueprint build a validation skill for config files
 
 # Assess an existing skill
-/hiivmind-blueprint-author assess skills/my-skill/SKILL.md
+/blueprint assess skills/my-skill/SKILL.md
 
 # Enhance a skill with better patterns
-/hiivmind-blueprint-author enhance skills/my-skill/SKILL.md
+/blueprint enhance skills/my-skill/SKILL.md
 
 # Extract workflow from a prose skill
-/hiivmind-blueprint-author extract skills/my-skill/SKILL.md
+/blueprint extract skills/my-skill/SKILL.md
 
 # Validate and maintain skills
-/hiivmind-blueprint-author maintain
+/blueprint maintain
 
 # Generate a Mermaid diagram
-/hiivmind-blueprint-author visualize skills/my-skill/workflow.yaml
+/blueprint visualize skills/my-skill/workflow.yaml
 ```
 
-## Related Plugins
+## Related Repositories
 
-| Plugin | Purpose |
-|--------|---------|
-| [hiivmind-blueprint-ops](https://github.com/hiivmind/hiivmind-blueprint-ops) | Validation and maintenance |
-| [hiivmind-blueprint-lib](https://github.com/hiivmind/hiivmind-blueprint-lib) | Core type definitions |
+| Repository | Purpose |
+|------------|---------|
+| [hiivmind-blueprint-lib](https://github.com/hiivmind/hiivmind-blueprint-lib) | Core type definitions and execution semantics |
+| [hiivmind-blueprint-central](https://github.com/hiivmind/hiivmind-blueprint-central) | Governance and principles hub |
 
 ## License
 
