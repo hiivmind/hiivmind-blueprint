@@ -16,14 +16,16 @@ This plugin provides 7 journey-oriented skills covering the full skill authoring
 
 ## Installation
 
+Install directly from GitHub (no cloning required):
+
 ```bash
-claude plugin add /path/to/hiivmind-blueprint
+claude --plugin-url https://github.com/hiivmind/hiivmind-blueprint/archive/refs/heads/main.zip
 ```
 
-Or install from GitHub:
+For local development, install from a cloned copy:
 
 ```bash
-claude plugin add hiivmind/hiivmind-blueprint
+claude plugin add /path/to/hiivmind-blueprint
 ```
 
 ## Quick Start
