@@ -17,7 +17,13 @@ This plugin provides 7 journey-oriented skills covering the full skill authoring
 ## Installation
 
 ```bash
-claude mcp add-skill-plugin hiivmind/hiivmind-blueprint-author
+claude plugin add /path/to/hiivmind-blueprint
+```
+
+Or install from GitHub:
+
+```bash
+claude plugin add hiivmind/hiivmind-blueprint
 ```
 
 ## Quick Start
