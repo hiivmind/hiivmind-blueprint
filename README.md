@@ -1,6 +1,6 @@
 # hiivmind-blueprint
 
-Journey-oriented tools for building, assessing, enhancing, extracting, maintaining, and visualizing Claude Code skills as deterministic YAML workflow patterns.
+Journey-oriented tools for building, assessing, enhancing, and maintaining Claude Code skills — optimising pseudocode-based skill definitions with optional workflow extraction.
 
 ## Overview
 
